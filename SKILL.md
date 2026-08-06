@@ -1,312 +1,307 @@
 ---
 name: game-ui-auto-composer-skill
-description: Automatically plans and composes game UI from provided image assets and a short game description. Use when the user has no full design mockup and wants AI to identify asset roles, infer core pages, plan layouts, harmonize style, generate engine-neutral UI specs, or produce implementation-oriented UI output such as HTML CSS prototypes and developer prompts for lightweight game UI workflows.
-license: MIT
-compatibility: Best for lightweight casual games, mini-games, and MVP UI planning workflows. Optimized for text-first planning, engine-neutral UI specs, implementation guidance, and structured output. Does not require external network access. Scripts are optional helpers for validation and packaging.
-metadata:
-  author: Flycan-Fanc
-  co-created-with: OpenAI ChatGPT
-  version: 1.0.0
-  category: game-ui
-  stage: v1
-  output-priority:
-    - engine-neutral-ui-spec
-    - html-css-prototype
-    - structured-page-plan
+description: Plan game UI pages from user requirements and precomputed structured asset-analysis data. Use when the user has supplied a JSON object conforming to schemas/ui-compose-input.schema.json and needs a single engine-neutral ui-compose-plan JSON describing pages, asset usages, component hierarchy, layout intent, interactions, navigation, missing assets, assumptions, and warnings.
 ---
 
 # Game UI Auto Composer Skill
 
-This skill helps generate **structured, implementation-friendly game UI plans** when the developer has:
-- image assets but no full design mockup
-- a short game description
-- a need to reduce manual UI planning work
-
-It is designed as a **v1 MVP skill**. Prioritize reliable automatic planning over maximal coverage.
+Produce one implementation-oriented, engine-neutral UI composition plan from structured user requirements and authoritative upstream asset analysis.
 
 ## Use this skill when
 
-Use this skill when the user wants to:
-- build game UI from existing image assets
-- infer UI layout without a finished design draft
-- plan core game pages such as Home, Gameplay HUD, and Result
-- map images to UI roles such as background, button base, title frame, badge, icon, character showcase, or panel
-- produce an engine-neutral UI spec for later implementation
-- generate HTML/CSS prototype guidance or developer-facing implementation prompts
-- reduce developer involvement by letting AI infer most UI decisions automatically
+Use this skill only when:
 
-## Do not use this skill when
+- the user has supplied structured asset-analysis entries inside a `ui-compose-input` object
+- the input conforms to `schemas/ui-compose-input.schema.json`
+- the task is to decide page scope and how analyzed assets should be used in those pages
+- the requested result is an engine-neutral `ui-compose-plan` JSON object
 
-Do not treat this skill as the best fit when:
-- the user needs a final polished brand-grade commercial visual design
-- the project is a large MMO, SLG, or deeply customized full-scale game UI system
-- the user primarily needs deep engine-specific production files
-- the user wants unrestricted freeform art direction rather than structured UI planning
-- the task is unrelated to game UI composition from assets
+Do not use this skill for asset discovery, visual recognition, image inspection, or engine implementation output.
 
-## Core operating principles
+## Required local resources
 
-1. **Minimum developer burden**
-   - Assume the developer only provides essential resources and a short description.
-   - Infer the rest whenever confidence is sufficient.
+Treat these files as authoritative:
 
-2. **Minimum questions**
-   - Ask at most a few necessary questions, and only if missing information would significantly affect page scope, gameplay safety zones, output target, or motion strategy.
+- `schemas/ui-compose-input.schema.json` - only valid input contract
+- `schemas/ui-compose-plan.schema.json` - only core output contract
+- `references/input-schema.md` - input usage rules
+- `references/output-schema.md` - output field responsibilities
+- `references/workflow.md` - phase inputs, outputs, and stop conditions
+- `references/examples/example-ui-compose-input.json` - valid input example
+- `references/examples/example-ui-compose-plan.json` - valid output example
 
-3. **Core page loop first**
-   - Prefer a complete core loop over page sprawl.
-   - Default priority:
-     1. Home
-     2. Gameplay HUD
-     3. Result
+## Hard responsibility boundary
 
-4. **Implementation-first output**
-   - Prefer structured deliverables that can be used by developers, Codex, or later UI generation workflows.
+The upstream image-analysis agent owns:
 
-5. **Engine-friendly representation**
-   - Express results as reusable assets, component trees, layout constraints, state definitions, and motion notes, not just as a visual collage.
+- visual content recognition
+- dimensions, aspect ratio, format, and transparency
+- asset category and visual identity
+- intended role and role candidates
+- visual description
+- stretching or slicing suitability
+- confidence and analysis notes
 
-6. **Conservative fallback**
-   - If confidence is low, reduce page scope, simplify layout, and mark assumptions clearly.
+This skill owns:
 
-## Default workflow
+- project and request interpretation
+- page planning
+- the actual use of each asset in each page
+- component hierarchy
+- layout intent and visual hierarchy
+- page and component states
+- interactions and navigation
+- missing-asset detection
+- assumptions, warnings, and conservative fallbacks
+- the final engine-neutral composition plan
 
-### Step 1: Parse the input
-Read the provided images and game description.
+## Input contract
 
-Identify:
-- game type
-- platform
-- orientation
-- core interaction
-- likely gameplay safety zones
-- requested output target if any
+Accept exactly one JSON object conforming to `schemas/ui-compose-input.schema.json`.
 
-If details are missing, infer them conservatively.
+The top-level object must contain:
+
+- `schema_version`
+- `request`
+- `assets`
+
+Reject the input and stop when schema validation or required semantic validation fails.
+
+### Forbidden input behavior
+
+- Reject any object containing `pics`.
+- Do not accept raw images as current-skill input.
+- Do not guess asset categories from file names.
+- Do not open, fetch, resolve, inspect, or decode `source_ref`.
+- Do not use multimodal capabilities to reinterpret an asset.
+- Do not fall back to any legacy raw-image workflow when asset analysis is absent.
+- Do not silently repair missing required fields by inventing asset facts.
+
+## Asset-analysis consumption rules
+
+Treat each `asset_analysis` object as authoritative upstream facts.
+
+Use engine-neutral facts such as:
+
+- `asset_id`
+- file identity and `visual_identity`
+- `asset_category`
+- `intended_role` and `role_candidates`
+- objective dimensions, aspect ratio, format, and transparency
+- `visual_description`
+- stretch, scale, crop, protected-region, and slicing suitability
+- confidence and notes
+
+Do not reclassify what an asset is. Decide only how, where, and whether the analyzed asset should be used for the current request.
+
+Ignore and never copy or depend on implementation-specific data embedded in upstream analysis, including:
+
+- `laya_new_ui`
+- Unity, Cocos, or FairyGUI fields
+- engine component class names
+- engine resource formats
+- engine serialization details
+
+### `source_ref` rule
+
+Treat `source_ref` as opaque.
+
+- Copy it unchanged only into the matching `asset_usages[].source_ref` output entry.
+- Never use it as evidence for asset identity, category, style, dimensions, or suitability.
+- Never test whether its path, URI, attachment, or opaque identifier exists.
+
+## Workflow
+
+### Step 1: Validate structured input
+
+Validate the input against `schemas/ui-compose-input.schema.json` and run semantic checks for:
+
+- `schema_version`
+- required `request` fields
+- non-empty `assets`
+- required `asset_analysis` and `source_ref` per asset
+- non-empty, unique `asset_id` values
+- `primary_page_id` membership in `request.page_request.pages`
+- explicit rejection of `pics`
+
+Use `python scripts/validate_input.py <input.json>` when local execution is available.
+
+If validation fails, return a structured error and stop. Do not generate a partial plan.
+
+### Step 2: Understand request and project context
+
+Read only the structured `request` object.
+
+Determine:
+
+- project name and game context
+- requested page scope
+- orientation and target resolution
+- page goals and explicit requirements
+- user constraints and visual preferences
+
+Do not add unrelated default pages. Record reasonable low-impact interpretation as assumptions.
+
+### Step 3: Consume upstream asset facts
+
+For every asset:
+
+- retain its stable `asset_id`
+- consume only engine-neutral analysis facts
+- note confidence and uncertainty
+- identify conflicts between requested use and upstream facts
+- preserve `source_ref` as an opaque downstream reference
+
+Do not perform visual recognition or override upstream classification.
+
+### Step 4: Plan pages
+
+Build `pages` from `request.page_request`.
+
+For each page define:
+
+- page purpose
+- root component
+- initial and alternate states
+- entry conditions
+- exit conditions
+
+Add a page only when the request or required navigation flow justifies it.
+
+### Step 5: Compose asset usages and component tree
+
+Decide which analyzed assets are useful for each requested page.
+
+For each use define:
+
+- page and component assignment
+- semantic role in the composition
+- usage intent
+- fit, crop, and resizing policy
+- visual priority
+- visible states
+- analysis confidence and risk notes
+
+Build an engine-neutral `component_tree` with stable component IDs, page IDs, parent relationships, semantic types, ordering, asset-usage references, states, and content intent.
+
+### Step 6: Define layout rules
+
+Define one or more engine-neutral layout rules for every relevant component:
+
+- reference space
+- semantic anchor
+- normalized pivot and position
+- relative or logical dimensions
+- stack order
+- safe-area policy
+- protected-region notes
+
+Prefer constraints and normalized relationships over engine-specific coordinates.
 
 See:
-- `references/input-schema.md`
-- `references/supported-scope-v1.md`
 
-### Step 2: Analyze asset roles
-Classify assets into likely roles:
-- background
-- character
-- frame sequence
-- button base
-- title base
-- icon
-- panel / popup base
-- badge / slot / frame
-- decoration / effect
-- HUD element
-
-Then assign each asset:
-- likely page usage
-- suggested prominence
-- reusability
-- stretchability
-- dynamic suitability
-
-See:
-- `references/asset-taxonomy/buttons-icons.md`
-- `references/asset-taxonomy/characters-frames.md`
-- `references/asset-taxonomy/panels-badges.md`
-
-### Step 3: Infer page scope
-Default to a compact page set unless the input clearly supports more.
-
-v1 default page strategy:
-- always consider Home
-- always consider Gameplay HUD
-- always consider Result
-- optionally include Mode Select or Level Select when the game description strongly suggests them
-
-See:
-- `references/page-templates/home.md`
-- `references/page-templates/gameplay-hud.md`
-- `references/page-templates/result.md`
-
-### Step 4: Protect gameplay safety zones
-Before composing layouts, identify the gameplay exclusion zone or core view area.
-
-Never let decorative UI crowd the core gameplay view.
-
-See:
+- `references/layout-rules/anchor-and-sizing.md`
 - `references/layout-rules/safe-area.md`
 - `references/layout-rules/gameplay-exclusion-zones.md`
+- `references/layout-rules/click-targets.md`
 
-### Step 5: Compose layout and component tree
-Build each page using:
-- component hierarchy
-- anchor-based layout
-- relative size suggestions
-- visual hierarchy
-- minimum interaction target rules
+### Step 7: Define interactions and navigation
 
-Express the page as:
-- page goal
-- main regions
-- component tree
-- asset mapping
-- layout constraints
-- interaction states
+Define:
 
-See:
-- `references/layout-rules/anchor-and-sizing.md`
-- `references/output-adapters/engine-neutral-ui-spec.md`
+- interaction trigger and triggering component
+- semantic action
+- conditions
+- state changes
+- feedback intent
+- navigation source and destination
+- transition intent and history behavior
 
-### Step 6: Harmonize style
-Unify:
-- visual density
-- button language
-- panel language
-- title language
-- glow / stroke / rounding strength
-- decoration intensity
+Do not emit event-handler class names, engine callbacks, or implementation code.
 
-Use only the assets that improve clarity and consistency.
+### Step 8: Review missing assets, assumptions, and warnings
 
-See:
-- `references/layout-rules/style-harmonization.md`
+Before output:
 
-### Step 7: Add motion conservatively
-Default to light motion only:
-- button press feedback
-- icon pulse
-- badge blink
-- popup enter / exit
-- score or reward count-up
+- list requested visuals or functions without supplied assets
+- state whether each missing asset blocks the plan
+- define conservative structural fallback where allowed
+- record every inferred decision as an assumption
+- record asset-confidence, resizing, hierarchy, interaction, and navigation risks as warnings
 
-Avoid rich page performances unless explicitly needed and justified.
+Never fabricate an asset or claim to have verified `source_ref`.
 
-See:
-- `references/motion-rules/motion-levels.md`
-- `references/motion-rules/micro-interactions.md`
+### Step 9: Output ui-compose-plan JSON
 
-### Step 8: Produce outputs
-Prefer these outputs in order:
-1. structured page plan
-2. asset mapping
-3. engine-neutral UI spec
-4. HTML/CSS prototype guidance
-5. optional static visual guidance
-6. optional light motion guidance
+Return exactly one JSON object conforming to `schemas/ui-compose-plan.schema.json`.
 
-See:
-- `references/output-adapters/engine-neutral-ui-spec.md`
-- `references/output-adapters/html-css-prototype.md`
+Validate the completed object before returning it.
 
-### Step 9: Run quality check
-Before finalizing, validate:
-- gameplay safety
-- visual clarity
-- style consistency
-- clickability
-- implementability
-- motion cost
-- output match
+The successful core response must contain no surrounding prose, Markdown report, code fence, or secondary deliverable.
 
-See:
-- `references/quality/quality-checklist.md`
-- `references/quality/confidence-and-fallback.md`
+## Output contract
 
-## Question policy
+The core output must contain all 12 required top-level fields:
 
-Ask clarifying questions only if needed to resolve one of these high-impact gaps:
-- unknown platform or orientation
-- unknown output target
-- unknown gameplay safe area
-- multiple equally plausible page structures
-- motion level would materially change implementation cost
+- `schema_version`
+- `project_context`
+- `visual_direction`
+- `pages`
+- `asset_usages`
+- `component_tree`
+- `layout_rules`
+- `interactions`
+- `navigation`
+- `missing_assets`
+- `assumptions`
+- `warnings`
 
-If the user does not answer:
-- adopt conservative defaults
-- state assumptions
-- continue
+### Forbidden core output
 
-## v1 support scope
+Do not add:
 
-This v1 is optimized for:
-- lightweight casual games
-- mini-games
-- runner / lane-switch / light merge / light rhythm patterns
-- Home + Gameplay HUD + Result core loop
-- engine-neutral specs
-- HTML/CSS-oriented implementation planning
-- Cocos / Unity / HTML5-friendly structural outputs
+- Markdown design reports
+- HTML/CSS prompts or prototype output
+- GPT Image prompts or image-generation request fields
+- Laya, Unity, Cocos, or FairyGUI implementation fields
+- TypeScript class names
+- engine component class names
+- engine resource or project file formats
 
-This v1 is not optimized for:
-- full RPG systems
-- MMO/SLG complexity
-- deep engine exporters
-- brand-grade final visual polish
+Future adapters may consume `ui-compose-plan.json`, but adapter output is outside this skill's core response.
 
-## Recommended output bundle
+## Structured validation error
 
-When possible, produce:
-- page list
-- page purpose
-- asset-role mapping
-- component tree
-- layout constraints
-- motion notes
-- implementation notes
-- confidence notes
+On invalid input, return only an error object shaped like:
 
-## Example scenarios
+```json
+{
+  "status": "error",
+  "error_code": "INPUT_VALIDATION_FAILED",
+  "errors": [
+    {
+      "path": "$.assets[0].asset_analysis",
+      "message": "Missing required field"
+    }
+  ],
+  "warnings": []
+}
+```
 
-### Example 1: Mini-game with scattered assets
-User says: "I have a few backgrounds, button frames, and character sprites for a WeChat mini-game. Help me build the UI without a design draft."
+Do not continue composition after returning this error.
 
-Expected behavior:
-1. infer mini-game context
-2. classify assets
-3. propose Home, Gameplay HUD, and Result
-4. keep gameplay view clear
-5. output engine-neutral page specs
-6. add HTML/CSS-oriented prototype notes
+## Question and fallback policy
 
-### Example 2: Lane-switch game with dynamic sprites
-User says: "These are my lane-switch game assets. I need a homepage, in-game HUD, and settlement page."
+- Treat missing required contract fields as validation errors, not clarification opportunities.
+- Use assumptions only for optional, low-impact ambiguity.
+- Use `missing_assets` when a requested visual has no analyzed asset.
+- Use warnings when a plan remains possible but carries uncertainty.
+- Keep conservative fallback structural; never invent upstream visual facts.
 
-Expected behavior:
-1. identify lane-switch pattern
-2. protect middle gameplay lanes
-3. map button/panel/title assets to pages
-4. keep motion light
-5. output page plan plus implementation guidance
+## Legacy resources
 
-## Failure handling
+Legacy raw-asset examples, templates, classifiers, prototype helpers, and engine compatibility notes may remain in the repository for historical or future adapter work. They are not part of this workflow and must not override the two core Schemas.
 
-If the input is weak:
-- reduce page count
-- use conservative layout
-- mark uncertain mappings
-- prefer structured planning over fake polish
+## Final rule
 
-If assets conflict:
-- prioritize consistency over asset coverage
-- prefer functional clarity
-- down-rank decorative noise
-
-If output target is unclear:
-- default to structured page plan + engine-neutral UI spec
-
-## Script helpers
-
-Optional helper scripts are bundled under `scripts/`.
-Use them when useful:
-- `python scripts/validate_input.py <input.json>` for input sanity checks
-- `python scripts/quality_check.py <spec.json>` for structured QA hints
-- `python scripts/package_output.py <dir>` for packaging results
-
-## Final reminder
-
-This skill is an **automatic UI planning and composition engine**, not a freeform art toy.
-Prefer:
-- fewer pages
-- better structure
-- stronger clarity
-- lower ambiguity
-- easier implementation
+Consume structured facts. Plan usage and behavior. Return one valid engine-neutral `ui-compose-plan` JSON object.

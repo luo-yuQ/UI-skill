@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/asset-analysis.schema.json",
+  "title": "AssetAnalysisSpec",
+  "description": "v0.1 最小可用版。用于 GPT-5.5 对单张游戏 UI 素材图进行结构化分析，供 DeepSeek、Laya New UI 实现和后续图片生成流程复用。第一版仅支持 single_asset，不支持 composite / atlas / ui_screenshot / sprite_sheet。",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "input_kind",
+    "file_name",
+    "page_context",
+    "asset_category",
+    "visual_identity",
+    "intended_role",
+    "visual_description",
+    "layout_behavior",
+    "laya_new_ui",
+    "confidence",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "协议版本。"
+    },
+    "input_kind": {
+      "type": "string",
+      "const": "single_asset",
+      "description": "输入类型。v0.1 只允许单张独立素材图。"
+    },
+    "asset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "可选的稳定标识，建议使用 snake_case 或 kebab-case。",
+      "examples": ["login_bg_castle", "player_aircraft_orange"]
+    },
+    "file_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "素材文件名。"
+    },
+    "file_path": {
+      "type": ["string", "null"],
+      "description": "可选的工作区路径。"
+    },
+    "source_hint": {
+      "type": ["string", "null"],
+      "description": "用户已知用途或人工备注，帮助模型减少误判。",
+      "examples": ["灰色的是登录背景图", "橙色飞机是玩家飞机"]
+    },
+    "page_context": {
+      "type": "string",
+      "enum": [
+        "login",
+        "loading",
+        "main_menu",
+        "gameplay",
+        "hud",
+        "settings",
+        "result",
+        "unknown"
+      ],
+      "description": "该素材主要归属的页面或场景。"
+    },
+    "asset_category": {
+      "type": "string",
+      "enum": [
+        "background",
+        "surface",
+        "bar",
+        "icon",
+        "game_object",
+        "text_asset",
+        "decoration_effect",
+        "unknown"
+      ],
+      "description": "素材大类。surface 表示可作为按钮/面板/底板等可拉伸界面表面的素材。bar 表示进度条、血条、分隔条等条形素材。"
+    },
+    "visual_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "一句话说明图片里是什么。",
+      "examples": [
+        "灰雾中的高耸城堡场景",
+        "橙色俯视飞机剪影",
+        "黄色不规则长方形底板"
+      ]
+    },
+    "intended_role": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "当前项目中的目标用途，建议使用 snake_case。",
+      "examples": [
+        "login_background",
+        "gameplay_background",
+        "player_aircraft",
+        "health_bar_fill",
+        "login_panel_background"
+      ]
+    },
+    "role_candidates": {
+      "type": "array",
+      "description": "当用途不够确定时给出的候选用途，最多 3 个。若 intended_role 已明确，可省略。",
+      "items": {
+        "type": "string",
+        "pattern": "^[a-z0-9_\\-]+$"
+      },
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "visual_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "较完整的视觉描述，说明主体、风格、颜色、构图或氛围。"
+    },
+    "technical_metadata": {
+      "type": "object",
+      "description": "可由程序读取并补充的客观信息；模型可留空或不填写。",
+      "additionalProperties": false,
+      "properties": {
+        "width": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "height": {
+          "type": ["integer", "null"],
+          "minimum": 1
+        },
+        "aspect_ratio": {
+          "type": ["string", "null"],
+          "description": "例如 16:9、9:16、1:1。"
+        },
+        "format": {
+          "type": ["string", "null"],
+          "description": "例如 png、jpg。"
+        },
+        "has_alpha": {
+          "type": ["boolean", "null"]
+        }
+      }
+    },
+    "layout_behavior": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "stretchable",
+        "nine_slice_candidate",
+        "recommended_scale_mode"
+      ],
+      "properties": {
+        "stretchable": {
+          "type": "boolean",
+          "description": "该素材在当前用途下是否适合被拉伸。"
+        },
+        "nine_slice_candidate": {
+          "type": "boolean",
+          "description": "是否疑似需要九宫格处理。第一版只判断 true/false，不要求给出精确 sizeGrid。"
+        },
+        "recommended_scale_mode": {
+          "type": "string",
+          "enum": [
+            "cover",
+            "contain",
+            "stretch",
+            "tile",
+            "none",
+            "unknown"
+          ],
+          "description": "推荐缩放方式。背景常为 cover；图标多为 none；底板可能为 stretch。"
+        },
+        "safe_overlay_note": {
+          "type": ["string", "null"],
+          "description": "说明哪些区域适合叠放 UI 内容，或哪些区域应避免遮挡。"
+        },
+        "protected_region_note": {
+          "type": ["string", "null"],
+          "description": "说明视觉主体或边框等不宜被遮挡或破坏的区域。"
+        }
+      }
+    },
+    "laya_new_ui": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "recommended_node_type",
+        "size_grid_candidate"
+      ],
+      "properties": {
+        "recommended_node_type": {
+          "type": "string",
+          "enum": [
+            "Image",
+            "Sprite",
+            "Button",
+            "Label",
+            "ProgressBar",
+            "Clip",
+            "Box",
+            "Unknown"
+          ],
+          "description": "在 Laya New UI 中建议映射成的主要节点类型。"
+        },
+        "size_grid_candidate": {
+          "description": "九宫格候选。第一版允许为空，或填 manual_required，或填类似 10,10,10,10 的候选字符串。",
+          "anyOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "string",
+              "enum": ["manual_required"]
+            },
+            {
+              "type": "string",
+              "pattern": "^\\d+,\\d+,\\d+,\\d+$"
+            }
+          ]
+        },
+        "usage_note": {
+          "type": ["string", "null"],
+          "description": "补充说明该素材在 Laya New UI 中的使用建议。"
+        }
+      }
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "对整体分析结果的总体置信度。"
+    },
+    "notes": {
+      "type": "array",
+      "description": "补充说明、风险提示或需要人工确认的事项。",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "examples": [
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "login_bg_castle",
+      "file_name": "castle_login_bg.png",
+      "page_context": "login",
+      "asset_category": "background",
+      "visual_identity": "灰雾中的高耸城堡场景",
+      "intended_role": "login_background",
+      "visual_description": "冷灰色、雾气浓、纵向构图的城堡背景，氛围感强，适合作为登录页背景。",
+      "layout_behavior": {
+        "stretchable": false,
+        "nine_slice_candidate": false,
+        "recommended_scale_mode": "cover",
+        "safe_overlay_note": "中下区域可叠加少量 UI；应避免遮挡中央城堡主体。",
+        "protected_region_note": "城堡主体位于中上区域，应保持可见。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "Image",
+        "size_grid_candidate": null,
+        "usage_note": "适合全屏背景图，建议等比覆盖。"
+      },
+      "confidence": 0.96,
+      "notes": []
+    }
+  ]
+}

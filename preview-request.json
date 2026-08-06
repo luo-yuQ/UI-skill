@@ -1,0 +1,111 @@
+{
+  "schema_version": "0.1",
+  "generation_intent": {
+    "kind": "page_concept_preview",
+    "fidelity": "concept",
+    "description": "Generate a concept preview for page login from the approved UI compose plan."
+  },
+  "source": {
+    "page_id": "login",
+    "input_schema_version": "1.0",
+    "plan_schema_version": "1.0",
+    "project_name": "Sky Vanguard"
+  },
+  "prompt": "为游戏《Sky Vanguard》生成 login 页面概念预览。\n页面用途：Introduce the game and expose one clear login action.。游戏类型：portrait arcade flight shooter。\n画面方向为 portrait，目标分辨率为 1080 x 1920。\n整体视觉方向：Use the cool misty castle background as the atmospheric foundation and reserve the bright yellow action surface as the dominant interactive accent.。\n\n参考素材：\n- 参考图 1：素材 login_bg_castle，用于组件 login_background，用途为 Fill the page while retaining the upper-center castle silhouette.，保留优先级为 high。\n- 参考图 2：素材 login_button_yellow，用于组件 login_button，用途为 Provide the visual surface of the primary login action at the bottom center.，保留优先级为 critical。\n\n主要组件层级：\n- Login Background（visual，隶属于 Login Page Root）\n- Login Page Root（page_root，页面根节点）\n- Primary Login Action（button，隶属于 Login Page Root）\n\n关键布局：\n- Login Page Root：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。\n- Login Background：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。\n- Primary Login Action：相对 safe area 使用 bottom center 锚点，归一化位置约为 (0.5, 0.9)，尺寸约为 0.58 x 0.1（normalized parent）。\n\n构图要求：\n- 页面类型为 login，用途为：Introduce the game and expose one clear login action.\n- 保持计划中的组件数量、语义层级和主要视觉优先级。\n- 组件层级：Login Background（visual，隶属于 Login Page Root）\n- 组件层级：Login Page Root（page_root，页面根节点）\n- 组件层级：Primary Login Action（button，隶属于 Login Page Root）\n- 布局要求：Login Page Root：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。\n- 布局要求：Login Background：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。\n- 布局要求：Primary Login Action：相对 safe area 使用 bottom center 锚点，归一化位置约为 (0.5, 0.9)，尺寸约为 0.58 x 0.1（normalized parent）。\n- 交互意图：login_button 通过 tap 触发 begin_loading_flow；该行为不得转化成额外可见控件。\n\n必须保留：\n- 参考图 1 必须保持素材身份与核心轮廓，按其计划用途使用：Fill the page while retaining the upper-center castle silhouette.\n- 参考图 1 的受保护特征：Keep the castle silhouette in the upper-center area visible.\n- 参考图 2 必须保持素材身份与核心轮廓，按其计划用途使用：Provide the visual surface of the primary login action at the bottom center.\n- 参考图 2 的受保护特征：Preserve the irregular decorative outer edges.\n- 参考图 2 的边缘缩放方式尚需人工确认，预览中不得破坏装饰边缘。\n- 参考图 2 补充保留要求：Protect the decorative outer edges during resizing.\n\n允许补充：\n- 可以补充与既定视觉方向一致的光影、氛围和空间层次：Use the cool misty castle background as the atmospheric foundation and reserve the bright yellow action surface as the dominant interactive accent.\n- 可以在不改变组件数量、功能和层级的前提下优化细节表现与视觉统一性。\n\n禁止事项：\n- 不得新增计划中不存在的页面、按钮、复杂菜单、功能或交互。\n- 不得把点击、跳转或加载行为转化为静态画面中的额外控件。\n- 不得改变参考素材的身份、核心轮廓或计划用途。\n- 不得把概念预览伪装成像素级工程实现截图。\n\n规划假设：\n- The LOGIN label is runtime text rather than an image asset. 影响：Text styling and localization remain downstream implementation decisions.\n- Activating the login button can immediately start the loading flow without requesting additional credentials on this page. 影响：No account form components are included in the login page tree.\n\n风险提示：\n- The analyzed login button is a stretch candidate, but exact protected edge values remain unconfirmed.\n- 这是概念预览，并非像素级工程实现截图。\n\n该结果是用于评审构图、层级和风格方向的概念预览，并非像素级工程实现截图。",
+  "reference_assets": [
+    {
+      "order": 1,
+      "asset_id": "login_bg_castle",
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/gray_castle_bg.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "component_id": "login_background",
+      "usage": "Fill the page while retaining the upper-center castle silhouette.",
+      "preservation_priority": "high"
+    },
+    {
+      "order": 2,
+      "asset_id": "login_button_yellow",
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/yellow_login_button.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "component_id": "login_button",
+      "usage": "Provide the visual surface of the primary login action at the bottom center.",
+      "preservation_priority": "critical"
+    }
+  ],
+  "composition_requirements": [
+    "页面类型为 login，用途为：Introduce the game and expose one clear login action.",
+    "保持计划中的组件数量、语义层级和主要视觉优先级。",
+    "组件层级：Login Background（visual，隶属于 Login Page Root）",
+    "组件层级：Login Page Root（page_root，页面根节点）",
+    "组件层级：Primary Login Action（button，隶属于 Login Page Root）",
+    "布局要求：Login Page Root：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。",
+    "布局要求：Login Background：相对 canvas 使用 stretch 锚点，归一化位置约为 (0.5, 0.5)，尺寸约为 1 x 1（normalized parent）。",
+    "布局要求：Primary Login Action：相对 safe area 使用 bottom center 锚点，归一化位置约为 (0.5, 0.9)，尺寸约为 0.58 x 0.1（normalized parent）。",
+    "交互意图：login_button 通过 tap 触发 begin_loading_flow；该行为不得转化成额外可见控件。"
+  ],
+  "preserve_requirements": [
+    "参考图 1 必须保持素材身份与核心轮廓，按其计划用途使用：Fill the page while retaining the upper-center castle silhouette.",
+    "参考图 1 的受保护特征：Keep the castle silhouette in the upper-center area visible.",
+    "参考图 2 必须保持素材身份与核心轮廓，按其计划用途使用：Provide the visual surface of the primary login action at the bottom center.",
+    "参考图 2 的受保护特征：Preserve the irregular decorative outer edges.",
+    "参考图 2 的边缘缩放方式尚需人工确认，预览中不得破坏装饰边缘。",
+    "参考图 2 补充保留要求：Protect the decorative outer edges during resizing."
+  ],
+  "allowed_changes": [
+    "可以补充与既定视觉方向一致的光影、氛围和空间层次：Use the cool misty castle background as the atmospheric foundation and reserve the bright yellow action surface as the dominant interactive accent.",
+    "可以在不改变组件数量、功能和层级的前提下优化细节表现与视觉统一性。"
+  ],
+  "avoid": [
+    "不得新增计划中不存在的页面、按钮、复杂菜单、功能或交互。",
+    "不得把点击、跳转或加载行为转化为静态画面中的额外控件。",
+    "不得改变参考素材的身份、核心轮廓或计划用途。",
+    "不得把概念预览伪装成像素级工程实现截图。"
+  ],
+  "output_spec": {
+    "orientation": "portrait",
+    "target_width": 1080,
+    "target_height": 1920
+  },
+  "assumptions": [
+    {
+      "assumption_id": "runtime_login_label",
+      "statement": "The LOGIN label is runtime text rather than an image asset.",
+      "impact": "Text styling and localization remain downstream implementation decisions.",
+      "confidence": 0.9
+    },
+    {
+      "assumption_id": "login_action_local",
+      "statement": "Activating the login button can immediately start the loading flow without requesting additional credentials on this page.",
+      "impact": "No account form components are included in the login page tree.",
+      "confidence": 0.75
+    }
+  ],
+  "warnings": [
+    {
+      "code": "BUTTON_RESIZE_CONFIRMATION",
+      "severity": "warning",
+      "message": "The analyzed login button is a stretch candidate, but exact protected edge values remain unconfirmed.",
+      "related_ids": [
+        "login_button_yellow",
+        "login_button_usage",
+        "layout_login_button"
+      ]
+    },
+    {
+      "code": "CONCEPT_PREVIEW_NOT_PIXEL_ACCURATE",
+      "severity": "info",
+      "message": "这是概念预览，并非像素级工程实现截图。",
+      "related_ids": [
+        "login"
+      ]
+    }
+  ]
+}

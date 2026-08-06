@@ -1,0 +1,466 @@
+{
+  "schema_version": "1.0",
+  "project_context": {
+    "project_name": "Sky Vanguard",
+    "game_description": {
+      "genre": "portrait arcade flight shooter",
+      "gameplay_summary": "The player pilots a fighter aircraft through vertically scrolling combat stages.",
+      "core_interaction": "Tap the login button to enter the loading flow before gameplay.",
+      "audience": "casual mobile players"
+    },
+    "orientation": "portrait",
+    "target_resolution": {
+      "width": 1080,
+      "height": 1920,
+      "unit": "px"
+    },
+    "page_scope": [
+      "login",
+      "loading"
+    ],
+    "constraints": [
+      "Keep the upper-center castle silhouette visible.",
+      "Use only the supplied analyzed image assets."
+    ]
+  },
+  "visual_direction": {
+    "summary": "Use the cool misty castle background as the atmospheric foundation and reserve the bright yellow action surface as the dominant interactive accent.",
+    "style_keywords": [
+      "atmospheric",
+      "arcade",
+      "sparse",
+      "high-contrast CTA"
+    ],
+    "palette": [
+      {
+        "role": "background_neutral",
+        "value": "#59636F",
+        "usage": "Primary environmental tone derived from the analyzed login background."
+      },
+      {
+        "role": "primary_action",
+        "value": "#F4C542",
+        "usage": "Dominant action color derived from the analyzed login button surface."
+      },
+      {
+        "role": "text_on_action",
+        "value": "#1A1A1A",
+        "usage": "High-contrast runtime text placed over the primary action."
+      }
+    ],
+    "hierarchy_principles": [
+      "Preserve the castle silhouette as the main environmental focal point.",
+      "Keep the login button as the only dominant interactive control.",
+      "Use minimal runtime text and avoid decorative clutter."
+    ],
+    "asset_style_notes": [
+      "Use proportional coverage for the portrait background.",
+      "Preserve the irregular edge character of the yellow button surface."
+    ]
+  },
+  "pages": [
+    {
+      "page_id": "login",
+      "page_type": "login",
+      "purpose": "Introduce the game and expose one clear login action.",
+      "root_component_id": "login_root",
+      "states": [
+        {
+          "state_id": "ready",
+          "description": "The login action is available.",
+          "is_initial": true
+        },
+        {
+          "state_id": "submitting",
+          "description": "The login action was accepted and navigation is beginning.",
+          "is_initial": false
+        }
+      ],
+      "entry_conditions": [
+        "Application startup has completed."
+      ],
+      "exit_conditions": [
+        "The login action has been accepted."
+      ]
+    },
+    {
+      "page_id": "loading",
+      "page_type": "loading",
+      "purpose": "Provide a stable transition destination while game resources are prepared.",
+      "root_component_id": "loading_root",
+      "states": [
+        {
+          "state_id": "loading_active",
+          "description": "Resource preparation is in progress.",
+          "is_initial": true
+        }
+      ],
+      "entry_conditions": [
+        "Navigation from the login page has completed."
+      ],
+      "exit_conditions": [
+        "Required game resources are ready."
+      ]
+    }
+  ],
+  "asset_usages": [
+    {
+      "usage_id": "login_background_usage",
+      "asset_id": "login_bg_castle",
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/gray_castle_bg.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "page_id": "login",
+      "component_id": "login_background",
+      "semantic_role": "login_background",
+      "usage_intent": "Fill the page while retaining the upper-center castle silhouette.",
+      "fit_mode": "cover",
+      "crop_intent": "Prefer symmetrical side cropping before cropping the top-center focal area.",
+      "resizing_policy": {
+        "stretch_allowed": false,
+        "slice_scaling": "not_applicable",
+        "protected_region_note": "Keep the castle silhouette in the upper-center area visible."
+      },
+      "visual_priority": "background",
+      "visible_in_states": [
+        "ready",
+        "submitting"
+      ],
+      "analysis_confidence": 0.97,
+      "notes": [
+        "Do not reopen the source asset for visual reanalysis."
+      ]
+    },
+    {
+      "usage_id": "login_button_usage",
+      "asset_id": "login_button_yellow",
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/yellow_login_button.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "page_id": "login",
+      "component_id": "login_button",
+      "semantic_role": "primary_action_surface",
+      "usage_intent": "Provide the visual surface of the primary login action at the bottom center.",
+      "fit_mode": "stretch",
+      "crop_intent": null,
+      "resizing_policy": {
+        "stretch_allowed": true,
+        "slice_scaling": "manual_confirmation",
+        "protected_region_note": "Preserve the irregular decorative outer edges."
+      },
+      "visual_priority": "critical",
+      "visible_in_states": [
+        "ready",
+        "submitting"
+      ],
+      "analysis_confidence": 0.92,
+      "notes": [
+        "Protect the decorative outer edges during resizing."
+      ]
+    }
+  ],
+  "component_tree": [
+    {
+      "component_id": "login_root",
+      "page_id": "login",
+      "parent_id": null,
+      "name": "Login Page Root",
+      "semantic_type": "page_root",
+      "order": 0,
+      "asset_usage_ids": [],
+      "state_ids": [
+        "ready",
+        "submitting"
+      ],
+      "notes": []
+    },
+    {
+      "component_id": "login_background",
+      "page_id": "login",
+      "parent_id": "login_root",
+      "name": "Login Background",
+      "semantic_type": "visual",
+      "order": 0,
+      "asset_usage_ids": [
+        "login_background_usage"
+      ],
+      "state_ids": [
+        "ready",
+        "submitting"
+      ],
+      "notes": []
+    },
+    {
+      "component_id": "login_button",
+      "page_id": "login",
+      "parent_id": "login_root",
+      "name": "Primary Login Action",
+      "semantic_type": "button",
+      "order": 1,
+      "asset_usage_ids": [
+        "login_button_usage"
+      ],
+      "state_ids": [
+        "ready",
+        "submitting"
+      ],
+      "content": {
+        "text": "LOGIN",
+        "localization_key": "ui.login.action",
+        "accessibility_label": "Enter the game"
+      },
+      "notes": [
+        "Disable repeated activation while the page is in the submitting state."
+      ]
+    },
+    {
+      "component_id": "loading_root",
+      "page_id": "loading",
+      "parent_id": null,
+      "name": "Loading Page Root",
+      "semantic_type": "page_root",
+      "order": 0,
+      "asset_usage_ids": [],
+      "state_ids": [
+        "loading_active"
+      ],
+      "notes": []
+    },
+    {
+      "component_id": "loading_status",
+      "page_id": "loading",
+      "parent_id": "loading_root",
+      "name": "Loading Status",
+      "semantic_type": "status",
+      "order": 0,
+      "asset_usage_ids": [],
+      "state_ids": [
+        "loading_active"
+      ],
+      "content": {
+        "text": "LOADING…",
+        "localization_key": "ui.loading.status",
+        "accessibility_label": "Loading game resources"
+      },
+      "notes": [
+        "Use runtime text because no analyzed loading visual was supplied."
+      ]
+    }
+  ],
+  "layout_rules": [
+    {
+      "rule_id": "layout_login_root",
+      "page_id": "login",
+      "component_id": "login_root",
+      "relative_to": "canvas",
+      "anchor": "stretch",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 1,
+        "height": 1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 0,
+      "safe_area_policy": "full_bleed",
+      "notes": []
+    },
+    {
+      "rule_id": "layout_login_background",
+      "page_id": "login",
+      "component_id": "login_background",
+      "relative_to": "canvas",
+      "anchor": "stretch",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 1,
+        "height": 1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 0,
+      "safe_area_policy": "full_bleed",
+      "notes": [
+        "Keep the upper-center focal region visible when applying cover behavior."
+      ]
+    },
+    {
+      "rule_id": "layout_login_button",
+      "page_id": "login",
+      "component_id": "login_button",
+      "relative_to": "safe_area",
+      "anchor": "bottom_center",
+      "pivot": {
+        "x": 0.5,
+        "y": 1
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.9
+      },
+      "dimensions": {
+        "width": 0.58,
+        "height": 0.1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 10,
+      "safe_area_policy": "inside",
+      "notes": [
+        "Maintain clear bottom and side margins.",
+        "Keep the action visually separated from the castle silhouette."
+      ]
+    },
+    {
+      "rule_id": "layout_loading_root",
+      "page_id": "loading",
+      "component_id": "loading_root",
+      "relative_to": "canvas",
+      "anchor": "stretch",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 1,
+        "height": 1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 0,
+      "safe_area_policy": "full_bleed",
+      "notes": []
+    },
+    {
+      "rule_id": "layout_loading_status",
+      "page_id": "loading",
+      "component_id": "loading_status",
+      "relative_to": "safe_area",
+      "anchor": "center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.6,
+        "height": 0.08,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 1,
+      "safe_area_policy": "inside",
+      "notes": [
+        "Center the status text until a dedicated loading visual is supplied."
+      ]
+    }
+  ],
+  "interactions": [
+    {
+      "interaction_id": "activate_login",
+      "page_id": "login",
+      "trigger_component_id": "login_button",
+      "trigger": "tap",
+      "action": "begin_loading_flow",
+      "conditions": [
+        "The login page is in the ready state."
+      ],
+      "state_changes": [
+        {
+          "target_id": "login",
+          "from_state": "ready",
+          "to_state": "submitting"
+        }
+      ],
+      "navigation_id": "login_to_loading",
+      "feedback": [
+        "Provide brief pressed feedback.",
+        "Prevent repeated activation after acceptance."
+      ]
+    }
+  ],
+  "navigation": [
+    {
+      "navigation_id": "login_to_loading",
+      "from_page_id": "login",
+      "to_page_id": "loading",
+      "trigger_interaction_id": "activate_login",
+      "transition_style": "fade",
+      "transition_duration_ms": 200,
+      "history_behavior": "replace",
+      "notes": [
+        "Begin resource preparation as the loading page becomes active."
+      ]
+    }
+  ],
+  "missing_assets": [
+    {
+      "missing_asset_id": "loading_page_visual",
+      "needed_for": [
+        "loading",
+        "loading_status"
+      ],
+      "description": "No analyzed background, progress visual, or loading decoration was supplied for the loading page.",
+      "severity": "optional",
+      "fallback": "Use a plain neutral background and runtime loading text."
+    }
+  ],
+  "assumptions": [
+    {
+      "assumption_id": "runtime_login_label",
+      "statement": "The LOGIN label is runtime text rather than an image asset.",
+      "impact": "Text styling and localization remain downstream implementation decisions.",
+      "confidence": 0.9
+    },
+    {
+      "assumption_id": "login_action_local",
+      "statement": "Activating the login button can immediately start the loading flow without requesting additional credentials on this page.",
+      "impact": "No account form components are included in the login page tree.",
+      "confidence": 0.75
+    }
+  ],
+  "warnings": [
+    {
+      "warning_id": "button_resize_confirmation",
+      "severity": "warning",
+      "message": "The analyzed login button is a stretch candidate, but exact protected edge values remain unconfirmed.",
+      "related_ids": [
+        "login_button_yellow",
+        "login_button_usage",
+        "layout_login_button"
+      ]
+    },
+    {
+      "warning_id": "loading_visual_missing",
+      "severity": "info",
+      "message": "The loading page uses a structural fallback because no analyzed loading visual was supplied.",
+      "related_ids": [
+        "loading",
+        "loading_status",
+        "loading_page_visual"
+      ]
+    }
+  ]
+}

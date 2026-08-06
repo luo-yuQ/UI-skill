@@ -1,0 +1,149 @@
+{
+  "schema_version": "1.0",
+  "request": {
+    "game_description": {
+      "title": "Sky Vanguard",
+      "genre": "portrait arcade flight shooter",
+      "gameplay_summary": "The player pilots a fighter aircraft through vertically scrolling combat stages.",
+      "core_interaction": "Tap the login button to enter the loading flow before gameplay.",
+      "audience": "casual mobile players",
+      "style_keywords": [
+        "atmospheric",
+        "arcade",
+        "high-contrast CTA"
+      ]
+    },
+    "page_request": {
+      "primary_page_id": "login",
+      "pages": [
+        {
+          "page_id": "login",
+          "page_type": "login",
+          "goal": "Introduce the game and provide one clear login action.",
+          "requirements": [
+            "Use the analyzed login background as a full-page visual base.",
+            "Place the login button at the bottom center.",
+            "Navigate to the loading page after the login button is activated."
+          ],
+          "priority": "primary"
+        },
+        {
+          "page_id": "loading",
+          "page_type": "loading",
+          "goal": "Provide a temporary destination while game resources are prepared.",
+          "requirements": [
+            "Show a minimal loading state without inventing unavailable image assets."
+          ],
+          "priority": "supporting"
+        }
+      ],
+      "flow_description": "The user starts on the login page and enters the loading page after activating the login button."
+    },
+    "orientation": "portrait",
+    "target_resolution": {
+      "width": 1080,
+      "height": 1920,
+      "unit": "px"
+    },
+    "constraints": [
+      "Do not obscure the castle silhouette in the upper center of the background.",
+      "Use only assets represented by the supplied asset analyses."
+    ],
+    "visual_preferences": [
+      "Keep the login page sparse.",
+      "Make the login button the strongest interactive element."
+    ]
+  },
+  "assets": [
+    {
+      "asset_analysis": {
+        "schema_version": "0.1",
+        "input_kind": "single_asset",
+        "asset_id": "login_bg_castle",
+        "file_name": "gray_castle_bg.png",
+        "source_hint": "Use this as the login background.",
+        "page_context": "login",
+        "asset_category": "background",
+        "visual_identity": "A tall castle scene surrounded by gray mist",
+        "intended_role": "login_background",
+        "visual_description": "A cool gray portrait composition with dense mist and a distant castle rising through the upper center, suitable for an atmospheric login page.",
+        "technical_metadata": {
+          "width": 1080,
+          "height": 1920,
+          "aspect_ratio": "9:16",
+          "format": "png",
+          "has_alpha": false
+        },
+        "layout_behavior": {
+          "stretchable": false,
+          "nine_slice_candidate": false,
+          "recommended_scale_mode": "cover",
+          "safe_overlay_note": "The lower area can support a compact action control.",
+          "protected_region_note": "Keep the castle silhouette in the upper-center area visible."
+        },
+        "laya_new_ui": {
+          "recommended_node_type": "Image",
+          "size_grid_candidate": null,
+          "usage_note": "Use as a full-page background with proportional coverage."
+        },
+        "confidence": 0.97,
+        "notes": []
+      },
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/gray_castle_bg.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "request_notes": [
+        "Use on the login page only."
+      ]
+    },
+    {
+      "asset_analysis": {
+        "schema_version": "0.1",
+        "input_kind": "single_asset",
+        "asset_id": "login_button_yellow",
+        "file_name": "yellow_login_button.png",
+        "source_hint": "Use this as the login button base.",
+        "page_context": "login",
+        "asset_category": "surface",
+        "visual_identity": "A bright yellow irregular horizontal button surface",
+        "intended_role": "login_button",
+        "visual_description": "A wide bright-yellow surface with irregular decorative edges and a clear central area suitable for a short login label.",
+        "technical_metadata": {
+          "width": 640,
+          "height": 180,
+          "aspect_ratio": "32:9",
+          "format": "png",
+          "has_alpha": true
+        },
+        "layout_behavior": {
+          "stretchable": true,
+          "nine_slice_candidate": true,
+          "recommended_scale_mode": "stretch",
+          "safe_overlay_note": "The center can carry a short text label.",
+          "protected_region_note": "Preserve the irregular outer edges when resizing."
+        },
+        "laya_new_ui": {
+          "recommended_node_type": "Button",
+          "size_grid_candidate": "manual_required",
+          "usage_note": "Use as the visual surface of the primary login action."
+        },
+        "confidence": 0.92,
+        "notes": [
+          "Exact nine-slice borders require downstream confirmation."
+        ]
+      },
+      "source_ref": {
+        "ref_type": "workspace_path",
+        "value": "user-assets/yellow_login_button.png",
+        "media_type": "image/png",
+        "checksum": null
+      },
+      "request_notes": [
+        "Place at the bottom center and treat as the primary action."
+      ]
+    }
+  ]
+}

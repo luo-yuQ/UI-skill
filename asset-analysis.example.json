@@ -1,0 +1,139 @@
+{
+  "schema_version": "0.1",
+  "samples": [
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "login_bg_castle",
+      "file_name": "gray_castle_bg.png",
+      "source_hint": "灰色的是登录的背景图",
+      "page_context": "login",
+      "asset_category": "background",
+      "visual_identity": "灰雾中的高耸城堡场景",
+      "intended_role": "login_background",
+      "visual_description": "冷灰色、雾气浓、竖向构图的城堡背景，主体是远处高耸建筑，适合营造登录页氛围。",
+      "layout_behavior": {
+        "stretchable": false,
+        "nine_slice_candidate": false,
+        "recommended_scale_mode": "cover",
+        "safe_overlay_note": "中下部可叠加登录按钮或文案。",
+        "protected_region_note": "中央偏上的城堡主体应尽量保持可见。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "Image",
+        "size_grid_candidate": null,
+        "usage_note": "适合作为全屏背景图。"
+      },
+      "confidence": 0.97,
+      "notes": []
+    },
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "login_panel_yellow",
+      "file_name": "yellow_irregular_surface.png",
+      "source_hint": "黄色不规则作为登录界面的底板",
+      "page_context": "login",
+      "asset_category": "surface",
+      "visual_identity": "黄色不规则长方形底板",
+      "intended_role": "login_panel_background",
+      "visual_description": "亮黄色、横向较长、边缘不规则的底板素材，可作为登录界面中按钮或面板的背景。",
+      "layout_behavior": {
+        "stretchable": true,
+        "nine_slice_candidate": true,
+        "recommended_scale_mode": "stretch",
+        "safe_overlay_note": "中央大面积区域可叠加按钮文案或提示信息。",
+        "protected_region_note": "不规则边缘是视觉特征，拉伸时应尽量保护边缘。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "Image",
+        "size_grid_candidate": "manual_required",
+        "usage_note": "可先作为底板 Image 使用，若后续验证合适可改九宫格。"
+      },
+      "confidence": 0.88,
+      "notes": [
+        "第一版只判断疑似九宫格，不自动给出精确 sizeGrid。"
+      ]
+    },
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "gameplay_bg_green",
+      "file_name": "green_gameplay_bg.png",
+      "source_hint": "绿色的是进入游戏后的背景图",
+      "page_context": "gameplay",
+      "asset_category": "background",
+      "visual_identity": "绿色卡通风地图场景背景",
+      "intended_role": "gameplay_background",
+      "visual_description": "绿色为主、偏卡通和模糊处理的竖向地图场景背景，适合作为进入游戏后的主场景背景。",
+      "layout_behavior": {
+        "stretchable": false,
+        "nine_slice_candidate": false,
+        "recommended_scale_mode": "cover",
+        "safe_overlay_note": "上方和中部可叠加 HUD 信息。",
+        "protected_region_note": "整体场景可被轻量 HUD 覆盖，无单一绝对不可遮挡主体。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "Image",
+        "size_grid_candidate": null,
+        "usage_note": "适合作为游戏场景背景图。"
+      },
+      "confidence": 0.96,
+      "notes": []
+    },
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "player_aircraft_orange",
+      "file_name": "orange_plane.png",
+      "source_hint": "橙色飞机是玩家的飞机",
+      "page_context": "gameplay",
+      "asset_category": "game_object",
+      "visual_identity": "橙色俯视飞机剪影",
+      "intended_role": "player_aircraft",
+      "visual_description": "单色橙黄色、俯视视角的飞机剪影，造型简洁清晰，适合作为玩家飞机对象。",
+      "layout_behavior": {
+        "stretchable": false,
+        "nine_slice_candidate": false,
+        "recommended_scale_mode": "none",
+        "safe_overlay_note": "不适合叠加文案，作为独立对象使用。",
+        "protected_region_note": "应保持完整比例和轮廓。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "Sprite",
+        "size_grid_candidate": null,
+        "usage_note": "更适合作为游戏对象或精灵使用，而不是 UI 底板。"
+      },
+      "confidence": 0.99,
+      "notes": []
+    },
+    {
+      "schema_version": "0.1",
+      "input_kind": "single_asset",
+      "asset_id": "health_bar_fill_yellow",
+      "file_name": "yellow_thin_bar.png",
+      "source_hint": "黄色细条作为血条",
+      "page_context": "hud",
+      "asset_category": "bar",
+      "visual_identity": "黄色细长矩形条",
+      "intended_role": "health_bar_fill",
+      "visual_description": "细长的横向黄色条形素材，轮廓规则，适合作为血条、进度条或状态条的填充部分。",
+      "layout_behavior": {
+        "stretchable": true,
+        "nine_slice_candidate": false,
+        "recommended_scale_mode": "stretch",
+        "safe_overlay_note": "通常作为填充层使用，不承载文案。",
+        "protected_region_note": "若需要保留两端视觉细节，应在实现层确认是否改用裁剪而非简单拉伸。"
+      },
+      "laya_new_ui": {
+        "recommended_node_type": "ProgressBar",
+        "size_grid_candidate": null,
+        "usage_note": "可作为 ProgressBar 的填充素材或前景层。"
+      },
+      "confidence": 0.93,
+      "notes": [
+        "如果后续发现两端存在需要保护的边缘细节，可在实现阶段改为裁剪或遮罩。"
+      ]
+    }
+  ]
+}

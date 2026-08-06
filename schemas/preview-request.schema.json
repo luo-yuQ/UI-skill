@@ -1,0 +1,306 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/preview-request.schema.json",
+  "title": "GPT Image Preview Request",
+  "description": "Provider-neutral request for a human or downstream service to create a concept preview from one page in a UI compose plan. This contract contains no API credentials or transport configuration.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generation_intent",
+    "source",
+    "prompt",
+    "reference_assets",
+    "composition_requirements",
+    "preserve_requirements",
+    "allowed_changes",
+    "avoid",
+    "output_spec",
+    "assumptions",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1"
+    },
+    "generation_intent": {
+      "$ref": "#/$defs/generation_intent"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "prompt": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Natural-language page-preview instructions. Do not serialize the source JSON into this field."
+    },
+    "reference_assets": {
+      "type": "array",
+      "description": "Ordered reference list. Array order and order values must match the reference-image numbering in prompt.",
+      "items": {
+        "$ref": "#/$defs/reference_asset"
+      }
+    },
+    "composition_requirements": {
+      "$ref": "#/$defs/non_empty_string_array"
+    },
+    "preserve_requirements": {
+      "$ref": "#/$defs/non_empty_string_array"
+    },
+    "allowed_changes": {
+      "$ref": "#/$defs/non_empty_string_array"
+    },
+    "avoid": {
+      "$ref": "#/$defs/non_empty_string_array"
+    },
+    "output_spec": {
+      "$ref": "#/$defs/output_spec"
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
+    },
+    "non_empty_string_array": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    },
+    "generation_intent": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "kind",
+        "fidelity",
+        "description"
+      ],
+      "properties": {
+        "kind": {
+          "type": "string",
+          "const": "page_concept_preview"
+        },
+        "fidelity": {
+          "type": "string",
+          "const": "concept"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_id",
+        "input_schema_version",
+        "plan_schema_version"
+      ],
+      "properties": {
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "input_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "plan_schema_version": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project_name": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opaque reference copied from ui-compose-input without opening or resolving it.",
+      "required": [
+        "ref_type",
+        "value"
+      ],
+      "properties": {
+        "ref_type": {
+          "type": "string",
+          "enum": [
+            "workspace_path",
+            "attachment_id",
+            "asset_uri",
+            "opaque_id"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "reference_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "order",
+        "asset_id",
+        "source_ref",
+        "component_id",
+        "usage",
+        "preservation_priority"
+      ],
+      "properties": {
+        "order": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "asset_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "usage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "preservation_priority": {
+          "type": "string",
+          "enum": [
+            "critical",
+            "high",
+            "medium",
+            "low"
+          ]
+        }
+      }
+    },
+    "output_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "orientation",
+        "target_width",
+        "target_height"
+      ],
+      "properties": {
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "portrait",
+            "landscape",
+            "square"
+          ]
+        },
+        "target_width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "target_height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assumption_id",
+        "statement",
+        "impact",
+        "confidence"
+      ],
+      "properties": {
+        "assumption_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "severity",
+        "message",
+        "related_ids"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "related_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}

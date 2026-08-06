@@ -1,0 +1,33 @@
+{
+  "success": true,
+  "provider": "ToAPIs",
+  "model": "gpt-image-2",
+  "task_id": "tsk_img_example",
+  "task_status": "completed",
+  "request_file": "preview-request.json",
+  "output_image": "output/login-preview.png",
+  "image_url": "https://files.example.invalid/images/login-preview.png",
+  "final_prompt": "Project:\nSky Vanguard\n\nPage:\nLogin\n\nPurpose:\nIntroduce the game and expose one clear login action\n\nReference assets:\n1. login_bg_castle\n   Role: Full-page background\n   Preserve:\n   - Fill the page while retaining the upper-center castle silhouette\n   - Keep the castle silhouette in the upper-center area visible\n\n2. login_button_yellow\n   Role: Primary login button\n   Preserve:\n   - Provide the visual surface of the primary login action at the bottom center\n   - Preserve the irregular decorative outer edges\n\nLayout:\n- Background fills the entire canvas.\n- Login button is positioned at bottom center and is about 58% of its parent width.\n- Only one interactive button is allowed.\n\nConstraints:\n- Do not add account forms.\n- Do not add social login buttons.\n- Do not add menus.\n- Do not add extra UI panels.\n- Do not add buttons, features, or page regions that are not present in the plan.\n- Do not turn clicks, navigation, or loading behavior into extra visible controls.\n- This is a concept preview, not an engineering screenshot.\n",
+  "reference_images": [
+    {
+      "order": 1,
+      "asset_id": "login_bg_castle",
+      "source_kind": "local_upload",
+      "resolved_url": "https://transfer-hk.example.invalid/d/login-bg.png"
+    },
+    {
+      "order": 2,
+      "asset_id": "login_button_yellow",
+      "source_kind": "local_upload",
+      "resolved_url": "https://transfer-hk.example.invalid/d/login-button.png"
+    }
+  ],
+  "payload_summary": {
+    "model": "gpt-image-2",
+    "type": "image",
+    "size": "1024x1536",
+    "n": 1,
+    "response_format": "url",
+    "images_count": 2
+  }
+}

@@ -1,0 +1,987 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/ui-compose-plan.schema.json",
+  "title": "UI Compose Plan",
+  "description": "Engine-neutral UI composition plan produced from structured asset analysis and a user request.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "project_context",
+    "visual_direction",
+    "pages",
+    "asset_usages",
+    "component_tree",
+    "layout_rules",
+    "interactions",
+    "navigation",
+    "missing_assets",
+    "assumptions",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "project_context": {
+      "$ref": "#/$defs/project_context"
+    },
+    "visual_direction": {
+      "$ref": "#/$defs/visual_direction"
+    },
+    "pages": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/page"
+      }
+    },
+    "asset_usages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/asset_usage"
+      }
+    },
+    "component_tree": {
+      "type": "array",
+      "minItems": 1,
+      "description": "Flat, ordered representation of all page trees. parent_id is null only for a page root.",
+      "items": {
+        "$ref": "#/$defs/component"
+      }
+    },
+    "layout_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/layout_rule"
+      }
+    },
+    "interactions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/interaction"
+      }
+    },
+    "navigation": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/navigation_rule"
+      }
+    },
+    "missing_assets": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/missing_asset"
+      }
+    },
+    "assumptions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/assumption"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/warning"
+      }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
+    },
+    "target_resolution": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "unit"
+      ],
+      "properties": {
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "unit": {
+          "type": "string",
+          "const": "px"
+        }
+      }
+    },
+    "source_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "Opaque reference retained only for downstream retrieval of the original asset.",
+      "required": [
+        "ref_type",
+        "value"
+      ],
+      "properties": {
+        "ref_type": {
+          "type": "string",
+          "enum": [
+            "workspace_path",
+            "attachment_id",
+            "asset_uri",
+            "opaque_id"
+          ]
+        },
+        "value": {
+          "type": "string",
+          "minLength": 1
+        },
+        "media_type": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "checksum": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "project_context": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "project_name",
+        "game_description",
+        "orientation",
+        "target_resolution",
+        "page_scope"
+      ],
+      "properties": {
+        "project_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "game_description": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "genre",
+            "gameplay_summary"
+          ],
+          "properties": {
+            "genre": {
+              "type": "string",
+              "minLength": 1
+            },
+            "gameplay_summary": {
+              "type": "string",
+              "minLength": 1
+            },
+            "core_interaction": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "audience": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "orientation": {
+          "type": "string",
+          "enum": [
+            "portrait",
+            "landscape",
+            "square"
+          ]
+        },
+        "target_resolution": {
+          "$ref": "#/$defs/target_resolution"
+        },
+        "page_scope": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "constraints": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true,
+          "default": []
+        }
+      }
+    },
+    "palette_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "value",
+        "usage"
+      ],
+      "properties": {
+        "role": {
+          "$ref": "#/$defs/identifier"
+        },
+        "value": {
+          "type": "string",
+          "pattern": "^#[0-9A-Fa-f]{6}$"
+        },
+        "usage": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "visual_direction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "summary",
+        "style_keywords",
+        "palette",
+        "hierarchy_principles",
+        "asset_style_notes"
+      ],
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1
+        },
+        "style_keywords": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        },
+        "palette": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/palette_entry"
+          }
+        },
+        "hierarchy_principles": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "asset_style_notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "page_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state_id",
+        "description"
+      ],
+      "properties": {
+        "state_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "is_initial": {
+          "type": "boolean",
+          "default": false
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_id",
+        "page_type",
+        "purpose",
+        "root_component_id",
+        "states",
+        "entry_conditions",
+        "exit_conditions"
+      ],
+      "properties": {
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "page_type": {
+          "type": "string",
+          "enum": [
+            "login",
+            "loading",
+            "home",
+            "main_menu",
+            "gameplay",
+            "hud",
+            "settings",
+            "result",
+            "mode_select",
+            "level_select",
+            "popup",
+            "other"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "root_component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "states": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/page_state"
+          }
+        },
+        "entry_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "exit_conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "asset_usage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usage_id",
+        "asset_id",
+        "source_ref",
+        "page_id",
+        "component_id",
+        "semantic_role",
+        "usage_intent",
+        "fit_mode",
+        "resizing_policy",
+        "visual_priority",
+        "analysis_confidence"
+      ],
+      "properties": {
+        "usage_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "asset_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "source_ref": {
+          "$ref": "#/$defs/source_ref"
+        },
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "semantic_role": {
+          "$ref": "#/$defs/identifier"
+        },
+        "usage_intent": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fit_mode": {
+          "type": "string",
+          "enum": [
+            "cover",
+            "contain",
+            "stretch",
+            "tile",
+            "native",
+            "crop",
+            "unknown"
+          ]
+        },
+        "crop_intent": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "resizing_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "stretch_allowed",
+            "slice_scaling",
+            "protected_region_note"
+          ],
+          "properties": {
+            "stretch_allowed": {
+              "type": "boolean"
+            },
+            "slice_scaling": {
+              "type": "string",
+              "enum": [
+                "not_applicable",
+                "candidate",
+                "recommended",
+                "manual_confirmation"
+              ]
+            },
+            "protected_region_note": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "visual_priority": {
+          "type": "string",
+          "enum": [
+            "background",
+            "supporting",
+            "primary",
+            "critical"
+          ]
+        },
+        "visible_in_states": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true,
+          "default": []
+        },
+        "analysis_confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "component_content": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "localization_key": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "accessibility_label": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "component": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "component_id",
+        "page_id",
+        "parent_id",
+        "name",
+        "semantic_type",
+        "order",
+        "asset_usage_ids",
+        "state_ids"
+      ],
+      "properties": {
+        "component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "parent_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "semantic_type": {
+          "type": "string",
+          "enum": [
+            "page_root",
+            "container",
+            "visual",
+            "button",
+            "text",
+            "progress",
+            "status",
+            "overlay",
+            "decoration",
+            "spacer",
+            "custom"
+          ]
+        },
+        "order": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "asset_usage_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "state_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "content": {
+          "$ref": "#/$defs/component_content"
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "normalized_point": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y"
+      ],
+      "properties": {
+        "x": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        },
+        "y": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "relative_dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "width",
+        "height",
+        "unit"
+      ],
+      "properties": {
+        "width": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "height": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        },
+        "unit": {
+          "type": "string",
+          "enum": [
+            "normalized_parent",
+            "logical_pixel"
+          ]
+        }
+      }
+    },
+    "layout_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule_id",
+        "page_id",
+        "component_id",
+        "relative_to",
+        "anchor",
+        "pivot",
+        "position",
+        "dimensions",
+        "stack_order",
+        "safe_area_policy",
+        "notes"
+      ],
+      "properties": {
+        "rule_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "relative_to": {
+          "type": "string",
+          "enum": [
+            "canvas",
+            "safe_area",
+            "parent"
+          ]
+        },
+        "anchor": {
+          "type": "string",
+          "enum": [
+            "top_left",
+            "top_center",
+            "top_right",
+            "center_left",
+            "center",
+            "center_right",
+            "bottom_left",
+            "bottom_center",
+            "bottom_right",
+            "stretch"
+          ]
+        },
+        "pivot": {
+          "$ref": "#/$defs/normalized_point"
+        },
+        "position": {
+          "$ref": "#/$defs/normalized_point"
+        },
+        "dimensions": {
+          "$ref": "#/$defs/relative_dimensions"
+        },
+        "stack_order": {
+          "type": "integer"
+        },
+        "safe_area_policy": {
+          "type": "string",
+          "enum": [
+            "inside",
+            "may_extend",
+            "full_bleed",
+            "not_applicable"
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "state_change": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "target_id",
+        "from_state",
+        "to_state"
+      ],
+      "properties": {
+        "target_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "from_state": {
+          "$ref": "#/$defs/identifier"
+        },
+        "to_state": {
+          "$ref": "#/$defs/identifier"
+        }
+      }
+    },
+    "interaction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "interaction_id",
+        "page_id",
+        "trigger_component_id",
+        "trigger",
+        "action",
+        "conditions",
+        "state_changes"
+      ],
+      "properties": {
+        "interaction_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "trigger_component_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "trigger": {
+          "type": "string",
+          "enum": [
+            "tap",
+            "click",
+            "press",
+            "release",
+            "long_press",
+            "submit",
+            "value_change",
+            "automatic"
+          ]
+        },
+        "action": {
+          "$ref": "#/$defs/identifier"
+        },
+        "conditions": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "state_changes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/state_change"
+          }
+        },
+        "navigation_id": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/identifier"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "feedback": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "navigation_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "navigation_id",
+        "from_page_id",
+        "to_page_id",
+        "trigger_interaction_id",
+        "transition_style",
+        "history_behavior"
+      ],
+      "properties": {
+        "navigation_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "from_page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "to_page_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "trigger_interaction_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "transition_style": {
+          "type": "string",
+          "enum": [
+            "immediate",
+            "fade",
+            "slide",
+            "overlay",
+            "custom"
+          ]
+        },
+        "transition_duration_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "history_behavior": {
+          "type": "string",
+          "enum": [
+            "push",
+            "replace",
+            "clear"
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "default": []
+        }
+      }
+    },
+    "missing_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "missing_asset_id",
+        "needed_for",
+        "description",
+        "severity",
+        "fallback"
+      ],
+      "properties": {
+        "missing_asset_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "needed_for": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        },
+        "description": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "blocker",
+            "important",
+            "optional"
+          ]
+        },
+        "fallback": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      }
+    },
+    "assumption": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "assumption_id",
+        "statement",
+        "impact",
+        "confidence"
+      ],
+      "properties": {
+        "assumption_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "statement": {
+          "type": "string",
+          "minLength": 1
+        },
+        "impact": {
+          "type": "string",
+          "minLength": 1
+        },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "warning": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "warning_id",
+        "severity",
+        "message",
+        "related_ids"
+      ],
+      "properties": {
+        "warning_id": {
+          "$ref": "#/$defs/identifier"
+        },
+        "severity": {
+          "type": "string",
+          "enum": [
+            "info",
+            "warning",
+            "error"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "related_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          },
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
