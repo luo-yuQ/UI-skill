@@ -1,6 +1,278 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "title": "B2 Style Profile (Placeholder)",
-  "description": "Placeholder for B2 style profile schema. To be defined in a later task.",
-  "type": "object"
+  "$id": "https://example.com/schemas/style-profile.schema.json",
+  "title": "B2 Multi-Reference Style Profile",
+  "description": "Evidence-driven, traceable, non-prescriptive synthesis of two to six valid B1 v0.2 asset analyses. The profile describes cross-reference visual identity without containing source-image bytes, provider parameters, engine node types, or UI design recommendations.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "profile_id",
+    "source_analyses",
+    "overall_visual_identity",
+    "visual_profiles",
+    "cross_dimension_summary",
+    "unresolved_conflicts",
+    "uncertainties",
+    "overall_confidence",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "0.1",
+      "description": "B2 style-profile protocol version."
+    },
+    "profile_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "Stable identifier for this synthesized profile."
+    },
+    "source_analyses": {
+      "type": "array",
+      "description": "Traceable identities of the validated B1 v0.2 analyses consumed by B2.",
+      "items": {"$ref": "#/$defs/source_analysis"},
+      "minItems": 2,
+      "maxItems": 6,
+      "uniqueItems": true
+    },
+    "overall_visual_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Concise overall identity supported primarily by stable and secondary cross-reference evidence. State unresolved instability instead of forcing a unified identity."
+    },
+    "visual_profiles": {
+      "type": "object",
+      "description": "Cross-reference trait classifications for the six B1 visual-language dimensions plus world/theme context.",
+      "additionalProperties": false,
+      "required": [
+        "color_profile",
+        "material_profile",
+        "shape_profile",
+        "rendering_profile",
+        "lighting_profile",
+        "decoration_profile",
+        "world_visual_profile"
+      ],
+      "properties": {
+        "color_profile": {"$ref": "#/$defs/dimension_profile"},
+        "material_profile": {"$ref": "#/$defs/dimension_profile"},
+        "shape_profile": {"$ref": "#/$defs/dimension_profile"},
+        "rendering_profile": {"$ref": "#/$defs/dimension_profile"},
+        "lighting_profile": {"$ref": "#/$defs/dimension_profile"},
+        "decoration_profile": {"$ref": "#/$defs/dimension_profile"},
+        "world_visual_profile": {"$ref": "#/$defs/dimension_profile"}
+      }
+    },
+    "cross_dimension_summary": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Concise description of how supported visual dimensions combine. Do not convert the relationship into UI or asset-usage advice."
+    },
+    "unresolved_conflicts": {
+      "type": "array",
+      "description": "Conflicts that remain visible after normalization and any user-context interpretation.",
+      "items": {"$ref": "#/$defs/unresolved_conflict"},
+      "uniqueItems": true
+    },
+    "uncertainties": {
+      "type": "array",
+      "description": "Profile-level questions that the available B1 evidence cannot classify reliably.",
+      "items": {"$ref": "#/$defs/profile_uncertainty"},
+      "uniqueItems": true
+    },
+    "user_group_context": {
+      "type": ["object", "null"],
+      "description": "Optional caller/user-provided context for weighting or interpreting this reference group. It may not overwrite B1 facts or erase provenance.",
+      "additionalProperties": false,
+      "required": ["source", "statement", "affected_references", "weighting_effect"],
+      "properties": {
+        "source": {"type": "string", "const": "user_provided", "description": "Provenance label for group context."},
+        "statement": {"type": "string", "minLength": 1, "description": "The group-level context supplied by the caller/user."},
+        "affected_references": {"$ref": "#/$defs/reference_array"},
+        "weighting_effect": {"type": "string", "minLength": 1, "description": "Transparent description of how the context affected evidence weighting without changing source facts."}
+      }
+    },
+    "overall_confidence": {
+      "$ref": "#/$defs/confidence",
+      "description": "Confidence in the overall profile after considering source confidence, reference diversity, consistency, conflicts, and uncertainty."
+    },
+    "notes": {
+      "type": "array",
+      "description": "Concise non-prescriptive profile notes.",
+      "items": {"type": "string"}
+    }
+  },
+  "$defs": {
+    "asset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "Asset ID copied from a source B1 analysis."
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Evidence-based confidence from 0 through 1."
+    },
+    "reference_array": {
+      "type": "array",
+      "description": "Unique B1 asset IDs used as provenance.",
+      "items": {"$ref": "#/$defs/asset_id"},
+      "uniqueItems": true
+    },
+    "non_empty_reference_array": {
+      "type": "array",
+      "description": "One or more unique B1 asset IDs used as provenance.",
+      "items": {"$ref": "#/$defs/asset_id"},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "source_analysis": {
+      "type": "object",
+      "description": "Identity and confidence retained from one validated B1 input.",
+      "additionalProperties": false,
+      "required": ["asset_id", "source_ref", "reference_kind", "analysis_schema_version", "confidence"],
+      "properties": {
+        "asset_id": {"$ref": "#/$defs/asset_id"},
+        "source_ref": {"type": "string", "minLength": 1, "description": "Source reference copied unchanged from B1."},
+        "reference_kind": {"type": "string", "enum": ["character_art", "environment_art", "ui_art", "concept_art", "illustration", "isolated_asset", "mixed_scene", "promotional_art", "other"], "description": "Reference kind copied from B1."},
+        "analysis_schema_version": {"type": "string", "const": "0.2", "description": "Required frozen B1 schema version."},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "stable_trait": {
+      "type": "object",
+      "description": "Trait with strong, diverse, consistent cross-reference support.",
+      "additionalProperties": false,
+      "required": ["trait_id", "trait", "classification", "description", "supporting_references", "contradicting_references", "confidence"],
+      "properties": {
+        "trait_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "trait": {"type": "string", "minLength": 1},
+        "classification": {"type": "string", "const": "stable"},
+        "description": {"type": "string", "minLength": 1},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "contradicting_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "secondary_trait": {
+      "type": "object",
+      "description": "Trait with cross-reference support weaker or less diverse than a stable trait.",
+      "additionalProperties": false,
+      "required": ["trait_id", "trait", "classification", "description", "supporting_references", "contradicting_references", "confidence"],
+      "properties": {
+        "trait_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "trait": {"type": "string", "minLength": 1},
+        "classification": {"type": "string", "const": "secondary"},
+        "description": {"type": "string", "minLength": 1},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "contradicting_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "local_trait": {
+      "type": "object",
+      "description": "Trait limited to one reference, subject, scene, asset class, or local content cluster.",
+      "additionalProperties": false,
+      "required": ["trait_id", "trait", "classification", "description", "supporting_references", "contradicting_references", "confidence"],
+      "properties": {
+        "trait_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "trait": {"type": "string", "minLength": 1},
+        "classification": {"type": "string", "const": "local"},
+        "description": {"type": "string", "minLength": 1},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "contradicting_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "uncertain_trait": {
+      "type": "object",
+      "description": "Trait whose evidence is insufficient, ambiguous, low-confidence, or not reliably normalizable.",
+      "additionalProperties": false,
+      "required": ["trait_id", "trait", "classification", "description", "supporting_references", "contradicting_references", "confidence"],
+      "properties": {
+        "trait_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "trait": {"type": "string", "minLength": 1},
+        "classification": {"type": "string", "const": "uncertain"},
+        "description": {"type": "string", "minLength": 1},
+        "supporting_references": {"$ref": "#/$defs/reference_array"},
+        "contradicting_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "conflict_alternative": {
+      "type": "object",
+      "description": "One evidence-backed side of a conflicting trait.",
+      "additionalProperties": false,
+      "required": ["trait", "supporting_references", "confidence"],
+      "properties": {
+        "trait": {"type": "string", "minLength": 1},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "conflicting_trait": {
+      "type": "object",
+      "description": "Cross-reference evidence that cannot be responsibly merged into one trait.",
+      "additionalProperties": false,
+      "required": ["trait_id", "trait", "classification", "description", "alternatives", "supporting_references", "contradicting_references", "confidence"],
+      "properties": {
+        "trait_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "trait": {"type": "string", "minLength": 1},
+        "classification": {"type": "string", "const": "conflicting"},
+        "description": {"type": "string", "minLength": 1},
+        "alternatives": {"type": "array", "items": {"$ref": "#/$defs/conflict_alternative"}, "minItems": 2, "uniqueItems": true},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "contradicting_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"},
+        "evidence_summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "dimension_profile": {
+      "type": "object",
+      "description": "One visual dimension classified into five explicit evidence states. Any array may be empty when unsupported.",
+      "additionalProperties": false,
+      "required": ["stable", "secondary", "local", "conflicting", "uncertain"],
+      "properties": {
+        "stable": {"type": "array", "items": {"$ref": "#/$defs/stable_trait"}},
+        "secondary": {"type": "array", "items": {"$ref": "#/$defs/secondary_trait"}},
+        "local": {"type": "array", "items": {"$ref": "#/$defs/local_trait"}},
+        "conflicting": {"type": "array", "items": {"$ref": "#/$defs/conflicting_trait"}},
+        "uncertain": {"type": "array", "items": {"$ref": "#/$defs/uncertain_trait"}}
+      }
+    },
+    "unresolved_conflict": {
+      "type": "object",
+      "description": "Profile-level record of a conflict that remains unresolved.",
+      "additionalProperties": false,
+      "required": ["conflict_id", "dimension", "description", "conflicting_traits", "supporting_references", "status", "confidence"],
+      "properties": {
+        "conflict_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "dimension": {"type": "string", "enum": ["color", "material", "shape", "rendering", "lighting", "decoration", "world_visual"]},
+        "description": {"type": "string", "minLength": 1},
+        "conflicting_traits": {"type": "array", "items": {"type": "string", "minLength": 1}, "minItems": 2, "uniqueItems": true},
+        "supporting_references": {"$ref": "#/$defs/non_empty_reference_array"},
+        "status": {"type": "string", "const": "unresolved"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "profile_uncertainty": {
+      "type": "object",
+      "description": "Profile-level uncertainty retained instead of forced classification.",
+      "additionalProperties": false,
+      "required": ["uncertainty_id", "topic", "description", "related_references", "confidence"],
+      "properties": {
+        "uncertainty_id": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+        "topic": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "related_references": {"$ref": "#/$defs/reference_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    }
+  }
 }

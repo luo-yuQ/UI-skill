@@ -1,0 +1,101 @@
+{
+  "schema_version": "0.2",
+  "input_kind": "single_reference",
+  "asset_id": "existing_ui_panel_01",
+  "source_ref": "user-reference-ui-01",
+  "file_name": "existing_game_ui_panel.png",
+  "page_context": "main_menu",
+  "reference_kind": "ui_art",
+  "asset_category": "ui",
+  "visual_identity": "An existing dark game UI panel with silver trim",
+  "visual_description": "A dark blue-gray interface panel uses black central surfaces, silver border segments, pointed corner caps, and small blue-white luminous indicators. A single red circular badge appears near one label. The rendering is flatter and more stylized than the character and environment references.",
+  "visual_language": {
+    "color": {
+      "dominant_colors": ["low-saturation blue-gray", "near-black"],
+      "secondary_colors": ["silver-white"],
+      "accent_colors": ["blue-white", "localized red"],
+      "saturation": "low",
+      "value_tendency": "dark",
+      "temperature": "cool",
+      "contrast": "high",
+      "relationships": ["dark panel fields are separated by silver trim and small blue-white indicators"],
+      "confidence": 0.96
+    },
+    "material": {
+      "materials": [
+        {"name": "black iron-like surface", "qualities": ["hard", "matte", "clean"]},
+        {"name": "silver metal trim", "qualities": ["hard", "reflective", "clean"]},
+        {"name": "blue crystal", "qualities": ["hard", "translucent"]}
+      ],
+      "overall_tendencies": ["clean hard surfaces", "dark matte fields with reflective trim"],
+      "confidence": 0.84
+    },
+    "shape": {
+      "dominant_traits": ["sharp", "slender", "geometric", "horizontal", "complex_silhouette"],
+      "description": "Pointed corner caps, narrow border segments, and angular separators repeat across the panel.",
+      "confidence": 0.93
+    },
+    "rendering": {
+      "primary_style": "cel_shaded",
+      "secondary_traits": ["stylized interface illustration", "flat value grouping"],
+      "outline_strength": "medium",
+      "texture_density": "low",
+      "surface_detail_density": "medium",
+      "gradient_usage": "minimal",
+      "visible_brushwork": "absent",
+      "confidence": 0.9
+    },
+    "lighting": {
+      "exposure": "low_key",
+      "ambient_character": "dark neutral panel field with cool highlights",
+      "dominant_direction": null,
+      "hardness": "hard",
+      "rim_light": "absent",
+      "bloom": "present",
+      "local_emissive": "present",
+      "atmospheric_lighting": "absent",
+      "highlight_intensity": "high",
+      "shadow_depth": "medium",
+      "confidence": 0.9
+    },
+    "decoration": {
+      "motifs": ["restrained gothic corner caps", "small crystal markers"],
+      "density": "sparse",
+      "symmetry": "symmetric",
+      "scale": "small",
+      "tendency": "restrained",
+      "confidence": 0.86
+    }
+  },
+  "world_visual_context": {
+    "themes": ["dark fantasy"],
+    "era_cues": [],
+    "technology_cues": [],
+    "magic_cues": ["blue-white crystal indicators"],
+    "faction_or_character_cues": [],
+    "evidence": [
+      {"source": "observed", "statement": "The panel contains pointed silver trim and blue-white crystal indicators.", "confidence": 0.96},
+      {"source": "inferred", "statement": "These motifs may carry dark-fantasy visual context into the existing UI art.", "confidence": 0.78}
+    ],
+    "confidence": 0.8
+  },
+  "style_candidates": [
+    {"trait": "low-saturation cool blue-gray palette", "evidence": [{"source": "observed", "statement": "Blue-gray and near-black dominate the panel surfaces.", "confidence": 0.97}], "confidence": 0.95},
+    {"trait": "silver and black metallic surface language", "evidence": [{"source": "observed", "statement": "Black hard surfaces and silver trim recur throughout the panel.", "confidence": 0.93}], "confidence": 0.9},
+    {"trait": "sharp elongated silhouettes", "evidence": [{"source": "observed", "statement": "Pointed caps and narrow separators repeat across the panel art.", "confidence": 0.94}], "confidence": 0.91},
+    {"trait": "localized blue-white light accents", "evidence": [{"source": "observed", "statement": "Small blue-white indicators punctuate the dark surfaces.", "confidence": 0.95}], "confidence": 0.92},
+    {"trait": "restrained gothic ornament", "evidence": [{"source": "inferred", "statement": "Pointed corner caps and sparse crystal markers suggest restrained gothic ornament.", "confidence": 0.77}], "confidence": 0.76}
+  ],
+  "content_specific_traits": [
+    {"trait": "the current red notification badge", "evidence": [{"source": "observed", "statement": "One red circular badge appears beside a label.", "confidence": 0.99}], "confidence": 0.98}
+  ],
+  "evidence": [
+    {"source": "observed", "statement": "The UI art uses dark blue-gray surfaces, silver trim, angular forms, and blue-white indicators.", "confidence": 0.96},
+    {"source": "inferred", "statement": "The flatter shading indicates a stylized rendering approach distinct from the other references.", "confidence": 0.88}
+  ],
+  "uncertainties": [
+    {"topic": "rendering consistency", "reason": "This UI reference is visibly flatter than the character and environment art, but B1 cannot compare them."}
+  ],
+  "confidence": 0.9,
+  "notes": ["This analysis describes existing UI art and does not provide page design advice."]
+}

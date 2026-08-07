@@ -1,4 +1,222 @@
 {
-  "_placeholder": true,
-  "_note": "B2 style profile example will be defined after the schema is designed."
+  "schema_version": "0.1",
+  "profile_id": "dark_fantasy_reference_profile_01",
+  "source_analyses": [
+    {
+      "asset_id": "knight_character_01",
+      "source_ref": "user-reference-character-01",
+      "reference_kind": "character_art",
+      "analysis_schema_version": "0.2",
+      "confidence": 0.91
+    },
+    {
+      "asset_id": "castle_environment_01",
+      "source_ref": "user-reference-environment-01",
+      "reference_kind": "environment_art",
+      "analysis_schema_version": "0.2",
+      "confidence": 0.92
+    },
+    {
+      "asset_id": "existing_ui_panel_01",
+      "source_ref": "user-reference-ui-01",
+      "reference_kind": "ui_art",
+      "analysis_schema_version": "0.2",
+      "confidence": 0.9
+    }
+  ],
+  "overall_visual_identity": "The reference set consistently presents a low-saturation cool blue-gray dark-fantasy identity with silver-black hard surfaces, sharp elongated forms, and localized blue-white light. Restrained gothic ornament has moderate cross-reference support, while rendering differs between semi-realistic art and flatter stylized UI art.",
+  "visual_profiles": {
+    "color_profile": {
+      "stable": [
+        {
+          "trait_id": "color_cool_blue_gray",
+          "trait": "low-saturation cool blue-gray palette",
+          "classification": "stable",
+          "description": "Cool blue-gray and near-black dominate all three independent reference kinds, with silver-white secondary values.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.95,
+          "evidence_summary": "Character, environment, and UI analyses independently report low-saturation cool blue-gray dominance."
+        }
+      ],
+      "secondary": [],
+      "local": [
+        {
+          "trait_id": "color_local_red",
+          "trait": "localized red content accents",
+          "classification": "local",
+          "description": "Red appears on one character cape and one UI badge, both recorded as content-specific rather than global color evidence.",
+          "supporting_references": ["knight_character_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.86,
+          "evidence_summary": "Both red instances belong to specific subjects or objects."
+        }
+      ],
+      "conflicting": [],
+      "uncertain": []
+    },
+    "material_profile": {
+      "stable": [
+        {
+          "trait_id": "material_silver_black_hard_surfaces",
+          "trait": "silver and black hard-surface language",
+          "classification": "stable",
+          "description": "Silver metal and black iron or iron-like surfaces recur in character armor, fortress fixtures, and existing UI art.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.9,
+          "evidence_summary": "The material evidence spans character, environment, and UI reference kinds."
+        }
+      ],
+      "secondary": [
+        {
+          "trait_id": "material_heavy_matte_bases",
+          "trait": "heavy matte base surfaces",
+          "classification": "secondary",
+          "description": "Matte black iron, dark stone, and dark panel fields recur, but their physical identity varies by reference kind.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.78
+        }
+      ],
+      "local": [],
+      "conflicting": [],
+      "uncertain": []
+    },
+    "shape_profile": {
+      "stable": [
+        {
+          "trait_id": "shape_sharp_elongated",
+          "trait": "sharp elongated silhouettes",
+          "classification": "stable",
+          "description": "Pointed armor plates, tall fortress forms, and narrow angular UI borders repeat across diverse references.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.94,
+          "evidence_summary": "Independent character, environment, and UI evidence supports the same contour tendency."
+        }
+      ],
+      "secondary": [],
+      "local": [],
+      "conflicting": [],
+      "uncertain": []
+    },
+    "rendering_profile": {
+      "stable": [],
+      "secondary": [],
+      "local": [],
+      "conflicting": [
+        {
+          "trait_id": "rendering_approach_conflict",
+          "trait": "semi-realistic versus stylized cel-shaded rendering",
+          "classification": "conflicting",
+          "description": "Character and environment art use semi-realistic digital painting, while the existing UI art uses flatter cel-shaded value grouping.",
+          "alternatives": [
+            {
+              "trait": "semi-realistic digital painting",
+              "supporting_references": ["knight_character_01", "castle_environment_01"],
+              "confidence": 0.9
+            },
+            {
+              "trait": "stylized cel-shaded interface rendering",
+              "supporting_references": ["existing_ui_panel_01"],
+              "confidence": 0.9
+            }
+          ],
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.92,
+          "evidence_summary": "The difference is explicit in the B1 rendering fields and cannot be reduced to wording variance."
+        }
+      ],
+      "uncertain": []
+    },
+    "lighting_profile": {
+      "stable": [
+        {
+          "trait_id": "lighting_blue_white_local",
+          "trait": "localized blue-white light accents",
+          "classification": "stable",
+          "description": "Small blue-white luminous regions recur against low-key dark fields in all reference kinds.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.91,
+          "evidence_summary": "Weapon edges, fortress windows or markers, and UI indicators provide diverse support."
+        }
+      ],
+      "secondary": [],
+      "local": [],
+      "conflicting": [],
+      "uncertain": []
+    },
+    "decoration_profile": {
+      "stable": [],
+      "secondary": [
+        {
+          "trait_id": "decoration_restrained_gothic",
+          "trait": "restrained gothic ornament",
+          "classification": "secondary",
+          "description": "Engraving, arches, finials, pointed corner caps, and sparse crystals recur, but expression and confidence vary by reference kind.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.82,
+          "evidence_summary": "The motif family recurs across all sources but is less uniform than color, shape, or lighting."
+        }
+      ],
+      "local": [],
+      "conflicting": [],
+      "uncertain": []
+    },
+    "world_visual_profile": {
+      "stable": [
+        {
+          "trait_id": "world_dark_fantasy",
+          "trait": "dark-fantasy visual context",
+          "classification": "stable",
+          "description": "Knight armor, fortress architecture, gothic motifs, and blue-white magical cues provide diverse dark-fantasy support.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.86
+        }
+      ],
+      "secondary": [],
+      "local": [],
+      "conflicting": [],
+      "uncertain": [
+        {
+          "trait_id": "world_magic_technology_balance",
+          "trait": "balance between magical and technological cues",
+          "classification": "uncertain",
+          "description": "Blue-white indicators appear across sources, but the B1 evidence does not establish whether they are uniformly magical or partly technological.",
+          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "contradicting_references": [],
+          "confidence": 0.48,
+          "evidence_summary": "The visible cues are consistent in color but ambiguous in world meaning."
+        }
+      ]
+    }
+  },
+  "cross_dimension_summary": "Cool low-saturation color, silver-black hard surfaces, sharp elongated forms, restrained gothic motifs, and localized blue-white light combine into a cold, heavy dark-fantasy expression. Rendering remains split between semi-realistic source art and flatter stylized UI art.",
+  "unresolved_conflicts": [
+    {
+      "conflict_id": "conflict_rendering_01",
+      "dimension": "rendering",
+      "description": "The current evidence does not establish one stable rendering treatment across source art and existing UI art.",
+      "conflicting_traits": ["semi-realistic digital painting", "stylized cel-shaded interface rendering"],
+      "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+      "status": "unresolved",
+      "confidence": 0.92
+    }
+  ],
+  "uncertainties": [
+    {
+      "uncertainty_id": "uncertainty_magic_technology_01",
+      "topic": "meaning of blue-white indicators",
+      "description": "The shared blue-white light is visually stable, but its world-level interpretation remains ambiguous.",
+      "related_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+      "confidence": 0.48
+    }
+  ],
+  "overall_confidence": 0.84,
+  "notes": ["Classification considers reference-kind diversity, source confidence, content specificity, consistency, and unresolved conflict rather than frequency alone."]
 }

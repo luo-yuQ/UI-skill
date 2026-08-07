@@ -1,0 +1,101 @@
+{
+  "schema_version": "0.2",
+  "input_kind": "single_reference",
+  "asset_id": "castle_environment_01",
+  "source_ref": "user-reference-environment-01",
+  "file_name": "blue_gray_gothic_castle.jpg",
+  "page_context": "unknown",
+  "reference_kind": "environment_art",
+  "asset_category": "environment",
+  "visual_identity": "A blue-gray stone fortress with black iron gates",
+  "visual_description": "A large stone fortress rises through cool blue-gray fog. Tall pointed towers, narrow windows, black iron gates, and small silver fixtures repeat across the architecture. Blue-white light appears in a few windows and along distant magical markers.",
+  "visual_language": {
+    "color": {
+      "dominant_colors": ["low-saturation blue-gray", "charcoal"],
+      "secondary_colors": ["silver-gray"],
+      "accent_colors": ["blue-white"],
+      "saturation": "low",
+      "value_tendency": "dark",
+      "temperature": "cool",
+      "contrast": "medium",
+      "relationships": ["charcoal structures sit within blue-gray atmosphere with sparse blue-white points"],
+      "confidence": 0.94
+    },
+    "material": {
+      "materials": [
+        {"name": "dark stone", "qualities": ["rough", "matte", "heavy", "worn"]},
+        {"name": "black iron", "qualities": ["hard", "matte", "heavy"]},
+        {"name": "silver metal", "qualities": ["hard", "reflective"]}
+      ],
+      "overall_tendencies": ["heavy masonry", "dark hard surfaces", "limited reflective metal"],
+      "confidence": 0.9
+    },
+    "shape": {
+      "dominant_traits": ["sharp", "slender", "vertical", "symmetric", "complex_silhouette"],
+      "description": "Pointed roofs, narrow towers, and repeated vertical windows dominate the fortress forms.",
+      "confidence": 0.95
+    },
+    "rendering": {
+      "primary_style": "semi_realistic",
+      "secondary_traits": ["digital painting", "atmospheric depth"],
+      "outline_strength": "none",
+      "texture_density": "high",
+      "surface_detail_density": "high",
+      "gradient_usage": "moderate",
+      "visible_brushwork": "subtle",
+      "confidence": 0.9
+    },
+    "lighting": {
+      "exposure": "low_key",
+      "ambient_character": "diffuse cool atmospheric light",
+      "dominant_direction": null,
+      "hardness": "soft",
+      "rim_light": "absent",
+      "bloom": "present",
+      "local_emissive": "present",
+      "atmospheric_lighting": "present",
+      "highlight_intensity": "medium",
+      "shadow_depth": "deep",
+      "confidence": 0.86
+    },
+    "decoration": {
+      "motifs": ["gothic arches", "pointed finials", "restrained carved stone bands"],
+      "density": "medium",
+      "symmetry": "symmetric",
+      "scale": "large",
+      "tendency": "restrained",
+      "confidence": 0.9
+    }
+  },
+  "world_visual_context": {
+    "themes": ["medieval fantasy", "dark fantasy"],
+    "era_cues": ["fortress architecture", "iron gates"],
+    "technology_cues": [],
+    "magic_cues": ["blue-white window and marker light"],
+    "faction_or_character_cues": [],
+    "evidence": [
+      {"source": "observed", "statement": "Pointed stone towers, iron gates, and sparse blue-white light are visible.", "confidence": 0.97},
+      {"source": "inferred", "statement": "The environment suggests a medieval dark-fantasy setting.", "confidence": 0.86}
+    ],
+    "confidence": 0.88
+  },
+  "style_candidates": [
+    {"trait": "low-saturation cool blue-gray palette", "evidence": [{"source": "observed", "statement": "Cool blue-gray and charcoal dominate the environment.", "confidence": 0.96}], "confidence": 0.94},
+    {"trait": "silver and black hard surfaces", "evidence": [{"source": "observed", "statement": "Black iron and limited silver fixtures recur against dark stone.", "confidence": 0.91}], "confidence": 0.88},
+    {"trait": "sharp elongated silhouettes", "evidence": [{"source": "observed", "statement": "Towers, roofs, and windows repeatedly use pointed vertical forms.", "confidence": 0.97}], "confidence": 0.95},
+    {"trait": "localized blue-white light accents", "evidence": [{"source": "observed", "statement": "Blue-white light appears in small windows and markers.", "confidence": 0.9}], "confidence": 0.87},
+    {"trait": "restrained gothic ornament", "evidence": [{"source": "observed", "statement": "Arches, finials, and carved bands repeat without dense surface coverage.", "confidence": 0.91}], "confidence": 0.89}
+  ],
+  "content_specific_traits": [
+    {"trait": "the current fortress's tower arrangement", "evidence": [{"source": "observed", "statement": "This reference contains one specific cluster of central and side towers.", "confidence": 0.98}], "confidence": 0.97}
+  ],
+  "evidence": [
+    {"source": "observed", "statement": "The environment uses dark stone, black iron, pointed vertical forms, and sparse blue-white light.", "confidence": 0.96},
+    {"source": "inferred", "statement": "The repeated arches and finials may indicate a gothic decorative tendency.", "confidence": 0.85}
+  ],
+  "uncertainties": [
+    {"topic": "silver metal prevalence", "reason": "Silver fixtures occupy only a small portion of the environment."}
+  ],
+  "confidence": 0.92,
+  "notes": ["Fog is recorded as atmosphere, not as material."]
+}

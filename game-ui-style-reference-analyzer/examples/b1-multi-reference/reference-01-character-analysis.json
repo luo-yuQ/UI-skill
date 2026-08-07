@@ -1,0 +1,100 @@
+{
+  "schema_version": "0.2",
+  "input_kind": "single_reference",
+  "asset_id": "knight_character_01",
+  "source_ref": "user-reference-character-01",
+  "file_name": "silver_knight_character.jpg",
+  "page_context": "unknown",
+  "reference_kind": "character_art",
+  "asset_category": "character",
+  "visual_identity": "A silver-armored knight with a single red cape",
+  "visual_description": "A full-body knight wears layered silver and black armor against a dim blue-gray backdrop. Pointed shoulder plates and narrow vertical armor segments form a sharp silhouette. Blue-white light appears around the weapon and armor edges, while one red cape is attached to this character.",
+  "visual_language": {
+    "color": {
+      "dominant_colors": ["low-saturation blue-gray", "near-black"],
+      "secondary_colors": ["silver-white"],
+      "accent_colors": ["blue-white", "localized red"],
+      "saturation": "low",
+      "value_tendency": "dark",
+      "temperature": "cool",
+      "contrast": "medium",
+      "relationships": ["cool dark fields are interrupted by silver and blue-white highlights"],
+      "confidence": 0.95
+    },
+    "material": {
+      "materials": [
+        {"name": "silver metal", "qualities": ["hard", "reflective", "clean"]},
+        {"name": "black iron", "qualities": ["hard", "matte", "heavy"]},
+        {"name": "red fabric", "qualities": ["soft", "worn"]}
+      ],
+      "overall_tendencies": ["hard metallic surfaces", "dark subdued base materials"],
+      "confidence": 0.92
+    },
+    "shape": {
+      "dominant_traits": ["sharp", "slender", "vertical", "complex_silhouette"],
+      "description": "Pointed armor plates and narrow vertical segments repeat across the figure.",
+      "confidence": 0.94
+    },
+    "rendering": {
+      "primary_style": "semi_realistic",
+      "secondary_traits": ["digital painting", "modeled metallic shading"],
+      "outline_strength": "subtle",
+      "texture_density": "medium",
+      "surface_detail_density": "high",
+      "gradient_usage": "moderate",
+      "visible_brushwork": "subtle",
+      "confidence": 0.91
+    },
+    "lighting": {
+      "exposure": "low_key",
+      "ambient_character": "dim cool ambient light",
+      "dominant_direction": null,
+      "hardness": "mixed",
+      "rim_light": "present",
+      "bloom": "present",
+      "local_emissive": "present",
+      "atmospheric_lighting": "absent",
+      "highlight_intensity": "high",
+      "shadow_depth": "deep",
+      "confidence": 0.89
+    },
+    "decoration": {
+      "motifs": ["restrained gothic engraving", "small blue crystals"],
+      "density": "medium",
+      "symmetry": "mixed",
+      "scale": "small",
+      "tendency": "restrained",
+      "confidence": 0.87
+    }
+  },
+  "world_visual_context": {
+    "themes": ["medieval fantasy", "dark fantasy"],
+    "era_cues": ["plate armor"],
+    "technology_cues": [],
+    "magic_cues": ["blue-white weapon light"],
+    "faction_or_character_cues": ["armored knight"],
+    "evidence": [
+      {"source": "observed", "statement": "Plate armor and blue-white weapon light are visible.", "confidence": 0.97},
+      {"source": "inferred", "statement": "The image suggests a medieval dark-fantasy context.", "confidence": 0.83}
+    ],
+    "confidence": 0.85
+  },
+  "style_candidates": [
+    {"trait": "low-saturation cool blue-gray palette", "evidence": [{"source": "observed", "statement": "Blue-gray and near-black occupy most of the image.", "confidence": 0.96}], "confidence": 0.94},
+    {"trait": "silver and black metallic surfaces", "evidence": [{"source": "observed", "statement": "Silver and black metals cover most armor surfaces.", "confidence": 0.95}], "confidence": 0.93},
+    {"trait": "sharp elongated silhouettes", "evidence": [{"source": "observed", "statement": "Pointed and narrow armor forms recur across the figure.", "confidence": 0.94}], "confidence": 0.92},
+    {"trait": "localized blue-white light accents", "evidence": [{"source": "observed", "statement": "Blue-white light is localized around the weapon and edges.", "confidence": 0.92}], "confidence": 0.9}
+  ],
+  "content_specific_traits": [
+    {"trait": "the current character's red cape", "evidence": [{"source": "observed", "statement": "A single red cape belongs to this knight.", "confidence": 0.99}], "confidence": 0.98}
+  ],
+  "evidence": [
+    {"source": "observed", "statement": "The character uses silver-black armor, pointed forms, and blue-white edge light.", "confidence": 0.96},
+    {"source": "inferred", "statement": "The restrained engraving may indicate a gothic decorative tendency in this image.", "confidence": 0.78}
+  ],
+  "uncertainties": [
+    {"topic": "red as a cross-reference accent", "reason": "The red cape may be unique to this character."}
+  ],
+  "confidence": 0.91,
+  "notes": ["This analysis is scoped to one character reference."]
+}

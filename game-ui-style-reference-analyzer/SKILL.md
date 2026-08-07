@@ -1,36 +1,55 @@
 ---
 name: game-ui-style-reference-analyzer
-description: Analyze exactly one user-owned game visual or art reference as a structured B1 result, including observable visual language, evidence sources, style candidates, content-specific traits, uncertainty, and confidence. Use for single-image B1 analysis; do not use for cross-image B2 synthesis, UI design recommendations, Composer page planning, image generation, or engine implementation.
+description: "Analyze user-owned game visual and art references through two evidence-driven stages: B1 describes exactly one image as a structured visual analysis, and B2 synthesizes two to six validated B1 results into a traceable overall style profile. Use for single-reference B1 analysis or multi-reference B2 visual/style synthesis; do not use for UI design recommendations, Composer page planning, image generation, provider calls, or engine implementation."
 ---
 
 # Game UI Style Reference Analyzer
 
-Analyze exactly one user-owned game visual/art reference at a time. Treat each B1 execution as stateless and independent; analyze multiple B images through separate B1 executions, which may run in parallel. A future B2 process will consume those results, but B2 is not implemented here.
+Use two independent stages:
 
-## B1 workflow
+```text
+B image 01 -> B1
+B image 02 -> B1
+B image 03 -> B1
+             |
+             v
+             B2 -> style-profile.json -> future Composer
+```
 
-1. Inspect one image together with any optional caller/user description and metadata.
-2. Identify what the complete image is with `reference_kind`; infer this field from visible content when supported. Keep it distinct from `user_intended_use`, which says how the caller wants to use the image.
-3. Describe only visible subject matter, composition, and appearance in `visual_description`.
-4. Record the six comparable visual-language dimensions: color, material, shape, rendering, lighting, and decoration. Read the matching files under `references/visual-style-taxonomy/` before producing these fields.
-5. Record image-scoped theme cues in `world_visual_context` without declaring the game's confirmed world setting.
-6. Record color, material, shape, rendering, lighting, decoration, or world/theme traits worth later cross-image verification as `style_candidates`. Exclude composition, camera angle, perspective layout, subject placement, page layout, element positions, and traits that depend on the current page's spatial organization, such as "upper illustration plus lower panel."
-7. Put subject-, object-, scene-, pose-, and composition-specific details in `content_specific_traits` so later synthesis does not automatically globalize them.
-8. Label claims as `observed`, `inferred`, or `user_provided` according to `references/quality/evidence-vs-inference.md`.
-9. Put unsupported judgments in `uncertainties` instead of guessing. Assign evidence-based confidence values.
-10. Emit one JSON object conforming to `schemas/asset-analysis.schema.json` and validate it with `scripts/validate_asset_analysis.py`.
+The future Composer consumes the result but is not an internal capability of this Skill.
 
-## Boundaries
+## B1: single-reference analysis
 
-- Describe visual evidence and visual language; do not provide UI design recommendations.
-- Keep every field purely descriptive, including `evidence`, inferred statements, notes, candidates, and uncertainties. Never write suitability or usage judgments such as "suitable for," "recommended as," or "can be used as."
-- Do not infer the final overall game style from one image.
-- Do not compare multiple images or perform B2 synthesis.
-- Do not analyze other games' UI reference layouts.
-- Do not perform Composer page planning, prompt compilation, image generation, provider calls, engine implementation, or actual nine-slice cutting.
-- Copy `user_intended_use` only when the caller/user explicitly provides it. Otherwise omit it or use `null`; never derive it from `reference_kind`, `asset_category`, or visible content.
-- Do not generate `intended_role` or `role_candidates`. Preserve them only when carrying forward caller-provided or legacy data.
-- Do not generate `layout_behavior` or `laya_new_ui` in normal B1 output. Preserve them only as optional legacy compatibility fields when carrying forward old data; a separate future engineering-asset stage may own them.
-- Treat Material Language strictly as tangible or surface appearance. Never put fire, smoke, fog, glow, bloom, emissive/magical light, particles, sparks, or other non-tangible effects in materials; place them in lighting, decoration/effects, atmosphere, or `visual_description`.
+Analyze exactly one user-owned game visual/art reference at a time. Keep each execution stateless, independently executable, and parallelizable.
 
-Prioritize accuracy, evidence, comparability, concision, and completeness. Do not prioritize prose flair or design creativity.
+1. Inspect one image and optional caller/user metadata.
+2. Describe visible identity, facts, and the six visual-language dimensions.
+3. Record image-scoped world/theme cues, style candidates, content-specific traits, provenance, uncertainties, and confidence.
+4. Emit one object conforming to `schemas/asset-analysis.schema.json` and validate it with `scripts/validate_asset_analysis.py`.
+
+Read `references/b1-single-reference-analysis.md`, the relevant visual taxonomy files, and `references/quality/evidence-vs-inference.md` before producing B1 output.
+
+B1 describes only. Do not compare images, declare the overall game style, infer caller intent, generate legacy engineering fields, or provide design/usage recommendations.
+
+## B2: multi-reference synthesis
+
+Consume two to six valid B1 v0.2 JSON results. Do not open the source images, rerun B1, call a VLM, or infer visual facts from file names.
+
+1. Validate all B1 inputs and require unique `asset_id` values.
+2. Aggregate evidence by color, material, shape, rendering, lighting, decoration, and world/theme.
+3. Normalize wording variants conservatively without rewriting B1 meaning.
+4. Classify traits as `stable`, `secondary`, `local`, `conflicting`, or `uncertain` using frequency, reference diversity, source confidence, content specificity, consistency, conflict, and explicit user group context.
+5. Preserve `supporting_references`, counterevidence, conflicts, uncertainties, and source confidence.
+6. Build `overall_visual_identity`, `cross_dimension_summary`, and `overall_confidence` from traceable evidence.
+7. Emit one object conforming to `schemas/style-profile.schema.json` and validate it with `scripts/validate_style_profile.py`.
+
+Read `references/b2-style-profile-synthesis.md` and `references/quality/cross-reference-conflicts.md` before producing B2 output.
+
+B2 describes, compares, normalizes, and classifies. Do not read source images, invent new image facts, hide conflicts, or provide UI, asset-usage, prompt, provider, Composer, or engine recommendations.
+
+## Shared boundaries
+
+- Keep every field descriptive and evidence-based, including observed/inferred statements, summaries, notes, conflicts, and uncertainties.
+- Never write suitability or usage judgments such as "suitable for," "recommended as," or "can be used as."
+- Do not include source-image bytes, Provider/API parameters, Laya/FairyGUI node types, preview requests, or Composer plans.
+- Prioritize accuracy, provenance, comparability, concision, and explicit uncertainty over polished prose.

@@ -1,8 +1,10 @@
 # Game UI Style Reference Analyzer
 
-This independent B-stage Skill contains:
+- B1 v0.2: frozen single-reference visual/art analysis.
+- B2 v0.1: multi-reference visual/style synthesis.
 
-- B1: implemented single-reference visual/art analysis.
-- B2: placeholder for later multi-reference style-profile synthesis.
+B2 input: two to six validated B1 asset analyses.
 
-B1 is descriptive and evidence-based. It does not provide UI design recommendations or perform Composer, image-generation, provider, or engine responsibilities.
+B2 output: `style-profile.json` with classified traits, provenance, conflicts, uncertainties, and overall confidence.
+
+Neither stage provides UI design recommendations or performs Composer, image-generation, provider, or engine responsibilities.
