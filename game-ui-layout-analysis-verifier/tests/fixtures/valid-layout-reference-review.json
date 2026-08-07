@@ -1,0 +1,48 @@
+{
+  "schema_version": "0.1",
+  "review_id": "valid-approved-review",
+  "input_kind": "layout_reference_analysis_review",
+  "source": {
+    "screenshot_source_ref": "fixture:approved-screenshot",
+    "file_name": "approved-screenshot.png"
+  },
+  "source_analysis": {
+    "analysis_id": "valid-shop-analysis",
+    "analysis_ref": "a1-layout-reference-analyzer/layout-reference-analysis.draft.json",
+    "schema_version": "0.1",
+    "validation_status": "valid"
+  },
+  "review_summary": {
+    "verdict": "approved",
+    "issue_count": 0,
+    "critical_issue_count": 0,
+    "major_issue_count": 0,
+    "minor_issue_count": 0,
+    "changes_applied": false,
+    "ready_for_downstream": true,
+    "review_confidence": 0.93,
+    "summary": "未发现需要修正的问题，完整 final 已验证。"
+  },
+  "findings": [],
+  "category_assessments": [
+    {"category": "page_understanding", "status": "pass", "summary": "页面判断合理。", "confidence": 0.93},
+    {"category": "region_completeness", "status": "pass", "summary": "主要区域完整。", "confidence": 0.92},
+    {"category": "region_structure", "status": "pass", "summary": "区域结构合理。", "confidence": 0.92},
+    {"category": "component_groups", "status": "pass", "summary": "组件组合理。", "confidence": 0.91},
+    {"category": "repeat_counts", "status": "pass", "summary": "可见数量合理。", "confidence": 0.94},
+    {"category": "visual_hierarchy", "status": "pass", "summary": "视觉层级合理。", "confidence": 0.9},
+    {"category": "evidence_discipline", "status": "pass", "summary": "证据等级使用合理。", "confidence": 0.93},
+    {"category": "brand_isolation", "status": "pass", "summary": "品牌内容已隔离。", "confidence": 0.95},
+    {"category": "confidence_calibration", "status": "pass", "summary": "置信度与证据匹配。", "confidence": 0.91}
+  ],
+  "unresolved_findings": [],
+  "finalization": {
+    "final_analysis_ref": "a2-layout-analysis-verifier/layout-reference-analysis.final.json",
+    "final_analysis_id": "valid-shop-final",
+    "final_validation_status": "valid",
+    "applied_finding_ids": [],
+    "unresolved_finding_ids": [],
+    "ready_for_downstream": true
+  },
+  "notes": []
+}

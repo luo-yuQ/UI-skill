@@ -1,0 +1,286 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/layout-reference-review.schema.json",
+  "title": "Game UI Layout Reference Analysis Review",
+  "description": "Structured A2 review of an A1 layout-reference analysis draft.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "review_id",
+    "input_kind",
+    "source",
+    "source_analysis",
+    "review_summary",
+    "findings",
+    "category_assessments",
+    "unresolved_findings",
+    "finalization",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "review_id": {"$ref": "#/$defs/identifier"},
+    "input_kind": {"const": "layout_reference_analysis_review"},
+    "source": {"$ref": "#/$defs/source"},
+    "source_analysis": {"$ref": "#/$defs/source_analysis"},
+    "review_summary": {"$ref": "#/$defs/review_summary"},
+    "findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/finding"}
+    },
+    "category_assessments": {
+      "type": "array",
+      "minItems": 9,
+      "maxItems": 9,
+      "items": {"$ref": "#/$defs/category_assessment"}
+    },
+    "unresolved_findings": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/unresolved_finding"}
+    },
+    "finalization": {"$ref": "#/$defs/finalization"},
+    "notes": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "validation_status": {
+      "type": "string",
+      "enum": ["valid", "invalid", "not_run"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["screenshot_source_ref", "file_name"],
+      "properties": {
+        "screenshot_source_ref": {"type": "string", "minLength": 1},
+        "file_name": {"type": "string", "minLength": 1}
+      }
+    },
+    "source_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["analysis_id", "analysis_ref", "schema_version", "validation_status"],
+      "properties": {
+        "analysis_id": {"$ref": "#/$defs/identifier"},
+        "analysis_ref": {"type": "string", "minLength": 1},
+        "schema_version": {"const": "0.1"},
+        "validation_status": {"$ref": "#/$defs/validation_status"}
+      }
+    },
+    "review_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "verdict",
+        "issue_count",
+        "critical_issue_count",
+        "major_issue_count",
+        "minor_issue_count",
+        "changes_applied",
+        "ready_for_downstream",
+        "review_confidence",
+        "summary"
+      ],
+      "properties": {
+        "verdict": {
+          "type": "string",
+          "enum": [
+            "approved",
+            "approved_with_minor_corrections",
+            "approved_with_major_corrections",
+            "rejected"
+          ]
+        },
+        "issue_count": {"type": "integer", "minimum": 0},
+        "critical_issue_count": {"type": "integer", "minimum": 0},
+        "major_issue_count": {"type": "integer", "minimum": 0},
+        "minor_issue_count": {"type": "integer", "minimum": 0},
+        "changes_applied": {"type": "boolean"},
+        "ready_for_downstream": {"type": "boolean"},
+        "review_confidence": {"$ref": "#/$defs/confidence"},
+        "summary": {"type": "string", "minLength": 1}
+      }
+    },
+    "error_type": {
+      "type": "string",
+      "enum": [
+        "missing_region",
+        "extra_region",
+        "wrong_page_type",
+        "wrong_page_purpose",
+        "wrong_page_state",
+        "wrong_presentation_mode",
+        "wrong_region_type",
+        "wrong_region_boundary",
+        "wrong_region_parent",
+        "wrong_region_relationship",
+        "over_split_region",
+        "over_merged_region",
+        "missing_component_group",
+        "extra_component_group",
+        "wrong_component_group",
+        "wrong_repeat_count",
+        "decoration_as_control",
+        "control_as_decoration",
+        "wrong_visual_hierarchy",
+        "wrong_primary_action",
+        "unsupported_inference",
+        "evidence_level_mismatch",
+        "confidence_mismatch",
+        "brand_content_leak",
+        "terminology_inconsistency",
+        "broken_reference",
+        "other"
+      ]
+    },
+    "correction_action": {
+      "type": "string",
+      "enum": [
+        "confirmed",
+        "modified",
+        "added",
+        "removed",
+        "downgraded_to_uncertain",
+        "unresolved"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "error_type",
+        "severity",
+        "correction_action",
+        "affected_entities",
+        "description",
+        "screenshot_evidence",
+        "rationale",
+        "proposed_change",
+        "confidence"
+      ],
+      "properties": {
+        "finding_id": {"$ref": "#/$defs/identifier"},
+        "error_type": {"$ref": "#/$defs/error_type"},
+        "severity": {
+          "type": "string",
+          "enum": ["critical", "major", "minor", "info"]
+        },
+        "correction_action": {"$ref": "#/$defs/correction_action"},
+        "affected_entities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "description": {"type": "string", "minLength": 1},
+        "screenshot_evidence": {"type": "string", "minLength": 1},
+        "rationale": {"type": "string", "minLength": 1},
+        "proposed_change": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "category_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "status", "summary", "confidence"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "page_understanding",
+            "region_completeness",
+            "region_structure",
+            "component_groups",
+            "repeat_counts",
+            "visual_hierarchy",
+            "evidence_discipline",
+            "brand_isolation",
+            "confidence_calibration"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "pass_with_notes", "needs_correction", "unresolved"]
+        },
+        "summary": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "unresolved_finding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "finding_id",
+        "description",
+        "affected_entities",
+        "reason",
+        "downstream_handling",
+        "confidence"
+      ],
+      "properties": {
+        "finding_id": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string", "minLength": 1},
+        "affected_entities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "reason": {"type": "string", "minLength": 1},
+        "downstream_handling": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "finalization": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "final_analysis_ref",
+        "final_analysis_id",
+        "final_validation_status",
+        "applied_finding_ids",
+        "unresolved_finding_ids",
+        "ready_for_downstream"
+      ],
+      "properties": {
+        "final_analysis_ref": {
+          "type": ["string", "null"],
+          "minLength": 1
+        },
+        "final_analysis_id": {
+          "anyOf": [
+            {"$ref": "#/$defs/identifier"},
+            {"type": "null"}
+          ]
+        },
+        "final_validation_status": {"$ref": "#/$defs/validation_status"},
+        "applied_finding_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "unresolved_finding_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "ready_for_downstream": {"type": "boolean"}
+      }
+    }
+  }
+}

@@ -1,0 +1,72 @@
+{
+  "schema_version": "0.1",
+  "analysis_id": "invalid-shop-analysis",
+  "input_kind": "layout_reference_screenshot",
+  "source": {
+    "source_ref": "fixture:invalid-shop",
+    "file_name": "invalid-shop.png",
+    "width": 1280,
+    "height": 720,
+    "orientation": "landscape",
+    "capture_limitations": []
+  },
+  "user_focus": null,
+  "page": {
+    "page_type": "shop",
+    "page_purpose": "非法测试数据。",
+    "page_state": "测试状态。",
+    "presentation_mode": "fullscreen",
+    "confidence": 1.2
+  },
+  "regions": [
+    {
+      "region_id": "duplicate_region",
+      "region_type": "primary_content_region",
+      "label": "区域一",
+      "description": "第一个重复区域。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.0, "y": 0.0, "width": 0.5, "height": 1.0},
+      "z_order": 1,
+      "evidence_level": "observed",
+      "confidence": 0.9
+    },
+    {
+      "region_id": "duplicate_region",
+      "region_type": "detail_region",
+      "label": "区域二",
+      "description": "第二个重复区域并引用不存在的父区域。",
+      "parent_region_id": "missing_parent",
+      "approximate_bounds": {"x": 0.5, "y": 0.0, "width": 0.5, "height": 1.0},
+      "z_order": 1,
+      "evidence_level": "observed",
+      "confidence": 0.9
+    }
+  ],
+  "region_relationships": [],
+  "component_groups": [],
+  "visual_hierarchy": {
+    "primary_focal_point": {
+      "entity_id": "duplicate_region",
+      "description": "测试焦点。",
+      "evidence_level": "observed",
+      "confidence": 0.9
+    },
+    "secondary_focal_points": [],
+    "primary_action": null,
+    "supporting_information": [],
+    "background_content": []
+  },
+  "layout_rules": [
+    {
+      "rule_id": "invalid_rule",
+      "description": "用于非法夹具的占位规则。",
+      "source_evidence": ["duplicate_region"],
+      "reuse_value": "仅用于测试。",
+      "confidence": 0.8
+    }
+  ],
+  "excluded_content": [],
+  "uncertainties": [],
+  "overall_confidence": 0.8,
+  "notes": []
+}

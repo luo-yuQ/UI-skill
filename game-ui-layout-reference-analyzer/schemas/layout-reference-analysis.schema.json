@@ -1,0 +1,498 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/layout-reference-analysis.schema.json",
+  "title": "Game UI Layout Reference Analysis Draft",
+  "description": "Engine-neutral draft analysis of the coarse layout visible in a complete game UI screenshot.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "analysis_id",
+    "input_kind",
+    "source",
+    "user_focus",
+    "page",
+    "regions",
+    "region_relationships",
+    "component_groups",
+    "visual_hierarchy",
+    "layout_rules",
+    "excluded_content",
+    "uncertainties",
+    "overall_confidence",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "analysis_id": {
+      "$ref": "#/$defs/identifier"
+    },
+    "input_kind": {
+      "const": "layout_reference_screenshot"
+    },
+    "source": {
+      "$ref": "#/$defs/source"
+    },
+    "user_focus": {
+      "type": ["string", "null"],
+      "minLength": 1
+    },
+    "page": {
+      "$ref": "#/$defs/page"
+    },
+    "regions": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/region"
+      }
+    },
+    "region_relationships": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/region_relationship"
+      }
+    },
+    "component_groups": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/component_group"
+      }
+    },
+    "visual_hierarchy": {
+      "$ref": "#/$defs/visual_hierarchy"
+    },
+    "layout_rules": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "$ref": "#/$defs/layout_rule"
+      }
+    },
+    "excluded_content": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/excluded_content"
+      }
+    },
+    "uncertainties": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/uncertainty"
+      }
+    },
+    "overall_confidence": {
+      "$ref": "#/$defs/confidence"
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "minLength": 1
+      },
+      "uniqueItems": true
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9][a-z0-9_-]*$"
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "evidence_level": {
+      "type": "string",
+      "enum": ["observed", "inferred", "uncertain"]
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_ref",
+        "file_name",
+        "width",
+        "height",
+        "orientation",
+        "capture_limitations"
+      ],
+      "properties": {
+        "source_ref": {
+          "type": "string",
+          "minLength": 1
+        },
+        "file_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "orientation": {
+          "type": "string",
+          "enum": ["landscape", "portrait", "square"]
+        },
+        "capture_limitations": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          },
+          "uniqueItems": true
+        }
+      }
+    },
+    "page": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_type",
+        "page_purpose",
+        "page_state",
+        "presentation_mode",
+        "confidence"
+      ],
+      "properties": {
+        "page_type": {
+          "type": "string",
+          "enum": [
+            "login",
+            "home",
+            "lobby",
+            "hero_selection",
+            "character_development",
+            "inventory",
+            "shop",
+            "quest",
+            "event",
+            "gacha",
+            "mail",
+            "ranking",
+            "social",
+            "guild",
+            "matchmaking",
+            "team_formation",
+            "battle_hud",
+            "battle_pause",
+            "battle_result",
+            "settings",
+            "tutorial",
+            "modal",
+            "unknown",
+            "hybrid"
+          ]
+        },
+        "page_purpose": {
+          "type": "string",
+          "minLength": 1
+        },
+        "page_state": {
+          "type": "string",
+          "minLength": 1
+        },
+        "presentation_mode": {
+          "type": "string",
+          "enum": ["fullscreen", "modal", "hud", "hybrid", "unknown"]
+        },
+        "confidence": {
+          "$ref": "#/$defs/confidence"
+        }
+      }
+    },
+    "bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"$ref": "#/$defs/confidence"},
+        "y": {"$ref": "#/$defs/confidence"},
+        "width": {"$ref": "#/$defs/confidence"},
+        "height": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "region_type": {
+      "anyOf": [
+        {
+          "enum": [
+            "background_region",
+            "global_status_region",
+            "navigation_region",
+            "primary_content_region",
+            "object_list_region",
+            "detail_region",
+            "character_showcase_region",
+            "filter_region",
+            "primary_action_region",
+            "secondary_action_region",
+            "modal_region",
+            "overlay_region",
+            "notification_region",
+            "unknown_region"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*_region$"
+        }
+      ]
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "region_id",
+        "region_type",
+        "label",
+        "description",
+        "parent_region_id",
+        "approximate_bounds",
+        "z_order",
+        "evidence_level",
+        "confidence"
+      ],
+      "properties": {
+        "region_id": {"$ref": "#/$defs/identifier"},
+        "region_type": {"$ref": "#/$defs/region_type"},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "parent_region_id": {
+          "anyOf": [
+            {"$ref": "#/$defs/identifier"},
+            {"type": "null"}
+          ]
+        },
+        "approximate_bounds": {"$ref": "#/$defs/bounds"},
+        "z_order": {"type": "integer"},
+        "evidence_level": {"$ref": "#/$defs/evidence_level"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "region_relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "relationship_id",
+        "source_region_id",
+        "target_region_id",
+        "relationship_type",
+        "description",
+        "evidence_level",
+        "confidence"
+      ],
+      "properties": {
+        "relationship_id": {"$ref": "#/$defs/identifier"},
+        "source_region_id": {"$ref": "#/$defs/identifier"},
+        "target_region_id": {"$ref": "#/$defs/identifier"},
+        "relationship_type": {
+          "type": "string",
+          "enum": [
+            "parent-child",
+            "controls",
+            "updates",
+            "belongs-to",
+            "overlays",
+            "adjacent-to",
+            "repeated-within"
+          ]
+        },
+        "description": {"type": "string", "minLength": 1},
+        "evidence_level": {"$ref": "#/$defs/evidence_level"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "group_type": {
+      "anyOf": [
+        {
+          "enum": [
+            "tab_group",
+            "card_list",
+            "item_grid",
+            "resource_group",
+            "filter_group",
+            "reward_group",
+            "action_group",
+            "button_group",
+            "character_showcase",
+            "detail_panel",
+            "status_group",
+            "navigation_group",
+            "progress_group",
+            "text_information_group",
+            "unknown_group"
+          ]
+        },
+        {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*_group$"
+        }
+      ]
+    },
+    "repeat_pattern": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["is_repeated", "direction", "count_certainty", "notes"],
+      "properties": {
+        "is_repeated": {"type": "boolean"},
+        "direction": {
+          "type": "string",
+          "enum": ["none", "row", "column", "grid", "carousel", "list", "unknown"]
+        },
+        "count_certainty": {
+          "type": "string",
+          "enum": ["exact", "at_least", "uncertain", "not_applicable"]
+        },
+        "notes": {
+          "type": ["string", "null"],
+          "minLength": 1
+        }
+      }
+    },
+    "component_group": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "group_id",
+        "group_type",
+        "label",
+        "region_id",
+        "description",
+        "visible_item_count",
+        "repeat_pattern",
+        "evidence_level",
+        "confidence"
+      ],
+      "properties": {
+        "group_id": {"$ref": "#/$defs/identifier"},
+        "group_type": {"$ref": "#/$defs/group_type"},
+        "label": {"type": "string", "minLength": 1},
+        "region_id": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string", "minLength": 1},
+        "visible_item_count": {
+          "type": ["integer", "null"],
+          "minimum": 0
+        },
+        "repeat_pattern": {"$ref": "#/$defs/repeat_pattern"},
+        "evidence_level": {"$ref": "#/$defs/evidence_level"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "hierarchy_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["entity_id", "description", "evidence_level", "confidence"],
+      "properties": {
+        "entity_id": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string", "minLength": 1},
+        "evidence_level": {"$ref": "#/$defs/evidence_level"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "visual_hierarchy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "primary_focal_point",
+        "secondary_focal_points",
+        "primary_action",
+        "supporting_information",
+        "background_content"
+      ],
+      "properties": {
+        "primary_focal_point": {"$ref": "#/$defs/hierarchy_entry"},
+        "secondary_focal_points": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/hierarchy_entry"}
+        },
+        "primary_action": {
+          "anyOf": [
+            {"$ref": "#/$defs/hierarchy_entry"},
+            {"type": "null"}
+          ]
+        },
+        "supporting_information": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/hierarchy_entry"}
+        },
+        "background_content": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/hierarchy_entry"}
+        }
+      }
+    },
+    "layout_rule": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["rule_id", "description", "source_evidence", "reuse_value", "confidence"],
+      "properties": {
+        "rule_id": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string", "minLength": 1},
+        "source_evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "reuse_value": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "excluded_content": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category", "description", "reason"],
+      "properties": {
+        "category": {
+          "type": "string",
+          "enum": [
+            "game_name",
+            "logo",
+            "character_identity",
+            "character_silhouette",
+            "iconography",
+            "currency_design",
+            "original_copy",
+            "decorative_pattern",
+            "brand_color_combination",
+            "protected_visual_identity",
+            "other"
+          ]
+        },
+        "description": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "uncertainty": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "uncertainty_id",
+        "description",
+        "affected_entities",
+        "reason",
+        "recommended_handling"
+      ],
+      "properties": {
+        "uncertainty_id": {"$ref": "#/$defs/identifier"},
+        "description": {"type": "string", "minLength": 1},
+        "affected_entities": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "reason": {"type": "string", "minLength": 1},
+        "recommended_handling": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

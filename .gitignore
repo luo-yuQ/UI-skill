@@ -1,0 +1,7 @@
+# Runtime outputs
+runs/**
+
+# Keep runtime namespace skeleton
+!runs/
+!runs/stage-a-layout-reference/
+!runs/stage-a-layout-reference/.gitkeep

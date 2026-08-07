@@ -1,0 +1,115 @@
+{
+  "schema_version": "0.1",
+  "review_id": "sky-vanguard-shop-review-001",
+  "input_kind": "layout_reference_analysis_review",
+  "source": {
+    "screenshot_source_ref": "attachment:sky-vanguard-shop-a2-case",
+    "file_name": "sky-vanguard-shop.png"
+  },
+  "source_analysis": {
+    "analysis_id": "sky-vanguard-shop-draft-001",
+    "analysis_ref": "a1-layout-reference-analyzer/layout-reference-analysis.draft.json",
+    "schema_version": "0.1",
+    "validation_status": "valid"
+  },
+  "review_summary": {
+    "verdict": "approved_with_major_corrections",
+    "issue_count": 5,
+    "critical_issue_count": 0,
+    "major_issue_count": 3,
+    "minor_issue_count": 2,
+    "changes_applied": true,
+    "ready_for_downstream": true,
+    "review_confidence": 0.93,
+    "summary": "补充顶部状态区，修正可见数量、关系证据等级、主操作置信度和品牌内容泄漏后，可形成可信 final。"
+  },
+  "findings": [
+    {
+      "finding_id": "finding_missing_top_status",
+      "error_type": "missing_region",
+      "severity": "major",
+      "correction_action": "added",
+      "affected_entities": ["top_status", "resource_summary"],
+      "description": "draft 遗漏顶部资源状态区及其资源摘要组。",
+      "screenshot_evidence": "截图顶部横跨全宽存在三组清晰图标与数值。",
+      "rationale": "该区域面积稳定且提供全局状态，属于一级功能区。",
+      "proposed_change": "在 final 中增加 top_status region 和 resource_summary group。",
+      "confidence": 0.97
+    },
+    {
+      "finding_id": "finding_wrong_product_count",
+      "error_type": "wrong_repeat_count",
+      "severity": "minor",
+      "correction_action": "modified",
+      "affected_entities": ["product_cards"],
+      "description": "draft 将当前可见商品卡数量写为八张。",
+      "screenshot_evidence": "截图中可完整区分的商品卡为两行、每行三张，共六张。",
+      "rationale": "右缘裁切不能作为额外两张卡的证据。",
+      "proposed_change": "将 visible_item_count 改为 6，并明确不推断列表总量。",
+      "confidence": 0.98
+    },
+    {
+      "finding_id": "finding_control_evidence",
+      "error_type": "evidence_level_mismatch",
+      "severity": "major",
+      "correction_action": "modified",
+      "affected_entities": ["rel_categories_control_list"],
+      "description": "分类控制列表的关系被错误标为 observed。",
+      "screenshot_evidence": "截图只显示一个分类高亮和相邻商品网格，没有交互过程。",
+      "rationale": "控制行为来自常见 UI 规律推断，而非单帧直接观察。",
+      "proposed_change": "把 evidence_level 改为 inferred，并把 confidence 降到 0.78。",
+      "confidence": 0.94
+    },
+    {
+      "finding_id": "finding_action_confidence",
+      "error_type": "confidence_mismatch",
+      "severity": "minor",
+      "correction_action": "modified",
+      "affected_entities": ["purchase_action", "purchase_controls"],
+      "description": "推断的购买操作使用 0.98 的过高置信度。",
+      "screenshot_evidence": "详情底部有高亮按钮式区域和价格摘要，但单帧无法验证点击结果。",
+      "rationale": "布局强烈支持主操作推断，但不支持接近确定的功能置信度。",
+      "proposed_change": "保留 inferred，将区域、group 和视觉层级中的置信度统一降为 0.82。",
+      "confidence": 0.91
+    },
+    {
+      "finding_id": "finding_currency_icon_leak",
+      "error_type": "brand_content_leak",
+      "severity": "major",
+      "correction_action": "modified",
+      "affected_entities": ["rule_action_with_currency_icon"],
+      "description": "layout rule 建议沿用具体金色翼形货币图标。",
+      "screenshot_evidence": "截图中该图标是具体美术造型，不是布局关系。",
+      "rationale": "A1 只允许迁移操作位置、分组和信息层级。",
+      "proposed_change": "改写为资源摘要与详情底部主操作的空间关联，并将货币造型加入 excluded_content。",
+      "confidence": 0.99
+    }
+  ],
+  "category_assessments": [
+    {"category": "page_understanding", "status": "pass", "summary": "shop 类型、用途和全屏形态与截图一致。", "confidence": 0.95},
+    {"category": "region_completeness", "status": "needs_correction", "summary": "遗漏顶部资源状态区。", "confidence": 0.97},
+    {"category": "region_structure", "status": "pass", "summary": "其余区域边界和父子结构合理。", "confidence": 0.91},
+    {"category": "component_groups", "status": "pass_with_notes", "summary": "主要 group 合理，需为新增顶部区域补充资源组。", "confidence": 0.92},
+    {"category": "repeat_counts", "status": "needs_correction", "summary": "商品卡当前可见数量应为六。", "confidence": 0.98},
+    {"category": "visual_hierarchy", "status": "pass_with_notes", "summary": "主次焦点合理，主操作置信度需下调。", "confidence": 0.9},
+    {"category": "evidence_discipline", "status": "needs_correction", "summary": "控制关系应从 observed 改为 inferred。", "confidence": 0.94},
+    {"category": "brand_isolation", "status": "needs_correction", "summary": "删除具体货币图标复用建议。", "confidence": 0.99},
+    {"category": "confidence_calibration", "status": "needs_correction", "summary": "主操作相关置信度过高。", "confidence": 0.91}
+  ],
+  "unresolved_findings": [],
+  "finalization": {
+    "final_analysis_ref": "a2-layout-analysis-verifier/layout-reference-analysis.final.json",
+    "final_analysis_id": "sky-vanguard-shop-final-001",
+    "final_validation_status": "valid",
+    "applied_finding_ids": [
+      "finding_missing_top_status",
+      "finding_wrong_product_count",
+      "finding_control_evidence",
+      "finding_action_confidence",
+      "finding_currency_icon_leak"
+    ],
+    "unresolved_finding_ids": [],
+    "ready_for_downstream": true
+  },
+  "notes": ["review 基于同一张虚构商城截图与结构合法的 A1 draft。"]
+}

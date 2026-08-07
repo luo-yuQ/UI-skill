@@ -1,0 +1,362 @@
+{
+  "schema_version": "0.1",
+  "analysis_id": "sky-vanguard-shop-reference-001",
+  "input_kind": "layout_reference_screenshot",
+  "source": {
+    "source_ref": "attachment:sky-vanguard-shop",
+    "file_name": "sky-vanguard-shop.png",
+    "width": 1920,
+    "height": 1080,
+    "orientation": "landscape",
+    "capture_limitations": [
+      "截图右缘轻微裁切，无法确认商品列表的完整总量"
+    ]
+  },
+  "user_focus": "主要参考分类、商品列表、选中商品详情和购买操作之间的布局关系。",
+  "page": {
+    "page_type": "shop",
+    "page_purpose": "浏览装备商品、查看选中商品信息并定位主要购买操作。",
+    "page_state": "一个商品卡呈选中状态，右侧显示对应详情。",
+    "presentation_mode": "fullscreen",
+    "confidence": 0.94
+  },
+  "regions": [
+    {
+      "region_id": "page_background",
+      "region_type": "background_region",
+      "label": "页面背景区",
+      "description": "覆盖整页的低对比环境背景，为前景面板提供衬托。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 1.0},
+      "z_order": 0,
+      "evidence_level": "observed",
+      "confidence": 0.98
+    },
+    {
+      "region_id": "top_status",
+      "region_type": "global_status_region",
+      "label": "顶部资源状态区",
+      "description": "横跨页面上方，包含多组图标与数值摘要。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.0, "y": 0.0, "width": 1.0, "height": 0.1},
+      "z_order": 2,
+      "evidence_level": "observed",
+      "confidence": 0.96
+    },
+    {
+      "region_id": "category_navigation",
+      "region_type": "navigation_region",
+      "label": "左侧分类区",
+      "description": "沿左侧纵向排列多个装备分类标签，其中一个标签高亮。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.02, "y": 0.13, "width": 0.16, "height": 0.75},
+      "z_order": 2,
+      "evidence_level": "observed",
+      "confidence": 0.95
+    },
+    {
+      "region_id": "product_list",
+      "region_type": "object_list_region",
+      "label": "中央商品列表区",
+      "description": "中央区域以两行网格展示六张可见装备商品卡。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.2, "y": 0.13, "width": 0.46, "height": 0.75},
+      "z_order": 2,
+      "evidence_level": "observed",
+      "confidence": 0.96
+    },
+    {
+      "region_id": "product_detail",
+      "region_type": "detail_region",
+      "label": "右侧商品详情区",
+      "description": "展示一个选中商品的较大预览、属性摘要和操作区域。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.68, "y": 0.13, "width": 0.3, "height": 0.82},
+      "z_order": 2,
+      "evidence_level": "observed",
+      "confidence": 0.94
+    },
+    {
+      "region_id": "equipment_showcase",
+      "region_type": "character_showcase_region",
+      "label": "装备展示子区",
+      "description": "详情区上半部以较大尺度展示选中装备形象。",
+      "parent_region_id": "product_detail",
+      "approximate_bounds": {"x": 0.71, "y": 0.18, "width": 0.24, "height": 0.38},
+      "z_order": 3,
+      "evidence_level": "observed",
+      "confidence": 0.93
+    },
+    {
+      "region_id": "purchase_action",
+      "region_type": "primary_action_region",
+      "label": "主要购买操作区",
+      "description": "详情区底部存在高对比的宽按钮式区域及价格信息。",
+      "parent_region_id": "product_detail",
+      "approximate_bounds": {"x": 0.72, "y": 0.78, "width": 0.22, "height": 0.11},
+      "z_order": 3,
+      "evidence_level": "inferred",
+      "confidence": 0.82
+    }
+  ],
+  "region_relationships": [
+    {
+      "relationship_id": "rel_categories_control_list",
+      "source_region_id": "category_navigation",
+      "target_region_id": "product_list",
+      "relationship_type": "controls",
+      "description": "高亮分类与中央商品集合并置，推断左侧分类控制中央列表内容。",
+      "evidence_level": "inferred",
+      "confidence": 0.78
+    },
+    {
+      "relationship_id": "rel_list_updates_detail",
+      "source_region_id": "product_list",
+      "target_region_id": "product_detail",
+      "relationship_type": "updates",
+      "description": "列表中一张卡片高亮且详情区展示单个对象，推断选择会更新详情。",
+      "evidence_level": "inferred",
+      "confidence": 0.8
+    },
+    {
+      "relationship_id": "rel_list_adjacent_detail",
+      "source_region_id": "product_list",
+      "target_region_id": "product_detail",
+      "relationship_type": "adjacent-to",
+      "description": "商品列表位于详情区左侧并保持稳定间距。",
+      "evidence_level": "observed",
+      "confidence": 0.96
+    },
+    {
+      "relationship_id": "rel_detail_contains_showcase",
+      "source_region_id": "product_detail",
+      "target_region_id": "equipment_showcase",
+      "relationship_type": "parent-child",
+      "description": "装备展示位于详情区域内部。",
+      "evidence_level": "observed",
+      "confidence": 0.95
+    },
+    {
+      "relationship_id": "rel_detail_contains_action",
+      "source_region_id": "product_detail",
+      "target_region_id": "purchase_action",
+      "relationship_type": "parent-child",
+      "description": "主要操作位于详情区域底部。",
+      "evidence_level": "observed",
+      "confidence": 0.94
+    }
+  ],
+  "component_groups": [
+    {
+      "group_id": "resource_summary",
+      "group_type": "resource_group",
+      "label": "资源摘要组",
+      "region_id": "top_status",
+      "description": "多组图标与数字沿顶部横向排列。",
+      "visible_item_count": 3,
+      "repeat_pattern": {
+        "is_repeated": true,
+        "direction": "row",
+        "count_certainty": "exact",
+        "notes": null
+      },
+      "evidence_level": "observed",
+      "confidence": 0.95
+    },
+    {
+      "group_id": "category_tabs",
+      "group_type": "tab_group",
+      "label": "装备分类标签组",
+      "region_id": "category_navigation",
+      "description": "多个纵向标签共享尺寸与选中状态样式。",
+      "visible_item_count": 5,
+      "repeat_pattern": {
+        "is_repeated": true,
+        "direction": "column",
+        "count_certainty": "exact",
+        "notes": null
+      },
+      "evidence_level": "observed",
+      "confidence": 0.96
+    },
+    {
+      "group_id": "product_cards",
+      "group_type": "card_list",
+      "label": "商品卡片组",
+      "region_id": "product_list",
+      "description": "六张可见卡片以两行网格排列，其中一张高亮。",
+      "visible_item_count": 6,
+      "repeat_pattern": {
+        "is_repeated": true,
+        "direction": "grid",
+        "count_certainty": "exact",
+        "notes": "只记录当前可靠可见的六张卡片，不推断被裁切区域中的总量。"
+      },
+      "evidence_level": "observed",
+      "confidence": 0.96
+    },
+    {
+      "group_id": "equipment_preview",
+      "group_type": "character_showcase",
+      "label": "装备预览组",
+      "region_id": "equipment_showcase",
+      "description": "由较大装备形象与简短状态标记构成视觉展示。",
+      "visible_item_count": 1,
+      "repeat_pattern": {
+        "is_repeated": false,
+        "direction": "none",
+        "count_certainty": "not_applicable",
+        "notes": null
+      },
+      "evidence_level": "observed",
+      "confidence": 0.93
+    },
+    {
+      "group_id": "product_information",
+      "group_type": "detail_panel",
+      "label": "商品信息组",
+      "region_id": "product_detail",
+      "description": "装备名称位置、属性摘要和说明文本组成详情信息。",
+      "visible_item_count": null,
+      "repeat_pattern": {
+        "is_repeated": false,
+        "direction": "none",
+        "count_certainty": "uncertain",
+        "notes": "文本较小，不把行数作为可重复项目数量。"
+      },
+      "evidence_level": "observed",
+      "confidence": 0.86
+    },
+    {
+      "group_id": "purchase_controls",
+      "group_type": "action_group",
+      "label": "购买操作组",
+      "region_id": "purchase_action",
+      "description": "价格摘要与高对比宽按钮共同构成主要操作组。",
+      "visible_item_count": 1,
+      "repeat_pattern": {
+        "is_repeated": false,
+        "direction": "none",
+        "count_certainty": "not_applicable",
+        "notes": null
+      },
+      "evidence_level": "inferred",
+      "confidence": 0.82
+    }
+  ],
+  "visual_hierarchy": {
+    "primary_focal_point": {
+      "entity_id": "equipment_showcase",
+      "description": "右侧较大装备形象具有最高单体视觉面积。",
+      "evidence_level": "observed",
+      "confidence": 0.91
+    },
+    "secondary_focal_points": [
+      {
+        "entity_id": "product_cards",
+        "description": "中央高密度商品卡片形成次级浏览焦点。",
+        "evidence_level": "observed",
+        "confidence": 0.92
+      }
+    ],
+    "primary_action": {
+      "entity_id": "purchase_controls",
+      "description": "详情底部的高对比操作组很可能承担购买动作。",
+      "evidence_level": "inferred",
+      "confidence": 0.82
+    },
+    "supporting_information": [
+      {
+        "entity_id": "product_information",
+        "description": "详情文本支持比较和决策。",
+        "evidence_level": "inferred",
+        "confidence": 0.84
+      },
+      {
+        "entity_id": "resource_summary",
+        "description": "顶部资源摘要为购买决策提供上下文。",
+        "evidence_level": "inferred",
+        "confidence": 0.75
+      }
+    ],
+    "background_content": [
+      {
+        "entity_id": "page_background",
+        "description": "低对比背景衬托前景内容，不承担已知操作。",
+        "evidence_level": "observed",
+        "confidence": 0.97
+      }
+    ]
+  },
+  "layout_rules": [
+    {
+      "rule_id": "rule_progressive_browse_to_detail",
+      "description": "按从左到右的分类、列表、详情顺序组织渐进式浏览。",
+      "source_evidence": ["category_navigation", "product_list", "product_detail"],
+      "reuse_value": "可用于需要先缩小范围、再比较对象、最后查看详情的原创页面。",
+      "confidence": 0.9
+    },
+    {
+      "rule_id": "rule_selected_object_larger",
+      "description": "让选中对象在相邻详情区以大于列表缩略项的尺度展示。",
+      "source_evidence": ["product_cards", "equipment_showcase"],
+      "reuse_value": "通过尺度差建立选择状态与视觉焦点，无需复用具体装备形象。",
+      "confidence": 0.91
+    },
+    {
+      "rule_id": "rule_action_anchored_to_detail",
+      "description": "把主要操作固定在详情区底部，使决策信息与动作保持空间关联。",
+      "source_evidence": ["product_detail", "purchase_controls"],
+      "reuse_value": "适合商品、角色或任务详情页面的稳定主操作布局。",
+      "confidence": 0.86
+    }
+  ],
+  "excluded_content": [
+    {
+      "category": "game_name",
+      "description": "虚构页面标题 Sky Vanguard。",
+      "reason": "具体名称不属于可迁移布局规律。"
+    },
+    {
+      "category": "character_silhouette",
+      "description": "详情区中的独特装备外形与轮廓。",
+      "reason": "具体视觉造型不得作为可直接复用素材。"
+    },
+    {
+      "category": "currency_design",
+      "description": "顶部和价格区域中的货币图标造型。",
+      "reason": "仅可参考资源摘要的位置与分组，不继承图标设计。"
+    },
+    {
+      "category": "brand_color_combination",
+      "description": "页面特有的深蓝、金色高亮组合。",
+      "reason": "可参考对比层级，不复制具体品牌色组合。"
+    },
+    {
+      "category": "original_copy",
+      "description": "商品名称、属性文案和按钮文字。",
+      "reason": "原始文案与具体游戏内容不属于布局参考。"
+    }
+  ],
+  "uncertainties": [
+    {
+      "uncertainty_id": "uncertain_list_total",
+      "description": "无法确认商品列表是否可继续滚动及其完整总量。",
+      "affected_entities": ["product_list", "product_cards"],
+      "reason": "截图右缘轻微裁切，且单帧画面没有滚动状态证据。",
+      "recommended_handling": "只使用当前可见的六张卡片作为密度参考，不依赖推测总量。"
+    },
+    {
+      "uncertainty_id": "uncertain_purchase_result",
+      "description": "无法确认主要操作触发后的支付、确认或跳转流程。",
+      "affected_entities": ["purchase_action", "purchase_controls"],
+      "reason": "单张截图只支持按钮式区域和价格信息的观察。",
+      "recommended_handling": "将其作为可能的主要操作位置，不推断具体交互结果。"
+    }
+  ],
+  "overall_confidence": 0.89,
+  "notes": [
+    "分析仅提取粗粒度布局关系，不代表像素级边界。",
+    "用户关注说明与截图可见结构一致。"
+  ]
+}

@@ -1,0 +1,78 @@
+{
+  "schema_version": "0.1",
+  "analysis_id": "valid-shop-analysis",
+  "input_kind": "layout_reference_screenshot",
+  "source": {
+    "source_ref": "fixture:valid-shop",
+    "file_name": "valid-shop.png",
+    "width": 1280,
+    "height": 720,
+    "orientation": "landscape",
+    "capture_limitations": []
+  },
+  "user_focus": null,
+  "page": {
+    "page_type": "shop",
+    "page_purpose": "浏览商品并查看当前选择。",
+    "page_state": "默认浏览状态。",
+    "presentation_mode": "fullscreen",
+    "confidence": 0.9
+  },
+  "regions": [
+    {
+      "region_id": "main_content",
+      "region_type": "primary_content_region",
+      "label": "主内容区",
+      "description": "页面中央的主要商品浏览内容。",
+      "parent_region_id": null,
+      "approximate_bounds": {"x": 0.1, "y": 0.1, "width": 0.8, "height": 0.8},
+      "z_order": 1,
+      "evidence_level": "observed",
+      "confidence": 0.94
+    }
+  ],
+  "region_relationships": [],
+  "component_groups": [
+    {
+      "group_id": "visible_cards",
+      "group_type": "card_list",
+      "label": "可见商品卡",
+      "region_id": "main_content",
+      "description": "四张可见商品卡按行排列。",
+      "visible_item_count": 4,
+      "repeat_pattern": {
+        "is_repeated": true,
+        "direction": "row",
+        "count_certainty": "exact",
+        "notes": null
+      },
+      "evidence_level": "observed",
+      "confidence": 0.92
+    }
+  ],
+  "visual_hierarchy": {
+    "primary_focal_point": {
+      "entity_id": "visible_cards",
+      "description": "重复卡片占据主要视觉面积。",
+      "evidence_level": "observed",
+      "confidence": 0.9
+    },
+    "secondary_focal_points": [],
+    "primary_action": null,
+    "supporting_information": [],
+    "background_content": []
+  },
+  "layout_rules": [
+    {
+      "rule_id": "rule_centered_card_row",
+      "description": "把主要对象集合放在中央连续区域。",
+      "source_evidence": ["main_content", "visible_cards"],
+      "reuse_value": "适合以对象浏览为主要任务的原创页面。",
+      "confidence": 0.88
+    }
+  ],
+  "excluded_content": [],
+  "uncertainties": [],
+  "overall_confidence": 0.9,
+  "notes": []
+}

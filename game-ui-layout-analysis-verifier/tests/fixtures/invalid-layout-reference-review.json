@@ -1,0 +1,73 @@
+{
+  "schema_version": "0.1",
+  "review_id": "invalid-review",
+  "input_kind": "layout_reference_analysis_review",
+  "source": {
+    "screenshot_source_ref": "fixture:invalid-screenshot",
+    "file_name": "invalid-screenshot.png"
+  },
+  "source_analysis": {
+    "analysis_id": "invalid-analysis",
+    "analysis_ref": "draft.json",
+    "schema_version": "0.1",
+    "validation_status": "valid"
+  },
+  "review_summary": {
+    "verdict": "approved",
+    "issue_count": 1,
+    "critical_issue_count": 0,
+    "major_issue_count": 1,
+    "minor_issue_count": 0,
+    "changes_applied": true,
+    "ready_for_downstream": true,
+    "review_confidence": 1.2,
+    "summary": "故意包含多类错误。"
+  },
+  "findings": [
+    {
+      "finding_id": "duplicate_finding",
+      "error_type": "wrong_page_type",
+      "severity": "major",
+      "correction_action": "modified",
+      "affected_entities": ["page"],
+      "description": "第一个重复 finding。",
+      "screenshot_evidence": "测试证据。",
+      "rationale": "用于非法夹具。",
+      "proposed_change": "修改页面类型。",
+      "confidence": 0.8
+    },
+    {
+      "finding_id": "duplicate_finding",
+      "error_type": "wrong_page_purpose",
+      "severity": "major",
+      "correction_action": "modified",
+      "affected_entities": ["page"],
+      "description": "第二个重复 finding。",
+      "screenshot_evidence": "测试证据。",
+      "rationale": "用于非法夹具。",
+      "proposed_change": "修改页面用途。",
+      "confidence": 0.8
+    }
+  ],
+  "category_assessments": [
+    {"category": "page_understanding", "status": "needs_correction", "summary": "测试。", "confidence": 0.8},
+    {"category": "region_completeness", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "region_structure", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "component_groups", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "repeat_counts", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "visual_hierarchy", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "evidence_discipline", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "brand_isolation", "status": "pass", "summary": "测试。", "confidence": 0.8},
+    {"category": "confidence_calibration", "status": "needs_correction", "summary": "测试。", "confidence": 0.8}
+  ],
+  "unresolved_findings": [],
+  "finalization": {
+    "final_analysis_ref": "final.json",
+    "final_analysis_id": "invalid-final",
+    "final_validation_status": "valid",
+    "applied_finding_ids": ["missing_finding"],
+    "unresolved_finding_ids": [],
+    "ready_for_downstream": true
+  },
+  "notes": []
+}
