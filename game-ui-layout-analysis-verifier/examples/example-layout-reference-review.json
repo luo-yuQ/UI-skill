@@ -12,6 +12,48 @@
     "schema_version": "0.1",
     "validation_status": "valid"
   },
+  "independent_baseline": {
+    "page_hypothesis": "全屏装备商城，玩家从分类和商品网格浏览对象，并在右侧查看详情和操作。",
+    "presentation_mode": "fullscreen",
+    "major_region_summaries": [
+      {"baseline_id": "baseline_background", "label": "背景", "description": "低对比背景覆盖整页。", "approximate_position": "整页底层", "confidence": 0.97},
+      {"baseline_id": "baseline_top_status", "label": "顶部状态", "description": "顶部横向排列三组资源图标和数值。", "approximate_position": "页面顶部全宽", "confidence": 0.97},
+      {"baseline_id": "baseline_categories", "label": "分类", "description": "左侧纵向分类标签。", "approximate_position": "左侧中部", "confidence": 0.95},
+      {"baseline_id": "baseline_product_grid", "label": "商品网格", "description": "中央两行商品卡片网格。", "approximate_position": "页面中央偏左", "confidence": 0.96},
+      {"baseline_id": "baseline_detail", "label": "商品详情", "description": "右侧较大预览、属性和操作内容。", "approximate_position": "页面右侧", "confidence": 0.94},
+      {"baseline_id": "baseline_primary_action", "label": "主要操作", "description": "详情底部高对比按钮式区域。", "approximate_position": "右侧详情底部", "confidence": 0.82}
+    ],
+    "component_group_summaries": [
+      {"baseline_id": "baseline_resources", "label": "资源摘要", "description": "三组资源图标与数值。", "visible_item_count": 3, "confidence": 0.96},
+      {"baseline_id": "baseline_category_tabs", "label": "分类标签", "description": "五个纵向标签。", "visible_item_count": 5, "confidence": 0.95},
+      {"baseline_id": "baseline_product_cards", "label": "商品卡", "description": "两行、每行三张可见卡片。", "visible_item_count": 6, "confidence": 0.98},
+      {"baseline_id": "baseline_product_information", "label": "商品信息", "description": "较大预览、名称位置与属性摘要。", "visible_item_count": null, "confidence": 0.9},
+      {"baseline_id": "baseline_purchase_controls", "label": "操作组", "description": "价格摘要与高对比按钮式区域。", "visible_item_count": 1, "confidence": 0.82}
+    ],
+    "visible_repeat_counts": [
+      {"baseline_group_id": "baseline_resources", "visible_count": 3, "count_certainty": "exact", "notes": null},
+      {"baseline_group_id": "baseline_category_tabs", "visible_count": 5, "count_certainty": "exact", "notes": null},
+      {"baseline_group_id": "baseline_product_cards", "visible_count": 6, "count_certainty": "exact", "notes": "右缘裁切，不推断列表总量。"}
+    ],
+    "primary_visual_focal_point": {"description": "中央高密度商品卡网格最先吸引视觉注意。", "evidence_level": "observed", "confidence": 0.92},
+    "primary_interaction_focal_point": {"description": "商品网格与右侧详情共同构成主要选择和决策区域。", "evidence_level": "inferred", "confidence": 0.84},
+    "primary_action_candidate": {"description": "详情底部高对比按钮式区域很可能是购买操作。", "evidence_level": "inferred", "confidence": 0.82},
+    "secondary_action_candidates": [],
+    "visible_text_or_labels": ["分类标签", "商品名称位置", "价格位置"],
+    "capture_limitations": ["截图右缘轻微裁切"],
+    "uncertainties": ["无法从单帧确认列表总量和主要操作的点击结果"],
+    "confidence": 0.91
+  },
+  "comparison_summary": {
+    "page_match": {"status": "match", "summary": "baseline 与 draft 均支持全屏商城用途。", "confidence": 0.94},
+    "region_coverage": {"status": "mismatch", "summary": "draft 遗漏 baseline 中清晰可见的顶部资源状态区。", "confidence": 0.97},
+    "component_group_coverage": {"status": "partial_match", "summary": "主要 group 基本一致，但缺少顶部资源摘要组。", "confidence": 0.94},
+    "repeat_count_match": {"status": "mismatch", "summary": "baseline 可见六张商品卡，draft 写为八张。", "confidence": 0.98},
+    "visual_hierarchy_match": {"status": "partial_match", "summary": "焦点结构大致一致，但主操作置信度过高。", "confidence": 0.9},
+    "evidence_discipline": {"status": "mismatch", "summary": "控制关系是推断，draft 却标为 observed。", "confidence": 0.94},
+    "metadata_consistency": {"status": "match", "summary": "示例执行环境声明的文件名、方向和尺寸与 draft 一致。", "confidence": 0.99},
+    "user_focus_coverage": {"status": "match", "summary": "draft 保留并覆盖分类、列表、详情和主要操作关注点。", "confidence": 0.96}
+  },
   "review_summary": {
     "verdict": "approved_with_major_corrections",
     "issue_count": 5,
@@ -96,6 +138,30 @@
     {"category": "brand_isolation", "status": "needs_correction", "summary": "删除具体货币图标复用建议。", "confidence": 0.99},
     {"category": "confidence_calibration", "status": "needs_correction", "summary": "主操作相关置信度过高。", "confidence": 0.91}
   ],
+  "entity_assessments": [
+    {"entity_type": "page", "entity_id": "page", "status": "confirmed", "summary": "页面类型、用途和全屏模式与 baseline 一致。", "related_finding_ids": [], "confidence": 0.94},
+    {"entity_type": "region", "entity_id": "page_background", "status": "confirmed", "summary": "背景区域存在且粗略边界合理。", "related_finding_ids": [], "confidence": 0.97},
+    {"entity_type": "region", "entity_id": "category_navigation", "status": "confirmed", "summary": "左侧分类区与 baseline 一致。", "related_finding_ids": [], "confidence": 0.95},
+    {"entity_type": "region", "entity_id": "product_list", "status": "confirmed", "summary": "中央商品列表区域与 baseline 一致。", "related_finding_ids": [], "confidence": 0.95},
+    {"entity_type": "region", "entity_id": "product_detail", "status": "confirmed", "summary": "右侧详情区与 baseline 一致。", "related_finding_ids": [], "confidence": 0.94},
+    {"entity_type": "region", "entity_id": "purchase_action", "status": "modified", "summary": "保留区域并下调推断置信度。", "related_finding_ids": ["finding_action_confidence"], "confidence": 0.91},
+    {"entity_type": "region", "entity_id": "top_status", "status": "added", "summary": "根据 baseline 补充顶部资源状态区。", "related_finding_ids": ["finding_missing_top_status"], "confidence": 0.97},
+    {"entity_type": "region_relationship", "entity_id": "rel_categories_control_list", "status": "modified", "summary": "控制关系从 observed 调整为 inferred。", "related_finding_ids": ["finding_control_evidence"], "confidence": 0.94},
+    {"entity_type": "region_relationship", "entity_id": "rel_list_adjacent_detail", "status": "confirmed", "summary": "列表与详情的相邻关系可直接观察。", "related_finding_ids": [], "confidence": 0.96},
+    {"entity_type": "region_relationship", "entity_id": "rel_detail_contains_action", "status": "confirmed", "summary": "操作区位于详情区内部。", "related_finding_ids": [], "confidence": 0.95},
+    {"entity_type": "component_group", "entity_id": "category_tabs", "status": "confirmed", "summary": "五个分类标签的分组和数量合理。", "related_finding_ids": [], "confidence": 0.95},
+    {"entity_type": "component_group", "entity_id": "product_cards", "status": "modified", "summary": "当前可见数量从八修正为六。", "related_finding_ids": ["finding_wrong_product_count"], "confidence": 0.98},
+    {"entity_type": "component_group", "entity_id": "product_information", "status": "confirmed", "summary": "详情信息组的粒度与归属合理。", "related_finding_ids": [], "confidence": 0.9},
+    {"entity_type": "component_group", "entity_id": "purchase_controls", "status": "modified", "summary": "保留主要操作候选并下调置信度。", "related_finding_ids": ["finding_action_confidence"], "confidence": 0.91},
+    {"entity_type": "component_group", "entity_id": "resource_summary", "status": "added", "summary": "为新增顶部状态区补充资源摘要组。", "related_finding_ids": ["finding_missing_top_status"], "confidence": 0.96},
+    {"entity_type": "visual_hierarchy", "entity_id": "visual_hierarchy", "status": "modified", "summary": "保留视觉焦点，并在描述中区分交互焦点和主操作置信度。", "related_finding_ids": ["finding_action_confidence"], "confidence": 0.9},
+    {"entity_type": "layout_rule", "entity_id": "rule_progressive_browse_to_detail", "status": "confirmed", "summary": "分类—列表—详情的抽象布局规则可保留。", "related_finding_ids": [], "confidence": 0.9},
+    {"entity_type": "layout_rule", "entity_id": "rule_action_with_currency_icon", "status": "modified", "summary": "删除具体货币图标复用倾向并保留空间关系。", "related_finding_ids": ["finding_currency_icon_leak"], "confidence": 0.99},
+    {"entity_type": "excluded_content", "entity_id": "excluded_content", "status": "modified", "summary": "补充排除具体货币图标造型。", "related_finding_ids": ["finding_currency_icon_leak"], "confidence": 0.99},
+    {"entity_type": "uncertainty", "entity_id": "uncertain_list_total", "status": "confirmed", "summary": "列表总量不确定性与裁切证据一致。", "related_finding_ids": [], "confidence": 0.95},
+    {"entity_type": "overall_confidence", "entity_id": "overall_confidence", "status": "modified", "summary": "结合遗漏、数量和推断修正后略微下调整体置信度。", "related_finding_ids": ["finding_action_confidence"], "confidence": 0.9}
+  ],
+  "approval_evidence": [],
   "unresolved_findings": [],
   "finalization": {
     "final_analysis_ref": "a2-layout-analysis-verifier/layout-reference-analysis.final.json",

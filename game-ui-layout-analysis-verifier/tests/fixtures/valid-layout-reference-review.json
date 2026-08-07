@@ -12,6 +12,37 @@
     "schema_version": "0.1",
     "validation_status": "valid"
   },
+  "independent_baseline": {
+    "page_hypothesis": "完整商城页面，中央区域用于浏览商品。",
+    "presentation_mode": "fullscreen",
+    "major_region_summaries": [
+      {"baseline_id": "baseline_main", "label": "主内容", "description": "中央商品浏览区。", "approximate_position": "页面中央", "confidence": 0.92}
+    ],
+    "component_group_summaries": [
+      {"baseline_id": "baseline_cards", "label": "商品卡", "description": "一行可见商品卡。", "visible_item_count": 4, "confidence": 0.92}
+    ],
+    "visible_repeat_counts": [
+      {"baseline_group_id": "baseline_cards", "visible_count": 4, "count_certainty": "exact", "notes": null}
+    ],
+    "primary_visual_focal_point": {"description": "中央商品卡区域。", "evidence_level": "observed", "confidence": 0.9},
+    "primary_interaction_focal_point": {"description": "中央商品浏览区域。", "evidence_level": "inferred", "confidence": 0.82},
+    "primary_action_candidate": null,
+    "secondary_action_candidates": [],
+    "visible_text_or_labels": [],
+    "capture_limitations": [],
+    "uncertainties": ["单帧无法确认具体交互结果"],
+    "confidence": 0.9
+  },
+  "comparison_summary": {
+    "page_match": {"status": "match", "summary": "页面用途一致。", "confidence": 0.93},
+    "region_coverage": {"status": "match", "summary": "主要区域均已覆盖。", "confidence": 0.92},
+    "component_group_coverage": {"status": "match", "summary": "重要组件组均已覆盖。", "confidence": 0.91},
+    "repeat_count_match": {"status": "match", "summary": "可见数量一致。", "confidence": 0.94},
+    "visual_hierarchy_match": {"status": "match", "summary": "视觉与交互焦点已分别核实。", "confidence": 0.9},
+    "evidence_discipline": {"status": "match", "summary": "证据等级使用合理。", "confidence": 0.93},
+    "metadata_consistency": {"status": "match", "summary": "可信执行环境元数据与 draft 一致。", "confidence": 0.99},
+    "user_focus_coverage": {"status": "not_applicable", "summary": "本次没有用户关注说明。", "confidence": 1.0}
+  },
   "review_summary": {
     "verdict": "approved",
     "issue_count": 0,
@@ -34,6 +65,29 @@
     {"category": "evidence_discipline", "status": "pass", "summary": "证据等级使用合理。", "confidence": 0.93},
     {"category": "brand_isolation", "status": "pass", "summary": "品牌内容已隔离。", "confidence": 0.95},
     {"category": "confidence_calibration", "status": "pass", "summary": "置信度与证据匹配。", "confidence": 0.91}
+  ],
+  "entity_assessments": [
+    {"entity_type": "page", "entity_id": "page", "status": "confirmed", "summary": "页面用途与呈现模式已核实。", "related_finding_ids": [], "confidence": 0.93},
+    {"entity_type": "region", "entity_id": "main_content", "status": "confirmed", "summary": "主内容区域已核实。", "related_finding_ids": [], "confidence": 0.92},
+    {"entity_type": "component_group", "entity_id": "visible_cards", "status": "confirmed", "summary": "商品卡组件组与数量已核实。", "related_finding_ids": [], "confidence": 0.92},
+    {"entity_type": "visual_hierarchy", "entity_id": "visual_hierarchy", "status": "confirmed", "summary": "视觉与交互焦点已分别核实。", "related_finding_ids": [], "confidence": 0.9},
+    {"entity_type": "overall_confidence", "entity_id": "overall_confidence", "status": "confirmed", "summary": "整体置信度已重新校准。", "related_finding_ids": [], "confidence": 0.91}
+  ],
+  "approval_evidence": [
+    {"check": "independent_baseline_completed", "status": "pass", "summary": "已在读取 draft 语义前完成独立 baseline。"},
+    {"check": "page_consistency_checked", "status": "pass", "summary": "页面类型、用途和模式已核实。"},
+    {"check": "major_regions_checked", "status": "pass", "summary": "主要区域已逐项核实。"},
+    {"check": "major_component_groups_checked", "status": "pass", "summary": "重要组件组已逐项核实。"},
+    {"check": "primary_action_checked", "status": "pass", "summary": "已确认没有可靠主操作候选。"},
+    {"check": "visual_and_interaction_foci_checked", "status": "pass", "summary": "视觉和交互焦点已分别核实。"},
+    {"check": "repeat_counts_checked", "status": "pass", "summary": "可见重复数量已核实。"},
+    {"check": "secondary_actions_checked", "status": "pass", "summary": "未发现遗漏的独立次级操作。"},
+    {"check": "evidence_levels_checked", "status": "pass", "summary": "重要证据等级已核实。"},
+    {"check": "confidence_recalibrated", "status": "pass", "summary": "局部和整体置信度已重新校准。"},
+    {"check": "brand_isolation_checked", "status": "pass", "summary": "品牌隔离检查通过。"},
+    {"check": "user_focus_covered", "status": "pass", "summary": "无用户关注说明，已记录为不适用。"},
+    {"check": "metadata_consistency_checked", "status": "pass", "summary": "可信元数据与 draft 一致。"},
+    {"check": "auditable_records_present", "status": "pass", "summary": "baseline、comparison 和 entity assessments 均完整。"}
   ],
   "unresolved_findings": [],
   "finalization": {

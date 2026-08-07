@@ -12,6 +12,33 @@
     "schema_version": "0.1",
     "validation_status": "valid"
   },
+  "independent_baseline": {
+    "page_hypothesis": "非法测试页面。",
+    "presentation_mode": "fullscreen",
+    "major_region_summaries": [
+      {"baseline_id": "baseline_test", "label": "测试区域", "description": "用于非法夹具。", "approximate_position": "页面中央", "confidence": 0.8}
+    ],
+    "component_group_summaries": [],
+    "visible_repeat_counts": [],
+    "primary_visual_focal_point": {"description": "测试焦点。", "evidence_level": "observed", "confidence": 0.8},
+    "primary_interaction_focal_point": {"description": "测试交互焦点。", "evidence_level": "inferred", "confidence": 0.7},
+    "primary_action_candidate": null,
+    "secondary_action_candidates": [],
+    "visible_text_or_labels": [],
+    "capture_limitations": [],
+    "uncertainties": [],
+    "confidence": 0.8
+  },
+  "comparison_summary": {
+    "page_match": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "region_coverage": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "component_group_coverage": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "repeat_count_match": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "visual_hierarchy_match": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "evidence_discipline": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "metadata_consistency": {"status": "match", "summary": "测试。", "confidence": 0.8},
+    "user_focus_coverage": {"status": "not_applicable", "summary": "测试。", "confidence": 0.8}
+  },
   "review_summary": {
     "verdict": "approved",
     "issue_count": 1,
@@ -60,6 +87,10 @@
     {"category": "brand_isolation", "status": "pass", "summary": "测试。", "confidence": 0.8},
     {"category": "confidence_calibration", "status": "needs_correction", "summary": "测试。", "confidence": 0.8}
   ],
+  "entity_assessments": [
+    {"entity_type": "page", "entity_id": "page", "status": "modified", "summary": "用于非法夹具。", "related_finding_ids": ["duplicate_finding"], "confidence": 0.8}
+  ],
+  "approval_evidence": [],
   "unresolved_findings": [],
   "finalization": {
     "final_analysis_ref": "final.json",

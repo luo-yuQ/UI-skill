@@ -44,10 +44,7 @@ def load_json(path: Path) -> dict:
 
 
 def consistency_review() -> dict:
-    review = load_json(VALID_FIXTURE)
-    review["source_analysis"]["analysis_id"] = "sky-vanguard-shop-draft-001"
-    review["finalization"]["final_analysis_id"] = "sky-vanguard-shop-final-001"
-    return review
+    return load_json(EXAMPLE_REVIEW)
 
 
 def add_finding(
@@ -97,6 +94,59 @@ class LayoutReferenceReviewValidatorTests(unittest.TestCase):
     def test_valid_fixture_passes(self):
         self.assertEqual([], validator.validate_file(VALID_FIXTURE))
 
+    def test_missing_independent_baseline_fails(self):
+        review = load_json(VALID_FIXTURE)
+        del review["independent_baseline"]
+        self.assert_has_error(validator.validate_document(review), "independent_baseline")
+
+    def test_empty_baseline_major_regions_fails(self):
+        review = load_json(VALID_FIXTURE)
+        review["independent_baseline"]["major_region_summaries"] = []
+        self.assert_has_error(validator.validate_document(review), "must not be empty")
+
+    def test_missing_comparison_summary_fails(self):
+        review = load_json(VALID_FIXTURE)
+        del review["comparison_summary"]
+        self.assert_has_error(validator.validate_document(review), "comparison_summary")
+
+    def test_missing_draft_region_assessment_fails(self):
+        review = load_json(EXAMPLE_REVIEW)
+        review["entity_assessments"] = [
+            item
+            for item in review["entity_assessments"]
+            if not (
+                item["entity_type"] == "region"
+                and item["entity_id"] == "category_navigation"
+            )
+        ]
+        errors = validator.validate_document(review, draft=load_json(EXAMPLE_DRAFT))
+        self.assert_has_error(errors, "missing draft object assessments")
+
+    def test_approved_without_approval_evidence_fails(self):
+        review = load_json(VALID_FIXTURE)
+        review["approval_evidence"] = []
+        self.assert_has_error(validator.validate_document(review), "approval_evidence")
+
+    def test_assessment_unknown_finding_fails(self):
+        review = load_json(VALID_FIXTURE)
+        review["entity_assessments"][0]["related_finding_ids"] = ["missing_finding"]
+        self.assert_has_error(validator.validate_document(review), "unknown finding IDs")
+
+    def test_missing_metadata_consistency_fails(self):
+        review = load_json(VALID_FIXTURE)
+        del review["comparison_summary"]["metadata_consistency"]
+        self.assert_has_error(validator.validate_document(review), "metadata_consistency")
+
+    def test_missing_user_focus_coverage_fails(self):
+        review = load_json(VALID_FIXTURE)
+        del review["comparison_summary"]["user_focus_coverage"]
+        self.assert_has_error(validator.validate_document(review), "user_focus_coverage")
+
+    def test_approved_with_unverified_metadata_fails(self):
+        review = load_json(VALID_FIXTURE)
+        review["comparison_summary"]["metadata_consistency"]["status"] = "unverified"
+        self.assert_has_error(validator.validate_document(review), "verified matching metadata")
+
     def test_full_example_consistency_passes(self):
         self.assertEqual(
             [],
@@ -143,6 +193,14 @@ class LayoutReferenceReviewValidatorTests(unittest.TestCase):
         add_finding(review, "major_finding", "modified", "page", severity="major")
         review["review_summary"]["verdict"] = "approved"
         self.assert_has_error(validator.validate_document(review), "approved cannot")
+
+    def test_approved_with_minor_correction_fails(self):
+        review = load_json(VALID_FIXTURE)
+        add_finding(review, "minor_finding", "modified", "page", severity="minor")
+        review["review_summary"]["verdict"] = "approved"
+        review["entity_assessments"][0]["status"] = "modified"
+        review["entity_assessments"][0]["related_finding_ids"] = ["minor_finding"]
+        self.assert_has_error(validator.validate_document(review), "applied corrections")
 
     def test_rejected_ready_for_downstream_fails(self):
         review = load_json(VALID_FIXTURE)

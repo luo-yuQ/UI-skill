@@ -9,9 +9,13 @@
 - `input_kind`：固定为 `layout_reference_analysis_review`。
 - `source`：原始截图的不透明引用和文件名；validator 不打开截图。
 - `source_analysis`：被审查的 A1 draft 标识、引用、版本和结构校验状态。
+- `independent_baseline`：读取 A1 语义结论前形成的独立截图观察。
+- `comparison_summary`：baseline 与 draft 的固定维度对照结果。
 - `review_summary`：总体结论、问题计数、可下游使用状态和审查置信度。
 - `findings`：逐项问题、证据和修正动作；没有问题时可以为空。
 - `category_assessments`：固定审查维度的覆盖结果。
+- `entity_assessments`：page、region、group 等重要对象的逐项结论。
+- `approval_evidence`：`approved` verdict 的逐门禁通过证据；其他 verdict 可为空。
 - `unresolved_findings`：无法可靠解决的问题。
 - `finalization`：final analysis 的引用、校验状态和 finding 应用情况。
 - `notes`：必要补充字符串列表，不重复 findings。
@@ -31,6 +35,35 @@
 - `validation_status`：`valid`、`invalid` 或 `not_run`。
 
 只有结构合法的 draft 才能进入正常语义审查。validation result 是辅助信息，不能代替独立查看截图。
+
+## `independent_baseline`
+
+该对象必须在读取 A1 语义内容前形成，并包含：
+
+- `page_hypothesis`、`presentation_mode`；
+- 非空的 `major_region_summaries`，每项使用独立 `baseline_id`、标签、描述、粗略位置和 confidence；
+- `component_group_summaries` 与 `visible_repeat_counts`；
+- 相互独立的 `primary_visual_focal_point`、`primary_interaction_focal_point` 和 `primary_action_candidate`；
+- `secondary_action_candidates`；
+- `visible_text_or_labels`；
+- `capture_limitations`、`uncertainties` 和整体 `confidence`。
+
+baseline 不使用 A1 region/group ID 作为先验。焦点和操作候选采用描述、证据级别和 confidence，不要求映射到 final ID。
+
+## `comparison_summary`
+
+固定包含：
+
+- `page_match`
+- `region_coverage`
+- `component_group_coverage`
+- `repeat_count_match`
+- `visual_hierarchy_match`
+- `evidence_discipline`
+- `metadata_consistency`
+- `user_focus_coverage`
+
+每项包含 `status`、`summary` 和 `confidence`。status 为 `match`、`partial_match`、`mismatch`、`unverified` 或 `not_applicable`。metadata 信息必须来自执行环境或可信图片元数据，不得由视觉模型估算；无法验证时使用 `unverified` 并创建 finding。
 
 ## `review_summary`
 
@@ -81,6 +114,25 @@
 - `confidence_calibration`
 
 每项包含 `category`、`status`、`summary` 和 `confidence`。`status` 为 `pass`、`pass_with_notes`、`needs_correction` 或 `unresolved`。同一类别不得重复。
+
+## `entity_assessments`
+
+每项包含：
+
+- `entity_type`：`page`、`region`、`region_relationship`、`component_group`、`visual_hierarchy`、`layout_rule`、`excluded_content`、`uncertainty` 或 `overall_confidence`。
+- `entity_id`：A1 对象 ID；集合级对象使用稳定 ID，如 `page`、`visual_hierarchy`、`excluded_content`、`overall_confidence`。
+- `status`：`confirmed`、`modified`、`added`、`removed` 或 `unresolved`。
+- `summary`：逐对象审查结论。
+- `related_finding_ids`：支持非 confirmed 结论的 finding ID。
+- `confidence`：assessment 置信度。
+
+提供 draft 时，validator 要求覆盖 page、所有 region、所有 relationship、所有 component group、visual hierarchy、所有 layout rule、excluded content、所有 uncertainty 和 overall confidence。baseline 发现的遗漏对象使用 `added`。
+
+## `approval_evidence`
+
+每项包含固定 `check`、`status` 和 `summary`。`approved` 时必须非空、覆盖所有 gate 且每项为 `pass`：独立基线、页面一致性、region/group 覆盖、主操作、视觉与交互焦点、重复数量、次级操作、证据、confidence、品牌、用户关注、元数据和可审计记录。
+
+`issue_count: 0` 不能替代批准证据。其他 verdict 可将该数组留空。
 
 ## `unresolved_findings`
 

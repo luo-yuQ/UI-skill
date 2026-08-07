@@ -27,6 +27,7 @@
 | `unsupported_inference` | 功能或交互描述没有截图证据 | 虚构点击结果、消费或跳转 | 声称点击后消耗资源并进入匹配 | `removed` 或 `downgraded_to_uncertain` | `major` |
 | `evidence_level_mismatch` | `observed`、`inferred`、`uncertain` 使用错误 | 推断被标为直接观察 | 分类控制列表被标为 `observed` | `modified` | `major` |
 | `confidence_mismatch` | 置信度与证据强度不匹配 | 单一线索却给出 0.99 | 推断的主操作置信度过高 | `modified` | `minor` |
+| `input_metadata_unverified` | 图片尺寸、方向、文件名或来源缺少可信执行环境证据 | 视觉模型估算像素尺寸或元数据未核实 | draft 声称 1920×1080，但运行环境未提供图片元数据 | `unresolved` 或 `modified` | `minor` |
 | `brand_content_leak` | 输出建议继承具体品牌或美术内容 | 推荐复制图标、角色或品牌配色 | layout rule 要求复用货币图标造型 | `modified` 或 `removed` | `major` |
 | `terminology_inconsistency` | 同一概念使用多套字段或术语 | page type 混用不同命名 | 同时使用 `pageType` 与 `page_type` | `modified` | `minor` |
 | `broken_reference` | 结构化 ID 指向不存在或已删除对象 | final 残留旧 region 引用 | layout rule 引用被删除 group | `modified` 或 `removed` | `critical` |

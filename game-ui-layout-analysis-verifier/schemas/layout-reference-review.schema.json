@@ -11,9 +11,13 @@
     "input_kind",
     "source",
     "source_analysis",
+    "independent_baseline",
+    "comparison_summary",
     "review_summary",
     "findings",
     "category_assessments",
+    "entity_assessments",
+    "approval_evidence",
     "unresolved_findings",
     "finalization",
     "notes"
@@ -24,6 +28,8 @@
     "input_kind": {"const": "layout_reference_analysis_review"},
     "source": {"$ref": "#/$defs/source"},
     "source_analysis": {"$ref": "#/$defs/source_analysis"},
+    "independent_baseline": {"$ref": "#/$defs/independent_baseline"},
+    "comparison_summary": {"$ref": "#/$defs/comparison_summary"},
     "review_summary": {"$ref": "#/$defs/review_summary"},
     "findings": {
       "type": "array",
@@ -34,6 +40,15 @@
       "minItems": 9,
       "maxItems": 9,
       "items": {"$ref": "#/$defs/category_assessment"}
+    },
+    "entity_assessments": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/entity_assessment"}
+    },
+    "approval_evidence": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/approval_evidence_item"}
     },
     "unresolved_findings": {
       "type": "array",
@@ -79,6 +94,161 @@
         "analysis_ref": {"type": "string", "minLength": 1},
         "schema_version": {"const": "0.1"},
         "validation_status": {"$ref": "#/$defs/validation_status"}
+      }
+    },
+    "baseline_observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["description", "evidence_level", "confidence"],
+      "properties": {
+        "description": {"type": "string", "minLength": 1},
+        "evidence_level": {
+          "type": "string",
+          "enum": ["observed", "inferred", "uncertain"]
+        },
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "baseline_region_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_id", "label", "description", "approximate_position", "confidence"],
+      "properties": {
+        "baseline_id": {"$ref": "#/$defs/identifier"},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "approximate_position": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "baseline_component_group_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_id", "label", "description", "visible_item_count", "confidence"],
+      "properties": {
+        "baseline_id": {"$ref": "#/$defs/identifier"},
+        "label": {"type": "string", "minLength": 1},
+        "description": {"type": "string", "minLength": 1},
+        "visible_item_count": {"type": ["integer", "null"], "minimum": 0},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "baseline_repeat_count": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["baseline_group_id", "visible_count", "count_certainty", "notes"],
+      "properties": {
+        "baseline_group_id": {"$ref": "#/$defs/identifier"},
+        "visible_count": {"type": ["integer", "null"], "minimum": 0},
+        "count_certainty": {
+          "type": "string",
+          "enum": ["exact", "at_least", "uncertain", "not_applicable"]
+        },
+        "notes": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "independent_baseline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_hypothesis",
+        "presentation_mode",
+        "major_region_summaries",
+        "component_group_summaries",
+        "visible_repeat_counts",
+        "primary_visual_focal_point",
+        "primary_interaction_focal_point",
+        "primary_action_candidate",
+        "secondary_action_candidates",
+        "visible_text_or_labels",
+        "capture_limitations",
+        "uncertainties",
+        "confidence"
+      ],
+      "properties": {
+        "page_hypothesis": {"type": "string", "minLength": 1},
+        "presentation_mode": {
+          "type": "string",
+          "enum": ["fullscreen", "modal", "hud", "hybrid", "unknown"]
+        },
+        "major_region_summaries": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"$ref": "#/$defs/baseline_region_summary"}
+        },
+        "component_group_summaries": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/baseline_component_group_summary"}
+        },
+        "visible_repeat_counts": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/baseline_repeat_count"}
+        },
+        "primary_visual_focal_point": {"$ref": "#/$defs/baseline_observation"},
+        "primary_interaction_focal_point": {"$ref": "#/$defs/baseline_observation"},
+        "primary_action_candidate": {
+          "anyOf": [
+            {"$ref": "#/$defs/baseline_observation"},
+            {"type": "null"}
+          ]
+        },
+        "secondary_action_candidates": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/baseline_observation"}
+        },
+        "visible_text_or_labels": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "capture_limitations": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "uncertainties": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1},
+          "uniqueItems": true
+        },
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "comparison_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "summary", "confidence"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["match", "partial_match", "mismatch", "unverified", "not_applicable"]
+        },
+        "summary": {"type": "string", "minLength": 1},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "comparison_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "page_match",
+        "region_coverage",
+        "component_group_coverage",
+        "repeat_count_match",
+        "visual_hierarchy_match",
+        "evidence_discipline",
+        "metadata_consistency",
+        "user_focus_coverage"
+      ],
+      "properties": {
+        "page_match": {"$ref": "#/$defs/comparison_item"},
+        "region_coverage": {"$ref": "#/$defs/comparison_item"},
+        "component_group_coverage": {"$ref": "#/$defs/comparison_item"},
+        "repeat_count_match": {"$ref": "#/$defs/comparison_item"},
+        "visual_hierarchy_match": {"$ref": "#/$defs/comparison_item"},
+        "evidence_discipline": {"$ref": "#/$defs/comparison_item"},
+        "metadata_consistency": {"$ref": "#/$defs/comparison_item"},
+        "user_focus_coverage": {"$ref": "#/$defs/comparison_item"}
       }
     },
     "review_summary": {
@@ -141,6 +311,7 @@
         "unsupported_inference",
         "evidence_level_mismatch",
         "confidence_mismatch",
+        "input_metadata_unverified",
         "brand_content_leak",
         "terminology_inconsistency",
         "broken_reference",
@@ -219,6 +390,77 @@
         },
         "summary": {"type": "string", "minLength": 1},
         "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "entity_assessment": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "entity_type",
+        "entity_id",
+        "status",
+        "summary",
+        "related_finding_ids",
+        "confidence"
+      ],
+      "properties": {
+        "entity_type": {
+          "type": "string",
+          "enum": [
+            "page",
+            "region",
+            "region_relationship",
+            "component_group",
+            "visual_hierarchy",
+            "layout_rule",
+            "excluded_content",
+            "uncertainty",
+            "overall_confidence"
+          ]
+        },
+        "entity_id": {"$ref": "#/$defs/identifier"},
+        "status": {
+          "type": "string",
+          "enum": ["confirmed", "modified", "added", "removed", "unresolved"]
+        },
+        "summary": {"type": "string", "minLength": 1},
+        "related_finding_ids": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/identifier"},
+          "uniqueItems": true
+        },
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "approval_evidence_item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["check", "status", "summary"],
+      "properties": {
+        "check": {
+          "type": "string",
+          "enum": [
+            "independent_baseline_completed",
+            "page_consistency_checked",
+            "major_regions_checked",
+            "major_component_groups_checked",
+            "primary_action_checked",
+            "visual_and_interaction_foci_checked",
+            "repeat_counts_checked",
+            "secondary_actions_checked",
+            "evidence_levels_checked",
+            "confidence_recalibrated",
+            "brand_isolation_checked",
+            "user_focus_covered",
+            "metadata_consistency_checked",
+            "auditable_records_present"
+          ]
+        },
+        "status": {
+          "type": "string",
+          "enum": ["pass", "fail", "unverified", "not_applicable"]
+        },
+        "summary": {"type": "string", "minLength": 1}
       }
     },
     "unresolved_finding": {

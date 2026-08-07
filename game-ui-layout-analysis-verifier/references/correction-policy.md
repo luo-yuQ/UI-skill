@@ -35,6 +35,19 @@ A2 无法在现有截图中可靠决定。记录冲突、原因、受影响对�
 - final 不得引用已删除 ID。
 - `added` finding 可在 review 中提前引用准备加入 final 的 ID。
 
+## Entity assessment 状态
+
+`entity_assessments.status` 使用 `confirmed`、`modified`、`added`、`removed` 或 `unresolved`。状态与 correction action 对齐，但 assessment 是对象级审查记录，finding 是问题级证据：
+
+- `confirmed` 可以没有 finding，但必须有审查摘要和置信度。
+- `modified`、`added`、`removed`、`unresolved` 必须在 `related_finding_ids` 中引用至少一个现有 finding。
+- 一个 finding 可以支持多个对象 assessment，例如新增 region 及其 component group。
+- 不要为了得到 `approved` 而省略对象 assessment；确认本身也必须留下记录。
+
+## 批准证据
+
+`approval_evidence` 不是 finding 的替代品，而是 `approved` verdict 的门禁记录。只有独立基线、逐对象覆盖、视觉/交互焦点、主次操作、数量、证据、confidence、品牌、用户关注和元数据检查全部通过时，才能把所有 gate 标为 `pass`。任何 gate 为 `fail`、`unverified` 或 `not_applicable` 时，不得使用 `approved`；应选择带修正 verdict 或 `rejected`。
+
 ## 修改优先级
 
 1. 页面类型与主要用途。

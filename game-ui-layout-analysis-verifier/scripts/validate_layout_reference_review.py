@@ -60,6 +60,22 @@ ASSESSMENT_CATEGORIES = {
     "brand_isolation",
     "confidence_calibration",
 }
+APPROVAL_CHECKS = {
+    "independent_baseline_completed",
+    "page_consistency_checked",
+    "major_regions_checked",
+    "major_component_groups_checked",
+    "primary_action_checked",
+    "visual_and_interaction_foci_checked",
+    "repeat_counts_checked",
+    "secondary_actions_checked",
+    "evidence_levels_checked",
+    "confidence_recalibrated",
+    "brand_isolation_checked",
+    "user_focus_covered",
+    "metadata_consistency_checked",
+    "auditable_records_present",
+}
 
 _A1_VALIDATOR: ModuleType | None = None
 
@@ -151,6 +167,34 @@ def collect_analysis_entities(data: Any) -> set[str]:
     return entities
 
 
+def expected_assessment_keys(data: Any) -> set[tuple[str, str]]:
+    """Return every A1 object that requires an auditable A2 assessment."""
+
+    if not isinstance(data, dict):
+        return set()
+    expected = {
+        ("page", "page"),
+        ("visual_hierarchy", "visual_hierarchy"),
+        ("excluded_content", "excluded_content"),
+        ("overall_confidence", "overall_confidence"),
+    }
+    collections = (
+        ("regions", "region_id", "region"),
+        ("region_relationships", "relationship_id", "region_relationship"),
+        ("component_groups", "group_id", "component_group"),
+        ("layout_rules", "rule_id", "layout_rule"),
+        ("uncertainties", "uncertainty_id", "uncertainty"),
+    )
+    for collection, id_field, entity_type in collections:
+        items = data.get(collection)
+        if not isinstance(items, list):
+            continue
+        for item in items:
+            if isinstance(item, dict) and isinstance(item.get(id_field), str):
+                expected.add((entity_type, item[id_field]))
+    return expected
+
+
 def validate_review_schema(data: Any) -> list[str]:
     try:
         schema = load_json(REVIEW_SCHEMA_PATH)
@@ -168,6 +212,10 @@ def validate_review_semantics(data: Any) -> list[str]:
     findings = data.get("findings")
     unresolved = data.get("unresolved_findings")
     assessments = data.get("category_assessments")
+    entity_assessments = data.get("entity_assessments")
+    approval_evidence = data.get("approval_evidence")
+    baseline = data.get("independent_baseline")
+    comparison = data.get("comparison_summary")
     summary = data.get("review_summary")
     finalization = data.get("finalization")
 
@@ -191,6 +239,27 @@ def validate_review_semantics(data: Any) -> list[str]:
             errors.append(f"$.category_assessments: missing categories {missing}")
         if extra:
             errors.append(f"$.category_assessments: unexpected categories {extra}")
+
+    if not isinstance(baseline, dict):
+        errors.append("$.independent_baseline: independent baseline is required")
+    else:
+        major_regions = baseline.get("major_region_summaries")
+        if not isinstance(major_regions, list) or not major_regions:
+            errors.append(
+                "$.independent_baseline.major_region_summaries: must not be empty"
+            )
+
+    if not isinstance(comparison, dict):
+        errors.append("$.comparison_summary: draft comparison is required")
+    else:
+        if "metadata_consistency" not in comparison:
+            errors.append(
+                "$.comparison_summary.metadata_consistency: comparison is required"
+            )
+        if "user_focus_coverage" not in comparison:
+            errors.append(
+                "$.comparison_summary.user_focus_coverage: comparison is required"
+            )
 
     finding_list = findings if isinstance(findings, list) else []
     severity_counts = {
@@ -217,6 +286,41 @@ def validate_review_semantics(data: Any) -> list[str]:
         if action == "unresolved"
     }
 
+    assessment_keys: set[tuple[str, str]] = set()
+    entity_list = entity_assessments if isinstance(entity_assessments, list) else []
+    for index, assessment in enumerate(entity_list):
+        if not isinstance(assessment, dict):
+            continue
+        entity_type = assessment.get("entity_type")
+        entity_id = assessment.get("entity_id")
+        if isinstance(entity_type, str) and isinstance(entity_id, str):
+            key = (entity_type, entity_id)
+            if key in assessment_keys:
+                errors.append(
+                    f"$.entity_assessments[{index}]: duplicate entity assessment {key!r}"
+                )
+            assessment_keys.add(key)
+        related = assessment.get("related_finding_ids")
+        related_ids = set(related) if isinstance(related, list) else set()
+        unknown = sorted(related_ids - finding_ids)
+        if unknown:
+            errors.append(
+                f"$.entity_assessments[{index}].related_finding_ids: "
+                f"unknown finding IDs {unknown}"
+            )
+        if assessment.get("status") != "confirmed" and not related_ids:
+            errors.append(
+                f"$.entity_assessments[{index}].related_finding_ids: "
+                "non-confirmed assessment requires a finding"
+            )
+
+    approval_checks = collect_unique_values(
+        approval_evidence,
+        "check",
+        "$.approval_evidence",
+        errors,
+    )
+
     if isinstance(summary, dict):
         if summary.get("issue_count") != len(finding_list):
             errors.append(
@@ -242,6 +346,94 @@ def validate_review_semantics(data: Any) -> list[str]:
             errors.append(
                 "$.review_summary.verdict: approved cannot include major or critical findings"
             )
+        if summary.get("verdict") == "approved":
+            evidence_list = approval_evidence if isinstance(approval_evidence, list) else []
+            if approval_checks != APPROVAL_CHECKS:
+                missing = sorted(APPROVAL_CHECKS - approval_checks)
+                errors.append(
+                    "$.approval_evidence: approved review must cover every approval check"
+                    + (f"; missing {missing}" if missing else "")
+                )
+            non_pass = [
+                item.get("check")
+                for item in evidence_list
+                if isinstance(item, dict) and item.get("status") != "pass"
+            ]
+            if non_pass:
+                errors.append(
+                    f"$.approval_evidence: approved review has non-pass checks {non_pass}"
+                )
+            if expected_unresolved or unresolved_ids:
+                errors.append(
+                    "$.review_summary.verdict: approved review cannot have unresolved findings"
+                )
+            if expected_applied:
+                errors.append(
+                    "$.review_summary.verdict: approved review cannot require applied corrections"
+                )
+            non_confirmed = [
+                item.get("entity_id")
+                for item in entity_list
+                if isinstance(item, dict) and item.get("status") != "confirmed"
+            ]
+            if non_confirmed:
+                errors.append(
+                    "$.entity_assessments: approved review requires confirmed assessments; "
+                    f"non-confirmed entities {non_confirmed}"
+                )
+            non_pass_categories = [
+                item.get("category")
+                for item in (assessments if isinstance(assessments, list) else [])
+                if isinstance(item, dict) and item.get("status") != "pass"
+            ]
+            if non_pass_categories:
+                errors.append(
+                    "$.category_assessments: approved review requires pass status; "
+                    f"non-pass categories {non_pass_categories}"
+                )
+            unresolved_core = [
+                item.get("entity_id")
+                for item in entity_list
+                if isinstance(item, dict)
+                and item.get("status") == "unresolved"
+                and item.get("entity_type")
+                in {"page", "region", "visual_hierarchy", "overall_confidence"}
+            ]
+            if unresolved_core:
+                errors.append(
+                    "$.review_summary.verdict: approved review has unresolved core entities "
+                    f"{unresolved_core}"
+                )
+            if isinstance(comparison, dict):
+                non_matching_comparisons = [
+                    field
+                    for field, item in comparison.items()
+                    if isinstance(item, dict)
+                    and item.get("status") != "match"
+                    and not (
+                        field == "user_focus_coverage"
+                        and item.get("status") == "not_applicable"
+                    )
+                ]
+                if non_matching_comparisons:
+                    errors.append(
+                        "$.comparison_summary: approved review requires matching comparisons; "
+                        f"non-matching fields {non_matching_comparisons}"
+                    )
+                metadata = comparison.get("metadata_consistency")
+                metadata_status = metadata.get("status") if isinstance(metadata, dict) else None
+                if metadata_status != "match":
+                    errors.append(
+                        "$.comparison_summary.metadata_consistency: "
+                        "approved review requires verified matching metadata"
+                    )
+                focus = comparison.get("user_focus_coverage")
+                focus_status = focus.get("status") if isinstance(focus, dict) else None
+                if focus_status not in {"match", "not_applicable"}:
+                    errors.append(
+                        "$.comparison_summary.user_focus_coverage: "
+                        "approved review requires covered or absent user focus"
+                    )
         if summary.get("verdict") == "rejected" and summary.get("ready_for_downstream") is not False:
             errors.append(
                 "$.review_summary.ready_for_downstream: rejected review must not be ready"
@@ -322,6 +514,21 @@ def validate_draft_consistency(review: Any, draft: Any) -> list[str]:
         )
 
     draft_entities = collect_analysis_entities(draft)
+    expected_assessments = expected_assessment_keys(draft)
+    assessment_items = review.get("entity_assessments")
+    actual_assessments = {
+        (item.get("entity_type"), item.get("entity_id"))
+        for item in assessment_items
+        if isinstance(item, dict)
+        and isinstance(item.get("entity_type"), str)
+        and isinstance(item.get("entity_id"), str)
+    } if isinstance(assessment_items, list) else set()
+    missing_assessments = sorted(expected_assessments - actual_assessments)
+    if missing_assessments:
+        errors.append(
+            "$.entity_assessments: missing draft object assessments "
+            f"{missing_assessments}"
+        )
     findings = review.get("findings")
     if isinstance(findings, list):
         for index, finding in enumerate(findings):
