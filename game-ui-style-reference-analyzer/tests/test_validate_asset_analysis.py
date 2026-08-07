@@ -42,6 +42,36 @@ class AssetAnalysisValidatorTests(unittest.TestCase):
     def test_new_example_passes(self):
         self.assertEqual([], validator.validate_file(EXAMPLE_PATH))
 
+    def test_standard_output_without_user_intended_use_is_valid(self):
+        data = load_valid()
+        self.assertNotIn("user_intended_use", data)
+        self.assertEqual([], validator.validate_document(data))
+
+    def test_explicit_user_intended_use_is_valid(self):
+        data = load_valid()
+        data["user_intended_use"] = "style_reference"
+        self.assertEqual([], validator.validate_document(data))
+
+    def test_standard_output_without_layout_behavior_is_valid(self):
+        data = load_valid()
+        self.assertNotIn("layout_behavior", data)
+        self.assertEqual([], validator.validate_document(data))
+
+    def test_standard_output_without_laya_new_ui_is_valid(self):
+        data = load_valid()
+        self.assertNotIn("laya_new_ui", data)
+        self.assertEqual([], validator.validate_document(data))
+
+    def test_standard_output_without_role_candidates_is_valid(self):
+        data = load_valid()
+        self.assertNotIn("role_candidates", data)
+        self.assertEqual([], validator.validate_document(data))
+
+    def test_standard_output_without_intended_role_is_valid(self):
+        data = load_valid()
+        self.assertNotIn("intended_role", data)
+        self.assertEqual([], validator.validate_document(data))
+
     def test_missing_required_field_fails(self):
         data = load_valid()
         del data["visual_language"]
@@ -107,6 +137,7 @@ class AssetAnalysisValidatorTests(unittest.TestCase):
         data = load_valid()
         data["input_kind"] = "single_asset"
         data["schema_version"] = "0.1"
+        data["intended_role"] = "legacy_background_reference"
         data["file_path"] = "assets/reference.png"
         data["technical_metadata"] = {
             "width": 1024,
@@ -116,13 +147,19 @@ class AssetAnalysisValidatorTests(unittest.TestCase):
             "has_alpha": False,
         }
         data["role_candidates"] = ["background_reference"]
-        data["layout_behavior"].update(
-            {
-                "safe_overlay_note": "Legacy compatibility note.",
-                "protected_region_note": "Legacy compatibility note.",
-            }
-        )
-        data["laya_new_ui"]["usage_note"] = "Legacy compatibility note."
+        data["layout_behavior"] = {
+            "stretchable": False,
+            "nine_slice_candidate": False,
+            "recommended_scale_mode": "contain",
+            "safe_overlay_note": "Legacy compatibility note.",
+            "protected_region_note": "Legacy compatibility note.",
+        }
+        data["laya_new_ui"] = {
+            "recommended_node_type": "Image",
+            "size_grid_candidate": None,
+            "usage_note": "Legacy compatibility note.",
+        }
+        data["user_intended_use"] = "direct_asset"
         self.assertEqual([], validator.validate_document(data))
 
     def test_cli_success_returns_zero(self):

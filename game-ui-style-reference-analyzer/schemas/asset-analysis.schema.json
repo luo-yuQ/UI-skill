@@ -15,17 +15,13 @@
     "reference_kind",
     "asset_category",
     "visual_identity",
-    "intended_role",
     "visual_description",
     "visual_language",
     "world_visual_context",
     "style_candidates",
     "content_specific_traits",
     "evidence",
-    "user_intended_use",
     "uncertainties",
-    "layout_behavior",
-    "laya_new_ui",
     "confidence",
     "notes"
   ],
@@ -87,11 +83,11 @@
       "type": "string",
       "minLength": 1,
       "pattern": "^[a-z0-9_\\-]+$",
-      "description": "Known project role retained from the legacy contract. Record a supplied role or unknown; do not invent a UI recommendation."
+      "description": "Optional caller-provided project role retained from the legacy contract. New B1 analysis must not infer or generate this field."
     },
     "role_candidates": {
       "type": "array",
-      "description": "Legacy candidate roles when the project role is uncertain. These are descriptive compatibility metadata, not design advice.",
+      "description": "Legacy compatibility field for previously recorded role candidates. New B1 analysis does not generate this field.",
       "items": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
       "minItems": 1,
       "maxItems": 3,
@@ -133,7 +129,7 @@
     },
     "style_candidates": {
       "type": "array",
-      "description": "Image-scoped visual traits for future B2 verification. Candidates are not final overall-game style decisions.",
+      "description": "Image-scoped color, material, shape, rendering, lighting, decoration, or world/theme visual traits for future B2 verification. Do not include composition, camera angle, perspective layout, subject placement, page layout, or element positions. Candidates are not final overall-game style decisions.",
       "items": {"$ref": "#/$defs/trait_with_evidence"},
       "minItems": 1
     },
@@ -149,7 +145,7 @@
     "user_intended_use": {
       "type": ["string", "null"],
       "enum": ["style_reference", "color_reference", "material_reference", "character_reference", "content_reference", "direct_asset", "mixed", null],
-      "description": "Optional intended use supplied by the user. Preserve it verbatim at the enum level; do not infer or replace it from image content."
+      "description": "Optional caller/user-provided intended use. Preserve it only when explicitly supplied; never infer it from reference_kind, asset_category, or visible content. Omit the field or use null when no intended use was provided."
     },
     "uncertainties": {
       "type": "array",
@@ -178,7 +174,7 @@
     },
     "layout_behavior": {
       "type": "object",
-      "description": "Legacy secondary compatibility information. Preserve it, but do not let it drive B1 visual analysis or perform actual slicing.",
+      "description": "Optional legacy engineering compatibility information. New B1 visual analysis does not generate this field; preserve it only when reading or carrying forward legacy data.",
       "additionalProperties": false,
       "required": ["stretchable", "nine_slice_candidate", "recommended_scale_mode"],
       "properties": {
@@ -191,7 +187,7 @@
     },
     "laya_new_ui": {
       "type": "object",
-      "description": "Legacy Laya compatibility information. Preserve it for downstream consumers; it is not part of the B1 visual-analysis main path.",
+      "description": "Optional legacy Laya compatibility information. New B1 visual analysis does not generate this field; preserve it only when reading or carrying forward legacy data.",
       "additionalProperties": false,
       "required": ["recommended_node_type", "size_grid_candidate"],
       "properties": {
@@ -273,7 +269,7 @@
     },
     "material_language": {
       "type": "object",
-      "description": "Materials and visible surface qualities supported by the image.",
+      "description": "Tangible materials and visible surface qualities supported by the image. Atmospheric effects, light effects, fire, smoke, fog, glow, and particles are not materials.",
       "additionalProperties": false,
       "required": ["materials", "overall_tendencies", "confidence"],
       "properties": {

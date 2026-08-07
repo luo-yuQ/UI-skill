@@ -9,12 +9,12 @@ Analyze exactly one user-owned game visual/art reference at a time. Treat each B
 
 ## B1 workflow
 
-1. Inspect one image together with any optional user description and `user_intended_use`.
-2. Identify what the complete reference is with `reference_kind`; keep it distinct from the main subject's `asset_category` and the user's intended use.
+1. Inspect one image together with any optional caller/user description and metadata.
+2. Identify what the complete image is with `reference_kind`; infer this field from visible content when supported. Keep it distinct from `user_intended_use`, which says how the caller wants to use the image.
 3. Describe only visible subject matter, composition, and appearance in `visual_description`.
 4. Record the six comparable visual-language dimensions: color, material, shape, rendering, lighting, and decoration. Read the matching files under `references/visual-style-taxonomy/` before producing these fields.
 5. Record image-scoped theme cues in `world_visual_context` without declaring the game's confirmed world setting.
-6. Record traits worth later cross-image verification as `style_candidates`. Treat them as candidates, never as final overall-game style.
+6. Record color, material, shape, rendering, lighting, decoration, or world/theme traits worth later cross-image verification as `style_candidates`. Exclude composition, camera angle, perspective layout, subject placement, page layout, and element positions.
 7. Put subject-, object-, scene-, pose-, and composition-specific details in `content_specific_traits` so later synthesis does not automatically globalize them.
 8. Label claims as `observed`, `inferred`, or `user_provided` according to `references/quality/evidence-vs-inference.md`.
 9. Put unsupported judgments in `uncertainties` instead of guessing. Assign evidence-based confidence values.
@@ -27,6 +27,9 @@ Analyze exactly one user-owned game visual/art reference at a time. Treat each B
 - Do not compare multiple images or perform B2 synthesis.
 - Do not analyze other games' UI reference layouts.
 - Do not perform Composer page planning, prompt compilation, image generation, provider calls, engine implementation, or actual nine-slice cutting.
-- Preserve `layout_behavior` and `laya_new_ui` only as secondary compatibility fields. Do not let them drive the analysis.
+- Copy `user_intended_use` only when the caller/user explicitly provides it. Otherwise omit it or use `null`; never derive it from `reference_kind`, `asset_category`, or visible content.
+- Do not generate `intended_role` or `role_candidates`. Preserve them only when carrying forward caller-provided or legacy data.
+- Do not generate `layout_behavior` or `laya_new_ui` in normal B1 output. Preserve them only as optional legacy compatibility fields when carrying forward old data; a separate future engineering-asset stage may own them.
+- Treat Material Language as tangible or surface appearance. Put fire, smoke, fog, glow, magical light, particles, and sparks in lighting, decoration/effects, atmosphere, or `visual_description`, not in materials.
 
 Prioritize accuracy, evidence, comparability, concision, and completeness. Do not prioritize prose flair or design creativity.
