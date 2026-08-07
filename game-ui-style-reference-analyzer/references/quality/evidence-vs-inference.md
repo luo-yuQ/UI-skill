@@ -18,4 +18,8 @@ Use for identity, intent, role, or context supplied by the user but not independ
 
 When neither visual evidence nor user context supports a reliable statement, add an entry to `uncertainties` instead of guessing. A complete output may contain explicit uncertainty; it must not contain fabricated certainty.
 
+## No-purpose rule
+
+Keep `observed`, `inferred`, and `user_provided` statements descriptive. Evidence provenance never permits suitability, recommendation, or usage judgments such as "suitable for," "recommended as," or "can be used as." Store explicitly supplied intent only in `user_intended_use`.
+
 Evidence labels describe the source of a claim, not its importance. Keep statements concise and avoid UI recommendations in every source category.

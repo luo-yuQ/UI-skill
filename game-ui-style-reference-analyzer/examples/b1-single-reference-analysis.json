@@ -26,7 +26,7 @@
       "materials": [
         {"name": "silver metal", "qualities": ["hard", "reflective", "clean"]},
         {"name": "dark stone", "qualities": ["rough", "matte", "heavy"]},
-        {"name": "blue crystal", "qualities": ["hard", "translucent", "emissive"]}
+        {"name": "blue crystal", "qualities": ["hard", "translucent"]}
       ],
       "overall_tendencies": ["hard surfaces", "cool reflective accents against subdued masonry"],
       "confidence": 0.88

@@ -94,6 +94,57 @@ class AssetAnalysisValidatorTests(unittest.TestCase):
         self.assert_has_error(errors, "style_candidates")
         self.assert_has_error(errors, "evidence")
 
+    def test_non_tangible_effects_fail_in_material(self):
+        for effect in ("fire", "smoke", "fog", "glow", "particles", "emissive", "烟雾"):
+            with self.subTest(effect=effect):
+                data = load_valid()
+                data["visual_language"]["material"]["overall_tendencies"] = [effect]
+                self.assert_has_error(
+                    validator.validate_document(data),
+                    "forbidden in Material Language",
+                )
+
+    def test_recommendation_language_fails_in_inferred_evidence(self):
+        data = load_valid()
+        data["evidence"][1]["statement"] = "This treatment is recommended for a login screen."
+        self.assert_has_error(
+            validator.validate_document(data),
+            "recommendation language is forbidden",
+        )
+
+    def test_usage_language_fails_in_any_string_field(self):
+        for phrase in ("This can be used as a button frame.", "这个适合用于按钮边框。"):
+            with self.subTest(phrase=phrase):
+                data = load_valid()
+                data["notes"] = [phrase]
+                self.assert_has_error(
+                    validator.validate_document(data),
+                    "recommendation language is forbidden",
+                )
+
+    def test_page_spatial_organization_fails_as_style_candidate(self):
+        for trait in ("upper illustration plus lower panel", "上方插画 + 下方面板"):
+            with self.subTest(trait=trait):
+                data = load_valid()
+                data["style_candidates"][0]["trait"] = trait
+                self.assert_has_error(
+                    validator.validate_document(data),
+                    "spatial organization is forbidden",
+                )
+
+    def test_composition_fails_as_style_candidate(self):
+        data = load_valid()
+        data["style_candidates"][0]["trait"] = "centered composition"
+        self.assert_has_error(
+            validator.validate_document(data),
+            "spatial organization is forbidden",
+        )
+
+    def test_spatial_fact_remains_valid_in_visual_description(self):
+        data = load_valid()
+        data["visual_description"] = "An upper illustration appears above a lower panel."
+        self.assertEqual([], validator.validate_document(data))
+
     def test_confidence_out_of_range_fails(self):
         data = load_valid()
         data["confidence"] = 1.1

@@ -16,9 +16,9 @@ Pair a material name with short qualities, for example "silver metal: hard, refl
 
 - Treating color alone as proof of a material.
 - Calling every reflective surface metal or every translucent surface glass.
-- Listing fire, smoke, fog, bloom, glow, magical light, particles, or sparks as materials. Record them under lighting, decoration/effects, atmospheric description, or `visual_description` instead.
+- Listing fire, smoke, fog, bloom, glow, emissive or magical light, particles, sparks, or any other non-tangible visual effect as a material. This is strictly forbidden; record these under lighting, decoration/effects, atmospheric description, or `visual_description` instead.
 - Turning material observations into implementation or asset-production advice.
 
 ## Do not analyze
 
-Do not prescribe shaders, texture maps, engine settings, or materials for future UI elements. Atmospheric effects, light effects, and particles are not materials.
+Do not prescribe shaders, texture maps, engine settings, or materials for future UI elements. Atmospheric effects, light effects, and particles are never materials.

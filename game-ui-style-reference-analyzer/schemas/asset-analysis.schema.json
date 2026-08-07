@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/asset-analysis.schema.json",
   "title": "B1 Single-Reference Visual Analysis",
-  "description": "Structured description of exactly one user-owned game visual or art reference. The result records evidence, visual language, candidates for later B2 comparison, content-specific traits, and uncertainty without giving UI design recommendations or declaring an overall game style.",
+  "description": "Structured description of exactly one user-owned game visual or art reference. The result records evidence, visual language, candidates for later B2 comparison, content-specific traits, and uncertainty without giving UI design recommendations, making suitability or intended-use judgments in any field, or declaring an overall game style.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -129,7 +129,7 @@
     },
     "style_candidates": {
       "type": "array",
-      "description": "Image-scoped color, material, shape, rendering, lighting, decoration, or world/theme visual traits for future B2 verification. Do not include composition, camera angle, perspective layout, subject placement, page layout, or element positions. Candidates are not final overall-game style decisions.",
+      "description": "Image-scoped color, material, shape, rendering, lighting, decoration, or world/theme visual traits for future B2 verification. Do not include composition, camera angle, perspective layout, subject placement, page layout, element positions, or traits that only exist because of the current page's spatial organization, such as upper illustration plus lower panel. Candidates are not final overall-game style decisions.",
       "items": {"$ref": "#/$defs/trait_with_evidence"},
       "minItems": 1
     },
@@ -231,7 +231,7 @@
       "required": ["source", "statement", "confidence"],
       "properties": {
         "source": {"type": "string", "enum": ["observed", "inferred", "user_provided"], "description": "Whether the statement is directly visible, model-inferred, or supplied by the user."},
-        "statement": {"type": "string", "minLength": 1, "description": "Concise evidence or interpretation statement."},
+        "statement": {"type": "string", "minLength": 1, "description": "Concise evidence or interpretation statement. Even inferred or user-provided statements must not contain suitability, recommendation, or intended-use judgments unless represented by the dedicated caller-provided metadata field."},
         "confidence": {"$ref": "#/$defs/confidence"}
       }
     },
@@ -269,7 +269,7 @@
     },
     "material_language": {
       "type": "object",
-      "description": "Tangible materials and visible surface qualities supported by the image. Atmospheric effects, light effects, fire, smoke, fog, glow, and particles are not materials.",
+      "description": "Tangible materials and visible surface qualities supported by the image. Fire, smoke, fog, glow, bloom, emissive light, magical light, particles, sparks, and other non-tangible visual effects are strictly forbidden as materials.",
       "additionalProperties": false,
       "required": ["materials", "overall_tendencies", "confidence"],
       "properties": {

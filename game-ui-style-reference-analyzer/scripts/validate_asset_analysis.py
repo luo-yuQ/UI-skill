@@ -14,6 +14,71 @@ from typing import Any, Iterable
 SKILL_ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = SKILL_ROOT / "schemas" / "asset-analysis.schema.json"
 
+FORBIDDEN_PURPOSE_PHRASES = (
+    "适合用于",
+    "适合用在",
+    "推荐作为",
+    "推荐用于",
+    "可以用作",
+    "可用作",
+    "should be used",
+    "recommended as",
+    "recommended for",
+    "suitable for",
+    "can be used as",
+    "could be used as",
+)
+FORBIDDEN_MATERIAL_PATTERNS = (
+    r"\bfire\b",
+    r"\bsmoke\b",
+    r"\bfog\b",
+    r"\bglow\b",
+    r"\bbloom\b",
+    r"\bparticles?\b",
+    r"\bsparks?\b",
+    r"\bmagical light\b",
+    r"\bemissive\b",
+    r"\bluminescent\b",
+    "火焰",
+    "烟雾",
+    "雾气",
+    "辉光",
+    "泛光",
+    "粒子",
+    "火花",
+    "魔法光",
+    "发光",
+)
+FORBIDDEN_STYLE_CANDIDATE_PATTERNS = (
+    r"\bcomposition\b",
+    r"\bcamera angle\b",
+    r"\blow[- ]angle\b",
+    r"\bhigh[- ]angle\b",
+    r"\bsubject placement\b",
+    r"\bpositioned on the\b",
+    r"\bperspective layout\b",
+    r"\bpage layout\b",
+    r"\belement positions?\b",
+    r"\bupper illustration\b",
+    r"\blower panel\b",
+    r"\btop illustration\b",
+    r"\bbottom panel\b",
+    r"\bforeground/background arrangement\b",
+    "构图",
+    "镜头",
+    "机位",
+    "视角",
+    "主体位于",
+    "角色位于",
+    "透视布局",
+    "页面布局",
+    "元素位置",
+    "上方插画",
+    "下方面板",
+    "上图下板",
+    "前景背景安排",
+)
+
 
 def json_path(parts: Iterable[Any]) -> str:
     """Render a jsonschema path as a compact JSONPath-like string."""
@@ -276,6 +341,74 @@ def load_schema(path: Path = SCHEMA_PATH) -> dict[str, Any]:
     return schema
 
 
+def iter_string_values(value: Any, path: str = "$") -> Iterable[tuple[str, str]]:
+    """Yield every string value with its JSONPath-like location."""
+
+    if isinstance(value, dict):
+        for key, child in value.items():
+            yield from iter_string_values(child, f"{path}.{key}")
+    elif isinstance(value, list):
+        for index, child in enumerate(value):
+            yield from iter_string_values(child, f"{path}[{index}]")
+    elif isinstance(value, str):
+        yield path, value
+
+
+def contains_pattern(text: str, patterns: Iterable[str]) -> str | None:
+    """Return the first forbidden case-insensitive regex pattern found."""
+
+    for pattern in patterns:
+        if re.search(pattern, text, flags=re.IGNORECASE):
+            return pattern
+    return None
+
+
+def validate_semantics(data: Any) -> list[str]:
+    """Enforce B1 descriptive boundaries without performing visual inference."""
+
+    errors: list[str] = []
+
+    for path, text in iter_string_values(data):
+        matched = contains_pattern(text, FORBIDDEN_PURPOSE_PHRASES)
+        if matched is not None:
+            errors.append(
+                f"{path}: purpose, suitability, or recommendation language is forbidden "
+                f"in every B1 field (matched {matched!r})"
+            )
+
+    if not isinstance(data, dict):
+        return errors
+
+    visual_language = data.get("visual_language")
+    material = visual_language.get("material") if isinstance(visual_language, dict) else None
+    if material is not None:
+        for path, text in iter_string_values(material, "$.visual_language.material"):
+            matched = contains_pattern(text, FORBIDDEN_MATERIAL_PATTERNS)
+            if matched is not None:
+                errors.append(
+                    f"{path}: non-tangible visual effects are forbidden in Material "
+                    f"Language (matched {matched!r})"
+                )
+
+    candidates = data.get("style_candidates")
+    if isinstance(candidates, list):
+        for index, candidate in enumerate(candidates):
+            if not isinstance(candidate, dict):
+                continue
+            trait = candidate.get("trait")
+            if not isinstance(trait, str):
+                continue
+            matched = contains_pattern(trait, FORBIDDEN_STYLE_CANDIDATE_PATTERNS)
+            if matched is not None:
+                errors.append(
+                    f"$.style_candidates[{index}].trait: composition, camera, layout, "
+                    f"or current-page spatial organization is forbidden in style candidates "
+                    f"(matched {matched!r})"
+                )
+
+    return errors
+
+
 def validate_document(
     data: Any,
     schema_path: Path = SCHEMA_PATH,
@@ -286,7 +419,7 @@ def validate_document(
         schema = load_schema(schema_path)
     except (OSError, UnicodeError, json.JSONDecodeError, ValueError) as exc:
         return [f"$: unable to load schema {schema_path}: {exc}"]
-    return validate_schema(data, schema)
+    return validate_schema(data, schema) + validate_semantics(data)
 
 
 def validate_file(
