@@ -1,0 +1,135 @@
+{
+  "schema_version": "0.2",
+  "input_kind": "single_reference",
+  "asset_id": "silver_knight_castle_reference",
+  "source_ref": "user-reference-001",
+  "file_name": "silver_knight_castle.jpg",
+  "source_hint": "This is a visual style reference for our game.",
+  "page_context": "unknown",
+  "reference_kind": "illustration",
+  "asset_category": "illustration",
+  "visual_identity": "A silver-armored knight before a dim stone castle",
+  "intended_role": "visual_style_reference",
+  "visual_description": "A silver-armored knight stands slightly left of center against a dim blue-gray stone castle. The armor carries cool metallic highlights, while small blue-white emissive areas appear around the weapon and nearby atmosphere. Tall towers and pointed armor contours create a vertical, narrow silhouette pattern.",
+  "visual_language": {
+    "color": {
+      "dominant_colors": ["low-saturation blue-gray", "near-black"],
+      "secondary_colors": ["silver-white"],
+      "accent_colors": ["blue-white emissive light"],
+      "saturation": "low",
+      "value_tendency": "dark",
+      "temperature": "cool",
+      "contrast": "medium",
+      "relationships": ["dark blue-gray fields are interrupted by localized silver and blue-white highlights"],
+      "confidence": 0.94
+    },
+    "material": {
+      "materials": [
+        {"name": "silver metal", "qualities": ["hard", "reflective", "clean"]},
+        {"name": "dark stone", "qualities": ["rough", "matte", "heavy"]},
+        {"name": "magical translucent material", "qualities": ["emissive", "lightweight"]}
+      ],
+      "overall_tendencies": ["hard surfaces", "cool reflective accents against subdued masonry"],
+      "confidence": 0.88
+    },
+    "shape": {
+      "dominant_traits": ["sharp", "slender", "vertical", "complex_silhouette"],
+      "description": "Pointed armor plates, narrow tower forms, and elongated vertical contours recur across the knight and castle.",
+      "confidence": 0.91
+    },
+    "rendering": {
+      "primary_style": "semi_realistic",
+      "secondary_traits": ["digital painting", "soft atmospheric depth"],
+      "outline_strength": "subtle",
+      "texture_density": "medium",
+      "surface_detail_density": "high",
+      "gradient_usage": "moderate",
+      "visible_brushwork": "subtle",
+      "confidence": 0.87
+    },
+    "lighting": {
+      "exposure": "low_key",
+      "ambient_character": "cool, dim ambient illumination",
+      "dominant_direction": null,
+      "hardness": "mixed",
+      "rim_light": "present",
+      "bloom": "present",
+      "local_emissive": "present",
+      "atmospheric_lighting": "present",
+      "highlight_intensity": "high",
+      "shadow_depth": "deep",
+      "confidence": 0.84
+    },
+    "decoration": {
+      "motifs": ["pointed gothic arches", "engraved armor lines", "small blue crystals"],
+      "density": "medium",
+      "symmetry": "mixed",
+      "scale": "mixed",
+      "tendency": "restrained",
+      "confidence": 0.86
+    }
+  },
+  "world_visual_context": {
+    "themes": ["medieval fantasy", "dark fantasy"],
+    "era_cues": ["plate armor", "stone fortress architecture"],
+    "technology_cues": [],
+    "magic_cues": ["blue-white weapon glow", "localized floating light"],
+    "faction_or_character_cues": ["armored knight with restrained heraldic detail"],
+    "evidence": [
+      {"source": "observed", "statement": "The image contains plate armor, pointed stone towers, and blue-white emissive effects.", "confidence": 0.96},
+      {"source": "inferred", "statement": "These cues suggest a medieval dark-fantasy visual context for this image.", "confidence": 0.82}
+    ],
+    "confidence": 0.84
+  },
+  "style_candidates": [
+    {
+      "trait": "low-saturation cool blue-gray palette",
+      "evidence": [{"source": "observed", "statement": "Blue-gray and near-black occupy most of the image, with limited cool highlights.", "confidence": 0.95}],
+      "confidence": 0.93
+    },
+    {
+      "trait": "sharp elongated silhouettes",
+      "evidence": [{"source": "observed", "statement": "Armor plates, tower roofs, and edge ornaments repeatedly use narrow pointed forms.", "confidence": 0.91}],
+      "confidence": 0.89
+    },
+    {
+      "trait": "localized blue-white emissive accents",
+      "evidence": [{"source": "observed", "statement": "Small blue-white luminous areas contrast with the dark ambient field.", "confidence": 0.92}],
+      "confidence": 0.9
+    }
+  ],
+  "content_specific_traits": [
+    {
+      "trait": "the specific silver-armored knight identity and pose",
+      "evidence": [{"source": "observed", "statement": "One knight in a fixed three-quarter stance is the central subject.", "confidence": 0.98}],
+      "confidence": 0.98
+    },
+    {
+      "trait": "the current castle arrangement behind the character",
+      "evidence": [{"source": "observed", "statement": "A particular cluster of towers is positioned behind and above the knight.", "confidence": 0.96}],
+      "confidence": 0.96
+    }
+  ],
+  "evidence": [
+    {"source": "observed", "statement": "Cool blue-gray occupies most of the visible scene.", "confidence": 0.97},
+    {"source": "inferred", "statement": "The visual theme may lean toward dark fantasy in this image.", "confidence": 0.82},
+    {"source": "user_provided", "statement": "The user identifies this image as a visual style reference for their game.", "confidence": 1.0}
+  ],
+  "user_intended_use": "style_reference",
+  "uncertainties": [
+    {"topic": "overall-game primary color", "reason": "A single image cannot establish whether blue-gray is stable across the game."},
+    {"topic": "dominant light direction", "reason": "Atmospheric and emissive lighting obscure a reliable single direction."},
+    {"topic": "global significance of gothic ornament", "reason": "The motif may be local to this character and castle reference."}
+  ],
+  "layout_behavior": {
+    "stretchable": false,
+    "nine_slice_candidate": false,
+    "recommended_scale_mode": "contain"
+  },
+  "laya_new_ui": {
+    "recommended_node_type": "Image",
+    "size_grid_candidate": null
+  },
+  "confidence": 0.9,
+  "notes": ["layout_behavior and laya_new_ui are retained as secondary compatibility metadata, not as the focus of B1 analysis."]
+}

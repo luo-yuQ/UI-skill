@@ -1,0 +1,6 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "B2 Style Profile (Placeholder)",
+  "description": "Placeholder for B2 style profile schema. To be defined in a later task.",
+  "type": "object"
+}

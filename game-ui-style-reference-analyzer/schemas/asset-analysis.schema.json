@@ -1,0 +1,368 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/asset-analysis.schema.json",
+  "title": "B1 Single-Reference Visual Analysis",
+  "description": "Structured description of exactly one user-owned game visual or art reference. The result records evidence, visual language, candidates for later B2 comparison, content-specific traits, and uncertainty without giving UI design recommendations or declaring an overall game style.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "input_kind",
+    "asset_id",
+    "source_ref",
+    "file_name",
+    "page_context",
+    "reference_kind",
+    "asset_category",
+    "visual_identity",
+    "intended_role",
+    "visual_description",
+    "visual_language",
+    "world_visual_context",
+    "style_candidates",
+    "content_specific_traits",
+    "evidence",
+    "user_intended_use",
+    "uncertainties",
+    "layout_behavior",
+    "laya_new_ui",
+    "confidence",
+    "notes"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "enum": ["0.1", "0.2"],
+      "description": "Protocol version. Version 0.2 adds the formal B1 visual-analysis structures; 0.1 remains an accepted legacy identifier."
+    },
+    "input_kind": {
+      "type": "string",
+      "enum": ["single_asset", "single_reference"],
+      "description": "Compatibility discriminator. single_asset retains the legacy meaning; single_reference identifies one complete B1 visual/art reference."
+    },
+    "asset_id": {
+      "type": "string",
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "Stable identifier for this single-reference analysis, using snake_case or kebab-case."
+    },
+    "source_ref": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Stable reference to the supplied image source, such as an attachment ID or workspace-relative path."
+    },
+    "file_name": {
+      "type": "string",
+      "minLength": 1,
+      "description": "File name of the analyzed reference."
+    },
+    "file_path": {
+      "type": ["string", "null"],
+      "description": "Optional workspace path retained for backward compatibility."
+    },
+    "source_hint": {
+      "type": ["string", "null"],
+      "description": "Optional user-provided description or usage hint. Treat it as user_provided information, never as observed evidence."
+    },
+    "page_context": {
+      "type": "string",
+      "enum": ["login", "loading", "main_menu", "gameplay", "hud", "settings", "result", "unknown"],
+      "description": "Legacy page or scene context. Retained unchanged as compatibility information and not used to prescribe a page layout."
+    },
+    "reference_kind": {
+      "type": "string",
+      "enum": ["character_art", "environment_art", "ui_art", "concept_art", "illustration", "isolated_asset", "mixed_scene", "promotional_art", "other"],
+      "description": "What the complete reference image is. This is distinct from asset_category and user_intended_use."
+    },
+    "asset_category": {
+      "type": "string",
+      "enum": ["background", "surface", "bar", "icon", "game_object", "text_asset", "decoration_effect", "character", "environment", "ui", "illustration", "mixed", "other", "unknown"],
+      "description": "Category of the main asset or subject. Legacy values are preserved and broader B1 subject categories are added."
+    },
+    "visual_identity": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Concise identity of what is visibly depicted in this image."
+    },
+    "intended_role": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[a-z0-9_\\-]+$",
+      "description": "Known project role retained from the legacy contract. Record a supplied role or unknown; do not invent a UI recommendation."
+    },
+    "role_candidates": {
+      "type": "array",
+      "description": "Legacy candidate roles when the project role is uncertain. These are descriptive compatibility metadata, not design advice.",
+      "items": {"type": "string", "pattern": "^[a-z0-9_\\-]+$"},
+      "minItems": 1,
+      "maxItems": 3,
+      "uniqueItems": true
+    },
+    "visual_description": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Natural-language description limited to what the current image visibly presents, including subject, composition, and salient appearance. Do not include UI or generation recommendations."
+    },
+    "visual_language": {
+      "type": "object",
+      "description": "Comparable description of the six visual-language dimensions observed in this image.",
+      "additionalProperties": false,
+      "required": ["color", "material", "shape", "rendering", "lighting", "decoration"],
+      "properties": {
+        "color": {"$ref": "#/$defs/color_language"},
+        "material": {"$ref": "#/$defs/material_language"},
+        "shape": {"$ref": "#/$defs/shape_language"},
+        "rendering": {"$ref": "#/$defs/rendering_language"},
+        "lighting": {"$ref": "#/$defs/lighting_language"},
+        "decoration": {"$ref": "#/$defs/decoration_language"}
+      }
+    },
+    "world_visual_context": {
+      "type": "object",
+      "description": "Theme or world cues supported by this image. These are image-scoped inferences, not confirmed settings for the whole game.",
+      "additionalProperties": false,
+      "required": ["themes", "era_cues", "technology_cues", "magic_cues", "faction_or_character_cues", "evidence", "confidence"],
+      "properties": {
+        "themes": {"$ref": "#/$defs/non_empty_string_array"},
+        "era_cues": {"$ref": "#/$defs/string_array"},
+        "technology_cues": {"$ref": "#/$defs/string_array"},
+        "magic_cues": {"$ref": "#/$defs/string_array"},
+        "faction_or_character_cues": {"$ref": "#/$defs/string_array"},
+        "evidence": {"$ref": "#/$defs/evidence_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "style_candidates": {
+      "type": "array",
+      "description": "Image-scoped visual traits for future B2 verification. Candidates are not final overall-game style decisions.",
+      "items": {"$ref": "#/$defs/trait_with_evidence"},
+      "minItems": 1
+    },
+    "content_specific_traits": {
+      "type": "array",
+      "description": "Traits tied to this image's particular subject, scene, composition, object, or event. B2 must not automatically promote them to global style traits.",
+      "items": {"$ref": "#/$defs/trait_with_evidence"}
+    },
+    "evidence": {
+      "$ref": "#/$defs/evidence_array",
+      "description": "Source-labeled statements that distinguish observed evidence, model inference, and user-provided information."
+    },
+    "user_intended_use": {
+      "type": ["string", "null"],
+      "enum": ["style_reference", "color_reference", "material_reference", "character_reference", "content_reference", "direct_asset", "mixed", null],
+      "description": "Optional intended use supplied by the user. Preserve it verbatim at the enum level; do not infer or replace it from image content."
+    },
+    "uncertainties": {
+      "type": "array",
+      "description": "Material ambiguities or unsupported judgments that should remain unresolved rather than guessed.",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["topic", "reason"],
+        "properties": {
+          "topic": {"type": "string", "minLength": 1, "description": "The uncertain property or question."},
+          "reason": {"type": "string", "minLength": 1, "description": "Why the image or supplied context does not support a reliable conclusion."}
+        }
+      }
+    },
+    "technical_metadata": {
+      "type": "object",
+      "description": "Optional objective file metadata retained for backward compatibility.",
+      "additionalProperties": false,
+      "properties": {
+        "width": {"type": ["integer", "null"], "minimum": 1},
+        "height": {"type": ["integer", "null"], "minimum": 1},
+        "aspect_ratio": {"type": ["string", "null"], "description": "Ratio such as 16:9, 9:16, or 1:1."},
+        "format": {"type": ["string", "null"], "description": "File format such as png or jpg."},
+        "has_alpha": {"type": ["boolean", "null"]}
+      }
+    },
+    "layout_behavior": {
+      "type": "object",
+      "description": "Legacy secondary compatibility information. Preserve it, but do not let it drive B1 visual analysis or perform actual slicing.",
+      "additionalProperties": false,
+      "required": ["stretchable", "nine_slice_candidate", "recommended_scale_mode"],
+      "properties": {
+        "stretchable": {"type": "boolean", "description": "Legacy indication of whether the asset may tolerate stretching in its known role."},
+        "nine_slice_candidate": {"type": "boolean", "description": "Legacy indication of possible nine-slice treatment; not an actual slicing result."},
+        "recommended_scale_mode": {"type": "string", "enum": ["cover", "contain", "stretch", "tile", "none", "unknown"], "description": "Legacy scale-mode compatibility value."},
+        "safe_overlay_note": {"type": ["string", "null"], "description": "Legacy note about relatively unobstructed or sensitive regions."},
+        "protected_region_note": {"type": ["string", "null"], "description": "Legacy note about visual regions that should remain visible."}
+      }
+    },
+    "laya_new_ui": {
+      "type": "object",
+      "description": "Legacy Laya compatibility information. Preserve it for downstream consumers; it is not part of the B1 visual-analysis main path.",
+      "additionalProperties": false,
+      "required": ["recommended_node_type", "size_grid_candidate"],
+      "properties": {
+        "recommended_node_type": {"type": "string", "enum": ["Image", "Sprite", "Button", "Label", "ProgressBar", "Clip", "Box", "Unknown"], "description": "Legacy Laya node-type compatibility value."},
+        "size_grid_candidate": {"description": "Legacy nine-slice candidate. It may be null, manual_required, or a four-integer candidate string.", "anyOf": [{"type": "null"}, {"type": "string", "enum": ["manual_required"]}, {"type": "string", "pattern": "^\\d+,\\d+,\\d+,\\d+$"}]},
+        "usage_note": {"type": ["string", "null"], "description": "Legacy Laya usage note retained for compatibility."}
+      }
+    },
+    "confidence": {
+      "$ref": "#/$defs/confidence",
+      "description": "Overall confidence in this single-image B1 analysis."
+    },
+    "notes": {
+      "type": "array",
+      "description": "Concise supplementary notes. Do not use notes for UI recommendations or unsupported style conclusions.",
+      "items": {"type": "string"}
+    }
+  },
+  "$defs": {
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "description": "Confidence from 0 (unsupported) through 1 (highly supported)."
+    },
+    "string_array": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "uniqueItems": true
+    },
+    "non_empty_string_array": {
+      "type": "array",
+      "items": {"type": "string", "minLength": 1},
+      "minItems": 1,
+      "uniqueItems": true
+    },
+    "evidence_statement": {
+      "type": "object",
+      "description": "One claim labeled by its information source.",
+      "additionalProperties": false,
+      "required": ["source", "statement", "confidence"],
+      "properties": {
+        "source": {"type": "string", "enum": ["observed", "inferred", "user_provided"], "description": "Whether the statement is directly visible, model-inferred, or supplied by the user."},
+        "statement": {"type": "string", "minLength": 1, "description": "Concise evidence or interpretation statement."},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "evidence_array": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/evidence_statement"},
+      "minItems": 1
+    },
+    "trait_with_evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["trait", "evidence", "confidence"],
+      "properties": {
+        "trait": {"type": "string", "minLength": 1, "description": "Concise, comparable visual trait scoped to this image."},
+        "evidence": {"$ref": "#/$defs/evidence_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "color_language": {
+      "type": "object",
+      "description": "Observed color relationships rather than isolated color names or invented exact values.",
+      "additionalProperties": false,
+      "required": ["dominant_colors", "secondary_colors", "accent_colors", "saturation", "value_tendency", "temperature", "contrast", "relationships", "confidence"],
+      "properties": {
+        "dominant_colors": {"$ref": "#/$defs/non_empty_string_array"},
+        "secondary_colors": {"$ref": "#/$defs/string_array"},
+        "accent_colors": {"$ref": "#/$defs/string_array"},
+        "saturation": {"type": "string", "enum": ["low", "medium", "high", "mixed", "uncertain"], "description": "Overall saturation tendency."},
+        "value_tendency": {"type": "string", "enum": ["dark", "mid", "light", "wide_range", "uncertain"], "description": "Overall brightness/value tendency."},
+        "temperature": {"type": "string", "enum": ["cool", "neutral", "warm", "mixed", "uncertain"], "description": "Overall warm/cool tendency."},
+        "contrast": {"type": "string", "enum": ["low", "medium", "high", "mixed", "uncertain"], "description": "Observed contrast tendency."},
+        "relationships": {"$ref": "#/$defs/string_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "material_language": {
+      "type": "object",
+      "description": "Materials and visible surface qualities supported by the image.",
+      "additionalProperties": false,
+      "required": ["materials", "overall_tendencies", "confidence"],
+      "properties": {
+        "materials": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "qualities"],
+            "properties": {
+              "name": {"type": "string", "minLength": 1, "description": "Observed or cautiously inferred material name."},
+              "qualities": {"$ref": "#/$defs/string_array"}
+            }
+          }
+        },
+        "overall_tendencies": {"$ref": "#/$defs/string_array"},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "shape_language": {
+      "type": "object",
+      "description": "Dominant silhouette, contour, symmetry, and geometric tendencies.",
+      "additionalProperties": false,
+      "required": ["dominant_traits", "description", "confidence"],
+      "properties": {
+        "dominant_traits": {
+          "type": "array",
+          "minItems": 1,
+          "uniqueItems": true,
+          "items": {"type": "string", "enum": ["sharp", "rounded", "heavy", "slender", "symmetric", "asymmetric", "geometric", "organic", "regular", "broken", "vertical", "horizontal", "simple_silhouette", "complex_silhouette", "mixed", "uncertain"]}
+        },
+        "description": {"type": "string", "minLength": 1, "description": "Concise account of how the selected shape traits appear."},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "rendering_language": {
+      "type": "object",
+      "description": "How the image is rendered, kept distinct from its theme.",
+      "additionalProperties": false,
+      "required": ["primary_style", "secondary_traits", "outline_strength", "texture_density", "surface_detail_density", "gradient_usage", "visible_brushwork", "confidence"],
+      "properties": {
+        "primary_style": {"type": "string", "enum": ["realistic", "semi_realistic", "anime", "cartoon", "painterly", "cel_shaded", "digital_painting", "3d_rendered", "pbr_like", "pixel_art", "low_poly", "mixed", "uncertain"], "description": "Primary rendering approach visible in this image."},
+        "secondary_traits": {"$ref": "#/$defs/string_array"},
+        "outline_strength": {"type": "string", "enum": ["none", "subtle", "medium", "strong", "mixed", "uncertain"]},
+        "texture_density": {"type": "string", "enum": ["low", "medium", "high", "mixed", "uncertain"]},
+        "surface_detail_density": {"type": "string", "enum": ["low", "medium", "high", "mixed", "uncertain"]},
+        "gradient_usage": {"type": "string", "enum": ["minimal", "moderate", "extensive", "mixed", "uncertain"]},
+        "visible_brushwork": {"type": "string", "enum": ["absent", "subtle", "clear", "mixed", "uncertain"]},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "lighting_language": {
+      "type": "object",
+      "description": "Observed illumination, exposure, highlights, shadows, emissive effects, and atmosphere.",
+      "additionalProperties": false,
+      "required": ["exposure", "ambient_character", "dominant_direction", "hardness", "rim_light", "bloom", "local_emissive", "atmospheric_lighting", "highlight_intensity", "shadow_depth", "confidence"],
+      "properties": {
+        "exposure": {"type": "string", "enum": ["low_key", "balanced", "high_key", "mixed", "uncertain"]},
+        "ambient_character": {"type": "string", "minLength": 1, "description": "Concise description of ambient light character."},
+        "dominant_direction": {"type": ["string", "null"], "description": "Dominant light direction when observable; null when it cannot be reliably determined."},
+        "hardness": {"type": "string", "enum": ["soft", "mixed", "hard", "uncertain"]},
+        "rim_light": {"$ref": "#/$defs/presence"},
+        "bloom": {"$ref": "#/$defs/presence"},
+        "local_emissive": {"$ref": "#/$defs/presence"},
+        "atmospheric_lighting": {"$ref": "#/$defs/presence"},
+        "highlight_intensity": {"type": "string", "enum": ["low", "medium", "high", "mixed", "uncertain"]},
+        "shadow_depth": {"type": "string", "enum": ["shallow", "medium", "deep", "mixed", "uncertain"]},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    },
+    "presence": {
+      "type": "string",
+      "enum": ["absent", "present", "uncertain"],
+      "description": "Observed presence state without forcing a guess."
+    },
+    "decoration_language": {
+      "type": "object",
+      "description": "Visible ornamental motifs and their density, organization, scale, and restraint.",
+      "additionalProperties": false,
+      "required": ["motifs", "density", "symmetry", "scale", "tendency", "confidence"],
+      "properties": {
+        "motifs": {"$ref": "#/$defs/string_array"},
+        "density": {"type": "string", "enum": ["sparse", "medium", "dense", "mixed", "uncertain"]},
+        "symmetry": {"type": "string", "enum": ["symmetric", "asymmetric", "mixed", "none", "uncertain"]},
+        "scale": {"type": "string", "enum": ["small", "medium", "large", "mixed", "uncertain"]},
+        "tendency": {"type": "string", "enum": ["restrained", "balanced", "ornate", "mixed", "uncertain"]},
+        "confidence": {"$ref": "#/$defs/confidence"}
+      }
+    }
+  }
+}
