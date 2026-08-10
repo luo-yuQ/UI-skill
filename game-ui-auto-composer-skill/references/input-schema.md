@@ -13,6 +13,18 @@ style_profile
 
 A and B are complete immutable upstream artifacts. Composer must not summarize, normalize, repair, mutate, or reinterpret their values or confidence.
 
+Construct the input with the deterministic builder:
+
+```powershell
+python scripts/build_compose_input.py `
+  --request <request.json> `
+  --layout <layout-analysis.json> `
+  --style <style-profile.json> `
+  --output <ui-compose-input.json>
+```
+
+The builder is the required construction path. It reads all JSON with UTF-8, copies `user_requirement` directly from `request.json`, projects only request fields allowed by the current schema, writes with `ensure_ascii=False`, and immediately rereads the output to verify the requirement and A/B by JSON value deep equality. Agents must not retype the requirement or manually assemble `ui-compose-input.json` with shell or PowerShell text commands.
+
 ```powershell
 python scripts/validate_input.py <input.json> `
   --layout-source <original-a.json> `

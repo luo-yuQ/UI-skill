@@ -20,6 +20,7 @@ Do not self-loop, retry, repair, or repeatedly rewrite the candidate. Validation
 
 - `schemas/ui-compose-input.schema.json` — v2.1.1 input.
 - `schemas/ui-compose-plan.schema.json` — v2.1.1 candidate plan.
+- `scripts/build_compose_input.py` — deterministic UTF-8 input construction and source-integrity checks.
 - `scripts/evidence_registry.py` — immutable Pydantic A/B registry.
 - `scripts/validate_input.py` — schema and upstream-integrity validation.
 - `scripts/validate_plan.py` — schema, requirements, origin, registry membership, and consistency validation.
@@ -28,6 +29,20 @@ Do not self-loop, retry, repair, or repeatedly rewrite the candidate. Validation
 - `references/examples/example-ui-compose-input.json` and `example-ui-compose-plan.json` — regression fixtures and schema shape only.
 
 Never inherit example counts, page semantics, IDs, hierarchy, actions, or copy into another run.
+
+## Deterministic input construction
+
+Always construct `ui-compose-input.json` with the builder before validation or composition:
+
+```powershell
+python scripts/build_compose_input.py `
+  --request <request.json> `
+  --layout <layout-analysis.json> `
+  --style <style-profile.json> `
+  --output <ui-compose-input.json>
+```
+
+The builder reads every source as UTF-8 JSON, takes `user_requirement` directly from `request.json`, projects only request fields allowed by the current schema, writes with `ensure_ascii=False`, and verifies the written requirement plus embedded A/B by JSON value deep equality. Do not have an Agent retype or reconstruct the requirement. Do not assemble the JSON with PowerShell string concatenation, `echo`, redirection, `Set-Content`, or `Out-File`.
 
 ## Boundary
 
@@ -101,7 +116,7 @@ The behavioral rule “do not invent IDs” remains, but factual truth is not de
 
 ## One-pass synthesis workflow
 
-1. Consume one already validated v2.1.1 input.
+1. Consume one builder-created, already validated v2.1.1 input.
 2. Parse the explicit user requirement.
 3. Build the hard-requirement ledger and target page semantic.
 4. Select only relevant A evidence.

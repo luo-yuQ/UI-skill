@@ -11,6 +11,20 @@ immutable A layout analysis
 
 设计由 Composer 完成；A/B ID 与 classification 的事实真假由确定性 Python 验证。
 
+## 输入构造
+
+`ui-compose-input.json` 必须优先由正式 builder 创建，不由 Agent 或 shell 临时拼接：
+
+```powershell
+python scripts/build_compose_input.py `
+  --request <request.json> `
+  --layout <layout-analysis.json> `
+  --style <style-profile.json> `
+  --output <ui-compose-input.json>
+```
+
+Builder 使用 Python JSON API 和 UTF-8 读取全部输入，仅投影当前 schema 允许的 request 字段，以 `ensure_ascii=False` 写出，并回读核对原始 `user_requirement`、完整 A 与完整 B。禁止用 PowerShell 字符串拼接、`echo`、重定向、`Set-Content` 或 `Out-File` 构造 JSON。
+
 ## V2.1.1
 
 - 新增 `scripts/evidence_registry.py`，从真实 A/B JSON 自动收集 ID、类型、路径和 B classification。
