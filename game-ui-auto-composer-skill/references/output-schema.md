@@ -18,6 +18,15 @@ Style decisions:
 
 Not every new design decision needs A/B evidence. The origin must describe where it actually came from.
 
+## Repeat contract
+
+Every `component_tree[].repeat` contains `count`, `arrangement`, `columns`, `rows`, and `content_variation`.
+
+- For `row`, `column`, `list`, `carousel`, or `custom`, use `columns: null` and `rows: null`.
+- For `grid`, use positive integer `columns` and `rows`, and make `count` equal `columns * rows`.
+
+Do not encode a row as `columns=count, rows=1` or a column as `columns=1, rows=count`; those are non-grid arrangements and must keep both grid dimensions null.
+
 ## Evidence Registry validation
 
 `scripts/evidence_registry.py` recursively reads the actual A/B objects into frozen Pydantic records containing IDs, types/classifications, and JSON paths. It never mutates upstream data.

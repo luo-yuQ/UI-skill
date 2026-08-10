@@ -146,7 +146,13 @@ Keep the existing v2 top-level structure:
 - `assumptions`
 - `warnings`
 
-For grids, require `count == columns * rows`. A single-page request may have empty navigation. Add only necessary actions.
+For every `repeat`, emit all five required fields: `count`, `arrangement`, `columns`, `rows`, and `content_variation`. Apply the arrangement contract exactly:
+
+- `row` or `column`: set both `columns` and `rows` to `null`; `count` carries the repeat quantity.
+- `grid`: set both `columns` and `rows` to positive integers and require `count == columns * rows`.
+- `list`, `carousel`, or `custom`: these are also non-grid arrangements, so set both `columns` and `rows` to `null`.
+
+Never infer numeric grid dimensions from a non-grid repeat count. A single-page request may have empty navigation. Add only necessary actions.
 
 `generation_constraints` is a derived summary, not a new design stage or image prompt.
 
