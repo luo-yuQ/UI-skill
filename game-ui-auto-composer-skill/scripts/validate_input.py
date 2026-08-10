@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate Composer v2.1 input and prove embedded A/B payload immutability."""
+"""Validate Composer v2.1.1 input and prove embedded A/B payload immutability."""
 
 from __future__ import annotations
 

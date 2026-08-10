@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.1",
+  "schema_version": "2.1.1",
   "project_context": {
     "project_name": "Dark Fantasy Guild Shop",
     "user_requirement": "我想做一个暗黑幻想风格的公会商店页面。\n左侧有三个分类：\n普通、公会限定、每周兑换。\n\n右侧显示 6 个商品，\n按 2 列 3 行排列。\n\n顶部显示金币和公会币。\n\n底部有一个刷新按钮。\n\n整体信息层级要清楚，\n主要面板和按钮边界尽量独立，\n方便后续切图。",
@@ -122,7 +122,8 @@
         "source_meaning": "Top status band.",
         "disposition": "adopted",
         "target_application": "Top currency bar.",
-        "rationale": "Matches the explicit top placement."
+        "rationale": "Matches the explicit top placement.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_resources",
@@ -133,7 +134,8 @@
         "source_meaning": "Repeated resource indicators.",
         "disposition": "adapted",
         "target_application": "Gold and guild currency.",
-        "rationale": "The user requires two indicators."
+        "rationale": "The user requires two indicators.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_categories",
@@ -144,7 +146,8 @@
         "source_meaning": "Left repeated categories.",
         "disposition": "adapted",
         "target_application": "Three named categories.",
-        "rationale": "The user count overrides five visible source tabs."
+        "rationale": "The user count overrides five visible source tabs.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_products",
@@ -155,7 +158,8 @@
         "source_meaning": "Six visible product cards.",
         "disposition": "adapted",
         "target_application": "Six cards in two columns and three rows.",
-        "rationale": "User grid dimensions control arrangement."
+        "rationale": "User grid dimensions control arrangement.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_control",
@@ -166,7 +170,8 @@
         "source_meaning": "Categories control the product list.",
         "disposition": "adopted",
         "target_application": "Categories filter the target grid.",
-        "rationale": "This relationship fits the requested structure."
+        "rationale": "This relationship fits the requested structure.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_detail_rejected",
@@ -178,7 +183,8 @@
         "source_meaning": "Source detail and action regions.",
         "disposition": "rejected",
         "target_application": null,
-        "rationale": "They are not requested."
+        "rationale": "They are not requested.",
+        "origin": "layout_reference"
       },
       {
         "decision_id": "a_uncertainty",
@@ -189,7 +195,28 @@
         "source_meaning": "Source total is uncertain.",
         "disposition": "ignored",
         "target_application": null,
-        "rationale": "The user supplies an exact target total."
+        "rationale": "The user supplies an exact target total.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "user_bottom_refresh",
+        "origin": "user_requirement",
+        "source_kind": null,
+        "source_ids": [],
+        "source_meaning": null,
+        "disposition": "adopted",
+        "target_application": "Place one refresh button at the bottom.",
+        "rationale": "This is an explicit user requirement and does not need an A citation."
+      },
+      {
+        "decision_id": "derived_panel_spacing",
+        "origin": "composer_derived",
+        "source_kind": null,
+        "source_ids": [],
+        "source_meaning": null,
+        "disposition": "adopted",
+        "target_application": "Use consistent internal padding and gaps within the two main panels.",
+        "rationale": "Low-risk spacing is required to complete the UI but does not come directly from A."
       }
     ],
     "style": [
@@ -205,7 +232,8 @@
         "target_application": "Cool blue-gray palette.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Stable and relevant."
+        "rationale": "Stable and relevant.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_local_red",
@@ -217,7 +245,8 @@
         "target_application": null,
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Local evidence is not promoted."
+        "rationale": "Local evidence is not promoted.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_hard_surface",
@@ -233,7 +262,8 @@
         "target_application": "Silver-black boundaries.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Stable and useful for separability."
+        "rationale": "Stable and useful for separability.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_matte",
@@ -248,7 +278,8 @@
         "target_application": "Matte panel bases.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Secondary evidence stays scoped."
+        "rationale": "Secondary evidence stays scoped.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_shape",
@@ -264,7 +295,8 @@
         "target_application": "Sharp elongated accents.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Stable shape evidence."
+        "rationale": "Stable shape evidence.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_rendering",
@@ -276,7 +308,8 @@
         "target_application": null,
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Conflicting evidence is not resolved by assumption."
+        "rationale": "Conflicting evidence is not resolved by assumption.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_light",
@@ -293,7 +326,8 @@
         "target_application": "Localized blue-white accents.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Stable lighting evidence."
+        "rationale": "Stable lighting evidence.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_gothic",
@@ -309,7 +343,8 @@
         "target_application": "Restrained gothic borders.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Secondary evidence stays scoped."
+        "rationale": "Secondary evidence stays scoped.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_world",
@@ -323,7 +358,8 @@
         "target_application": "Dark-fantasy context.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Matches explicit user style."
+        "rationale": "Matches explicit user style.",
+        "origin": "style_reference"
       },
       {
         "decision_id": "b_world_uncertain",
@@ -335,7 +371,25 @@
         "target_application": null,
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Uncertain evidence is not a hard fact."
+        "rationale": "Uncertain evidence is not a hard fact.",
+        "origin": "style_reference"
+      },
+      {
+        "decision_id": "user_cutout_boundaries",
+        "origin": "user_requirement",
+        "trait_id": null,
+        "dimension": "surface_treatment",
+        "classification": null,
+        "disposition": "overridden_by_user",
+        "target_scope": [
+          "category_navigation",
+          "product_grid",
+          "refresh_button"
+        ],
+        "target_application": "Keep major panels and the refresh button independently cutout-friendly.",
+        "promoted_by_user_requirement": false,
+        "promotion_evidence": null,
+        "rationale": "The user explicitly requests independent boundaries for later cutout."
       }
     ]
   },

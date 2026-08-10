@@ -1,43 +1,41 @@
-# UI Compose Plan v2.1
+# UI Compose Plan v2.1.1
 
-## Contract
+Return one candidate `ui-compose-plan.json` conforming to `schemas/ui-compose-plan.schema.json`. The v2 top-level structure remains unchanged.
 
-Return one `ui-compose-plan.json` conforming to `schemas/ui-compose-plan.schema.json`. The existing v2 top-level structure remains:
+## Decision origins
 
-- `schema_version`
-- `project_context`
-- `design_summary`
-- `reference_application`
-- `visual_direction`
-- `pages`
-- `component_tree`
-- `layout_rules`
-- `interactions`
-- `navigation`
-- `generation_constraints`
-- `assumptions`
-- `warnings`
+Layout decisions:
 
-## V2.1 additions
+- `layout_reference`: real `source_kind`, one or more real A `source_ids`, and source meaning are required.
+- `user_requirement`: `source_kind: null`, `source_ids: []`, `source_meaning: null`.
+- `composer_derived`: the same empty A fields; limited to low-risk UI completion.
 
-`project_context.hard_requirements` records machine-checkable user facts with verbatim evidence: page semantic, explicit counts, grid requirements, required elements, and include/exclude rules.
+Style decisions:
 
-Grid repeats add `columns` and `rows`. `generation_constraints.grid_specs` repeats the final grid facts for downstream consistency.
+- `style_reference`: real B `trait_id`, dimension, and classification are required.
+- `user_requirement`: null trait/classification.
+- `composer_derived`: null trait/classification and no claim of B evidence.
 
-B decisions add `promoted_by_user_requirement` and `promotion_evidence`. A local trait is ignored or kept on one matching component unless exact user evidence authorizes wider promotion.
+Not every new design decision needs A/B evidence. The origin must describe where it actually came from.
 
-## Traceability and preservation
+## Evidence Registry validation
 
-Every A `source_id` must exist in the matching A entity kind. Every B `trait_id`, dimension, and classification must match B2. Visual directives may cite only adopted decisions and must respect local scope.
+`scripts/evidence_registry.py` recursively reads the actual A/B objects into frozen Pydantic records containing IDs, types/classifications, and JSON paths. It never mutates upstream data.
 
-The plan page semantic, counts, grid, required positions, and actions must match the hard ledger. Cross-check `component_tree`, `layout_rules`, `interactions`, and `generation_constraints`.
+`scripts/validate_plan.py` enforces:
+
+- source ID membership only for `origin=layout_reference`;
+- trait membership and exact B classification only for `origin=style_reference`;
+- exact error paths and invalid values;
+- no automatic correction or semantic ID mapping;
+- hard requirements, local scope, and cross-section consistency.
 
 ```powershell
-python scripts/validate_plan.py <plan.json> --input <input.json>
+python scripts/validate_plan.py <candidate-plan.json> --input <input.json>
 ```
 
-## Generation constraints
+The result is PASS or FAIL. Repair and retry loops are outside V2.1.1.
 
-They may contain only facts derived from explicit user requirements, the final component tree, final layout rules, and approved A/B decisions. They are not a prompt and cannot invent a new design requirement.
+## Known issue
 
-V1 `asset_usages` and `missing_assets` remain forbidden.
+Parent-relative child anchors may be misread by the existing required-position check when the parent owns left/right placement. This version records the issue without redesigning layout-parent validation.

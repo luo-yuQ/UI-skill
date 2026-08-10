@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/ui-compose-input.schema.json",
-  "title": "UI Compose Input v2.1",
-  "description": "Strict v2.1 input contract for synthesizing a new engine-neutral UI design intent from an explicit user requirement, an authoritative A layout-reference final analysis, and an authoritative B2 style profile.",
+  "title": "UI Compose Input v2.1.1",
+  "description": "Strict v2.1.1 input contract for synthesizing a new engine-neutral UI design intent from an explicit user requirement, an authoritative A layout-reference final analysis, and an authoritative B2 style profile.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -12,7 +12,7 @@
     "style_profile"
   ],
   "properties": {
-    "schema_version": {"type": "string", "const": "2.1"},
+    "schema_version": {"type": "string", "const": "2.1.1"},
     "request": {"$ref": "#/$defs/request"},
     "layout_reference_analysis": {
       "description": "Complete authoritative A final analysis. Consume it as layout evidence; do not summarize it into a private Composer contract or reopen its source screenshot.",

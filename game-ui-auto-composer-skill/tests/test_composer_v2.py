@@ -25,16 +25,18 @@ def load_module(name: str, path: Path):
     return module
 
 
-validate_input = load_module("composer_v21_validate_input", ROOT / "scripts" / "validate_input.py")
+validate_input = load_module("composer_v211_regression_validate_input", ROOT / "scripts" / "validate_input.py")
 sys.modules["validate_input"] = validate_input
-validate_plan = load_module("composer_v21_validate_plan", ROOT / "scripts" / "validate_plan.py")
+evidence_registry = load_module("composer_v211_evidence_registry", ROOT / "scripts" / "evidence_registry.py")
+sys.modules["evidence_registry"] = evidence_registry
+validate_plan = load_module("composer_v211_regression_validate_plan", ROOT / "scripts" / "validate_plan.py")
 
 
 def read_json(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
-class ComposerV21RegressionTests(unittest.TestCase):
+class ComposerV211RegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.input = read_json(INPUT_EXAMPLE)
@@ -52,11 +54,11 @@ class ComposerV21RegressionTests(unittest.TestCase):
     def component(self, component_id):
         return next(item for item in self.plan["component_tree"] if item["component_id"] == component_id)
 
-    def test_fixture_is_valid_v21(self):
+    def test_fixture_is_valid_v211(self):
         self.assertEqual([], self.input_errors(self.input, True))
         self.assertEqual([], self.plan_errors(self.plan))
-        self.assertEqual("2.1", self.input["schema_version"])
-        self.assertEqual("2.1", self.plan["schema_version"])
+        self.assertEqual("2.1.1", self.input["schema_version"])
+        self.assertEqual("2.1.1", self.plan["schema_version"])
 
     def test_1_user_product_count_and_grid(self):
         product = self.component("product_card_template")["repeat"]
@@ -85,6 +87,8 @@ class ComposerV21RegressionTests(unittest.TestCase):
     def test_4_b_traceability(self):
         traits = validate_plan.collect_b_traits(self.original_b)
         for decision in self.plan["reference_application"]["style"]:
+            if decision["origin"] != "style_reference":
+                continue
             self.assertIn(decision["trait_id"], traits)
             self.assertEqual(traits[decision["trait_id"]], (decision["dimension"], decision["classification"]))
         bad = copy.deepcopy(self.plan)

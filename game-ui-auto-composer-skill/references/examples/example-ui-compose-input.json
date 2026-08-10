@@ -1,5 +1,5 @@
 {
-  "schema_version": "2.1",
+  "schema_version": "2.1.1",
   "request": {
     "user_requirement": "我想做一个暗黑幻想风格的公会商店页面。\n左侧有三个分类：\n普通、公会限定、每周兑换。\n\n右侧显示 6 个商品，\n按 2 列 3 行排列。\n\n顶部显示金币和公会币。\n\n底部有一个刷新按钮。\n\n整体信息层级要清楚，\n主要面板和按钮边界尽量独立，\n方便后续切图。",
     "project_name": "Dark Fantasy Guild Shop",

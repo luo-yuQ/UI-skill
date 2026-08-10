@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Validate a Composer v2.1 plan, including requirement and A/B traceability."""
+"""Validate a Composer v2.1.1 candidate plan deterministically."""
 
 from __future__ import annotations
 
@@ -9,6 +9,7 @@ import re
 from pathlib import Path
 from typing import Any
 
+from evidence_registry import build_evidence_registry, collect_a_ids, collect_b_traits
 from validate_input import LimitedLocalValidator, issue, json_path, load_json
 
 
@@ -44,48 +45,6 @@ def duplicate_errors(items: Any, field: str, path: str) -> list[dict[str, str]]:
     values = [item.get(field) for item in items if isinstance(item, dict) and isinstance(item.get(field), str)]
     duplicates = sorted({value for value in values if values.count(value) > 1})
     return [issue(path, f"Duplicate {field}: {value}", "DUPLICATE_IDENTIFIER") for value in duplicates]
-
-
-def collect_a_ids(layout: dict[str, Any]) -> dict[str, set[str]]:
-    hierarchy_ids: set[str] = set()
-
-    def visit_hierarchy(value: Any) -> None:
-        if isinstance(value, dict):
-            entity_id = value.get("entity_id")
-            if isinstance(entity_id, str):
-                hierarchy_ids.add(entity_id)
-            for child in value.values():
-                visit_hierarchy(child)
-        elif isinstance(value, list):
-            for child in value:
-                visit_hierarchy(child)
-
-    visit_hierarchy(layout.get("visual_hierarchy", {}))
-    return {
-        "region": {item.get("region_id") for item in layout.get("regions", []) if isinstance(item, dict)},
-        "region_relationship": {item.get("relationship_id") for item in layout.get("region_relationships", []) if isinstance(item, dict)},
-        "component_group": {item.get("group_id") for item in layout.get("component_groups", []) if isinstance(item, dict)},
-        "visual_hierarchy": hierarchy_ids,
-        "layout_rule": {item.get("rule_id") for item in layout.get("layout_rules", []) if isinstance(item, dict)},
-        "excluded_content": {item.get("category") for item in layout.get("excluded_content", []) if isinstance(item, dict)},
-        "uncertainty": {item.get("uncertainty_id") for item in layout.get("uncertainties", []) if isinstance(item, dict)},
-    }
-
-
-def collect_b_traits(style: dict[str, Any]) -> dict[str, tuple[str, str]]:
-    result: dict[str, tuple[str, str]] = {}
-    profiles = style.get("visual_profiles", {})
-    if not isinstance(profiles, dict):
-        return result
-    for profile_name, profile in profiles.items():
-        if not isinstance(profile, dict):
-            continue
-        dimension = profile_name.removesuffix("_profile")
-        for classification in ("stable", "secondary", "local", "conflicting", "uncertain"):
-            for trait in profile.get(classification, []):
-                if isinstance(trait, dict) and isinstance(trait.get("trait_id"), str):
-                    result[trait["trait_id"]] = (dimension, classification)
-    return result
 
 
 def base_semantic_errors(data: dict[str, Any]) -> list[dict[str, str]]:
@@ -299,28 +258,105 @@ def traceability_errors(data: dict[str, Any], input_data: dict[str, Any]) -> lis
     if reference.get("style_profile_id") != style.get("profile_id"):
         errors.append(issue("$.reference_application.style_profile_id", "Does not match input B profile_id", "STYLE_PROFILE_ID_MISMATCH"))
 
-    a_ids = collect_a_ids(layout)
+    try:
+        registry = build_evidence_registry(layout, style)
+    except ValueError as exc:
+        return [issue("$", f"Unable to build evidence registry: {exc}", "EVIDENCE_REGISTRY_ERROR")]
+
     for index, decision in enumerate(reference.get("layout", [])):
         if not isinstance(decision, dict):
             continue
-        allowed = a_ids.get(decision.get("source_kind"), set())
-        for source_id in decision.get("source_ids", []):
-            if source_id not in allowed:
-                errors.append(issue(f"$.reference_application.layout[{index}].source_ids", f"Unknown A source_id for {decision.get('source_kind')}: {source_id}", "UNKNOWN_A_SOURCE_ID"))
+        origin = decision.get("origin")
+        source_kind = decision.get("source_kind")
+        source_ids = decision.get("source_ids", [])
+        if origin == "layout_reference":
+            if not source_ids:
+                errors.append(
+                    issue(
+                        f"$.reference_application.layout[{index}].source_ids",
+                        "origin=layout_reference requires at least one A source id",
+                        "MISSING_A_SOURCE_IDS",
+                    )
+                )
+            for source_index, source_id in enumerate(source_ids):
+                if not registry.a_matches(source_id, source_kind):
+                    errors.append(
+                        issue(
+                            f"$.reference_application.layout[{index}].source_ids[{source_index}]",
+                            f"Unknown A source id: {source_id!r}; source type: {source_kind!r}",
+                            "UNKNOWN_A_SOURCE_ID",
+                        )
+                    )
+        else:
+            if source_ids:
+                errors.append(
+                    issue(
+                        f"$.reference_application.layout[{index}].source_ids",
+                        f"origin={origin!r} must not cite A source ids",
+                        "NON_REFERENCE_A_SOURCE_IDS",
+                    )
+                )
+            if source_kind is not None:
+                errors.append(
+                    issue(
+                        f"$.reference_application.layout[{index}].source_kind",
+                        f"origin={origin!r} requires source_kind=null",
+                        "NON_REFERENCE_A_SOURCE_KIND",
+                    )
+                )
 
-    b_traits = collect_b_traits(style)
     decisions: dict[str, dict[str, Any]] = {}
     for index, decision in enumerate(reference.get("style", [])):
         if not isinstance(decision, dict):
             continue
+        origin = decision.get("origin")
         trait_id = decision.get("trait_id")
-        decisions[trait_id] = decision
-        actual = b_traits.get(trait_id)
-        if actual is None:
-            errors.append(issue(f"$.reference_application.style[{index}].trait_id", f"Unknown B trait_id: {trait_id}", "UNKNOWN_B_TRAIT_ID"))
+        if origin != "style_reference":
+            if trait_id is not None:
+                errors.append(
+                    issue(
+                        f"$.reference_application.style[{index}].trait_id",
+                        f"origin={origin!r} must not cite a B trait id",
+                        "NON_REFERENCE_B_TRAIT_ID",
+                    )
+                )
             continue
-        if (decision.get("dimension"), decision.get("classification")) != actual:
-            errors.append(issue(f"$.reference_application.style[{index}].classification", f"B declares {trait_id} as {actual[0]}/{actual[1]}", "B_TRAIT_CLASSIFICATION_MISMATCH"))
+        if not isinstance(trait_id, str):
+            errors.append(
+                issue(
+                    f"$.reference_application.style[{index}].trait_id",
+                    "origin=style_reference requires one B trait id",
+                    "MISSING_B_TRAIT_ID",
+                )
+            )
+            continue
+        actual = registry.b_match(trait_id)
+        if actual is None:
+            errors.append(
+                issue(
+                    f"$.reference_application.style[{index}].trait_id",
+                    f"Unknown B trait id: {trait_id!r}; source type: 'style_reference'",
+                    "UNKNOWN_B_TRAIT_ID",
+                )
+            )
+            continue
+        decisions[trait_id] = decision
+        if decision.get("dimension") != actual.dimension:
+            errors.append(
+                issue(
+                    f"$.reference_application.style[{index}].dimension",
+                    f"B declares {trait_id!r} in dimension {actual.dimension!r}",
+                    "B_TRAIT_DIMENSION_MISMATCH",
+                )
+            )
+        if decision.get("classification") != actual.classification:
+            errors.append(
+                issue(
+                    f"$.reference_application.style[{index}].classification",
+                    f"B declares {trait_id!r} as {actual.classification!r}",
+                    "B_TRAIT_CLASSIFICATION_MISMATCH",
+                )
+            )
         promoted = decision.get("promoted_by_user_requirement")
         promotion_evidence = decision.get("promotion_evidence")
         if promoted:
@@ -328,7 +364,7 @@ def traceability_errors(data: dict[str, Any], input_data: dict[str, Any]) -> lis
                 errors.append(issue(f"$.reference_application.style[{index}].promotion_evidence", "Promotion evidence must be an exact user_requirement substring", "INVALID_LOCAL_PROMOTION"))
         elif promotion_evidence is not None:
             errors.append(issue(f"$.reference_application.style[{index}].promotion_evidence", "Non-promoted traits must use null promotion_evidence", "INVALID_LOCAL_PROMOTION"))
-        if actual[1] == "local" and decision.get("disposition") in ("adopted", "conditionally_adopted", "overridden_by_user"):
+        if actual.classification == "local" and decision.get("disposition") in ("adopted", "conditionally_adopted", "overridden_by_user"):
             scope = decision.get("target_scope", [])
             if not promoted and (len(scope) != 1 or scope[0] not in components):
                 errors.append(issue(f"$.reference_application.style[{index}].target_scope", "Adopted local trait must stay on exactly one existing component unless explicitly promoted by the user", "LOCAL_TRAIT_SCOPE_VIOLATION"))
@@ -346,8 +382,8 @@ def traceability_errors(data: dict[str, Any], input_data: dict[str, Any]) -> lis
                 continue
             if decision.get("disposition") in ("ignored", "rejected_due_to_conflict"):
                 errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", f"Directive uses non-adopted trait: {trait_id}", "NON_ADOPTED_STYLE_TRAIT"))
-            actual = b_traits.get(trait_id)
-            if actual and actual[1] == "local" and not decision.get("promoted_by_user_requirement"):
+            actual = registry.b_match(trait_id)
+            if actual and actual.classification == "local" and not decision.get("promoted_by_user_requirement"):
                 if not set(directive.get("target_scope", [])).issubset(set(decision.get("target_scope", []))):
                     errors.append(issue(f"$.visual_direction.directives[{index}].target_scope", f"Directive globalizes local trait: {trait_id}", "LOCAL_TRAIT_SCOPE_VIOLATION"))
     return errors
@@ -404,7 +440,18 @@ def main() -> int:
             "page_count": len(data.get("pages", [])) if isinstance(data, dict) and isinstance(data.get("pages"), list) else 0,
             "component_count": len(data.get("component_tree", [])) if isinstance(data, dict) and isinstance(data.get("component_tree"), list) else 0,
             "input_cross_validation": input_data is not None,
-            "traceability_passed": input_data is not None and not codes.intersection({"UNKNOWN_A_SOURCE_ID", "UNKNOWN_B_TRAIT_ID", "B_TRAIT_CLASSIFICATION_MISMATCH"}),
+            "traceability_passed": input_data is not None and not codes.intersection({
+                "EVIDENCE_REGISTRY_ERROR",
+                "UNKNOWN_A_SOURCE_ID",
+                "MISSING_A_SOURCE_IDS",
+                "NON_REFERENCE_A_SOURCE_IDS",
+                "NON_REFERENCE_A_SOURCE_KIND",
+                "UNKNOWN_B_TRAIT_ID",
+                "MISSING_B_TRAIT_ID",
+                "NON_REFERENCE_B_TRAIT_ID",
+                "B_TRAIT_DIMENSION_MISMATCH",
+                "B_TRAIT_CLASSIFICATION_MISMATCH",
+            }),
             "requirement_preservation_passed": not any(code.startswith("REQUIREMENT_") or code in {"SEMANTIC_DRIFT", "USER_REQUIREMENT_MISMATCH"} for code in codes),
             "cross_section_consistency_passed": not any(code.startswith("CROSS_SECTION_") or code == "GRID_COUNT_MISMATCH" for code in codes),
             "local_scope_passed": "LOCAL_TRAIT_SCOPE_VIOLATION" not in codes,

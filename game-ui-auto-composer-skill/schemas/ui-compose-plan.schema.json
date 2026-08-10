@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/ui-compose-plan.schema.json",
-  "title": "UI Compose Plan v2.1",
+  "title": "UI Compose Plan v2.1.1",
   "description": "A strict requirement-preserving engine-neutral UI design intent synthesized from a user requirement, A layout evidence, and B2 visual-style evidence.",
   "type": "object",
   "additionalProperties": false,
@@ -21,7 +21,7 @@
     "warnings"
   ],
   "properties": {
-    "schema_version": {"type": "string", "const": "2.1"},
+    "schema_version": {"type": "string", "const": "2.1.1"},
     "project_context": {"$ref": "#/$defs/project_context"},
     "design_summary": {"$ref": "#/$defs/design_summary"},
     "reference_application": {"$ref": "#/$defs/reference_application"},
@@ -147,33 +147,73 @@
     "layout_reference_decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision_id", "source_kind", "source_ids", "source_meaning", "disposition", "target_application", "rationale"],
+      "required": ["decision_id", "origin", "source_kind", "source_ids", "source_meaning", "disposition", "target_application", "rationale"],
       "properties": {
         "decision_id": {"$ref": "#/$defs/identifier"},
-        "source_kind": {"type": "string", "enum": ["region", "region_relationship", "component_group", "visual_hierarchy", "layout_rule", "excluded_content", "uncertainty"]},
-        "source_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
-        "source_meaning": {"$ref": "#/$defs/text"},
+        "origin": {"type": "string", "enum": ["layout_reference", "user_requirement", "composer_derived"]},
+        "source_kind": {"type": ["string", "null"], "enum": ["region", "region_relationship", "component_group", "visual_hierarchy", "layout_rule", "excluded_content", "uncertainty", null]},
+        "source_ids": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "source_meaning": {"type": ["string", "null"], "minLength": 1},
         "disposition": {"type": "string", "enum": ["adopted", "adapted", "ignored", "rejected"]},
         "target_application": {"type": ["string", "null"], "minLength": 1},
         "rationale": {"$ref": "#/$defs/text"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"origin": {"const": "layout_reference"}}, "required": ["origin"]},
+          "then": {
+            "properties": {
+              "source_kind": {"type": "string"},
+              "source_ids": {"minItems": 1},
+              "source_meaning": {"type": "string"}
+            }
+          },
+          "else": {
+            "properties": {
+              "source_kind": {"const": null},
+              "source_ids": {"maxItems": 0},
+              "source_meaning": {"const": null}
+            }
+          }
+        }
+      ]
     },
     "style_reference_decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision_id", "trait_id", "dimension", "classification", "disposition", "target_scope", "target_application", "promoted_by_user_requirement", "promotion_evidence", "rationale"],
+      "required": ["decision_id", "origin", "trait_id", "dimension", "classification", "disposition", "target_scope", "target_application", "promoted_by_user_requirement", "promotion_evidence", "rationale"],
       "properties": {
         "decision_id": {"$ref": "#/$defs/identifier"},
-        "trait_id": {"$ref": "#/$defs/identifier"},
-        "dimension": {"type": "string", "enum": ["color", "material", "shape", "rendering", "lighting", "decoration", "world_visual"]},
-        "classification": {"type": "string", "enum": ["stable", "secondary", "local", "conflicting", "uncertain"]},
+        "origin": {"type": "string", "enum": ["style_reference", "user_requirement", "composer_derived"]},
+        "trait_id": {"anyOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
+        "dimension": {"type": "string", "enum": ["color", "material", "shape", "rendering", "lighting", "decoration", "world_visual", "surface_treatment"]},
+        "classification": {"type": ["string", "null"], "enum": ["stable", "secondary", "local", "conflicting", "uncertain", null]},
         "disposition": {"type": "string", "enum": ["adopted", "conditionally_adopted", "ignored", "rejected_due_to_conflict", "overridden_by_user"]},
         "target_scope": {"$ref": "#/$defs/identifier_array"},
         "target_application": {"type": ["string", "null"], "minLength": 1},
         "promoted_by_user_requirement": {"type": "boolean"},
         "promotion_evidence": {"type": ["string", "null"], "minLength": 1},
         "rationale": {"$ref": "#/$defs/text"}
-      }
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"origin": {"const": "style_reference"}}, "required": ["origin"]},
+          "then": {
+            "properties": {
+              "trait_id": {"$ref": "#/$defs/identifier"},
+              "classification": {"type": "string"}
+            }
+          },
+          "else": {
+            "properties": {
+              "trait_id": {"const": null},
+              "classification": {"const": null},
+              "promoted_by_user_requirement": {"const": false},
+              "promotion_evidence": {"const": null}
+            }
+          }
+        }
+      ]
     },
     "reference_application": {
       "type": "object",
