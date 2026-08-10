@@ -1,986 +1,362 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/ui-compose-plan.schema.json",
-  "title": "UI Compose Plan",
-  "description": "Engine-neutral UI composition plan produced from structured asset analysis and a user request.",
+  "title": "UI Compose Plan v2",
+  "description": "A new engine-neutral UI design intent synthesized from a user requirement, A layout evidence, and B2 visual-style evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
     "schema_version",
     "project_context",
+    "design_summary",
+    "reference_application",
     "visual_direction",
     "pages",
-    "asset_usages",
     "component_tree",
     "layout_rules",
     "interactions",
     "navigation",
-    "missing_assets",
+    "generation_constraints",
     "assumptions",
     "warnings"
   ],
   "properties": {
-    "schema_version": {
-      "type": "string",
-      "const": "1.0"
-    },
-    "project_context": {
-      "$ref": "#/$defs/project_context"
-    },
-    "visual_direction": {
-      "$ref": "#/$defs/visual_direction"
-    },
-    "pages": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/page"
-      }
-    },
-    "asset_usages": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/asset_usage"
-      }
-    },
+    "schema_version": {"type": "string", "const": "2.0"},
+    "project_context": {"$ref": "#/$defs/project_context"},
+    "design_summary": {"$ref": "#/$defs/design_summary"},
+    "reference_application": {"$ref": "#/$defs/reference_application"},
+    "visual_direction": {"$ref": "#/$defs/visual_direction"},
+    "pages": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/page"}},
     "component_tree": {
       "type": "array",
       "minItems": 1,
-      "description": "Flat, ordered representation of all page trees. parent_id is null only for a page root.",
-      "items": {
-        "$ref": "#/$defs/component"
-      }
+      "description": "Flat ordered representation of the newly designed page trees, not renamed copies of A groups.",
+      "items": {"$ref": "#/$defs/component"}
     },
-    "layout_rules": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "$ref": "#/$defs/layout_rule"
-      }
-    },
-    "interactions": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/interaction"
-      }
-    },
-    "navigation": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/navigation_rule"
-      }
-    },
-    "missing_assets": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/missing_asset"
-      }
-    },
-    "assumptions": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/assumption"
-      }
-    },
-    "warnings": {
-      "type": "array",
-      "items": {
-        "$ref": "#/$defs/warning"
-      }
-    }
+    "layout_rules": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/layout_rule"}},
+    "interactions": {"type": "array", "items": {"$ref": "#/$defs/interaction"}},
+    "navigation": {"type": "array", "items": {"$ref": "#/$defs/navigation_rule"}},
+    "generation_constraints": {"$ref": "#/$defs/generation_constraints"},
+    "assumptions": {"type": "array", "items": {"$ref": "#/$defs/assumption"}},
+    "warnings": {"type": "array", "items": {"$ref": "#/$defs/warning"}}
   },
   "$defs": {
-    "identifier": {
-      "type": "string",
-      "minLength": 1,
-      "pattern": "^[a-z0-9][a-z0-9_\\-]*$"
-    },
+    "identifier": {"type": "string", "minLength": 1, "pattern": "^[a-z0-9][a-z0-9_\\-]*$"},
+    "text": {"type": "string", "minLength": 1, "pattern": ".*\\S.*"},
+    "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+    "text_array": {"type": "array", "items": {"$ref": "#/$defs/text"}},
+    "identifier_array": {"type": "array", "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
     "target_resolution": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "width",
-        "height",
-        "unit"
-      ],
+      "required": ["width", "height", "unit"],
       "properties": {
-        "width": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "height": {
-          "type": "integer",
-          "minimum": 1
-        },
-        "unit": {
-          "type": "string",
-          "const": "px"
-        }
-      }
-    },
-    "source_ref": {
-      "type": "object",
-      "additionalProperties": false,
-      "description": "Opaque reference retained only for downstream retrieval of the original asset.",
-      "required": [
-        "ref_type",
-        "value"
-      ],
-      "properties": {
-        "ref_type": {
-          "type": "string",
-          "enum": [
-            "workspace_path",
-            "attachment_id",
-            "asset_uri",
-            "opaque_id"
-          ]
-        },
-        "value": {
-          "type": "string",
-          "minLength": 1
-        },
-        "media_type": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "checksum": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1},
+        "unit": {"type": "string", "const": "px"}
       }
     },
     "project_context": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "project_name",
-        "game_description",
-        "orientation",
-        "target_resolution",
-        "page_scope"
-      ],
+      "required": ["project_name", "user_requirement", "game_context", "orientation", "target_resolution", "page_scope", "constraints"],
       "properties": {
-        "project_name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "game_description": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "genre",
-            "gameplay_summary"
-          ],
-          "properties": {
-            "genre": {
-              "type": "string",
-              "minLength": 1
-            },
-            "gameplay_summary": {
-              "type": "string",
-              "minLength": 1
-            },
-            "core_interaction": {
-              "type": [
-                "string",
-                "null"
-              ]
-            },
-            "audience": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        },
-        "orientation": {
-          "type": "string",
-          "enum": [
-            "portrait",
-            "landscape",
-            "square"
-          ]
-        },
-        "target_resolution": {
-          "$ref": "#/$defs/target_resolution"
-        },
-        "page_scope": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true
-        },
-        "constraints": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true,
-          "default": []
-        }
+        "project_name": {"type": ["string", "null"], "minLength": 1},
+        "user_requirement": {"$ref": "#/$defs/text"},
+        "game_context": {"type": ["string", "null"], "minLength": 1},
+        "orientation": {"type": ["string", "null"], "enum": ["portrait", "landscape", "square", null]},
+        "target_resolution": {"anyOf": [{"$ref": "#/$defs/target_resolution"}, {"type": "null"}]},
+        "page_scope": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "constraints": {"$ref": "#/$defs/text_array"}
       }
     },
-    "palette_entry": {
+    "design_summary": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "role",
-        "value",
-        "usage"
-      ],
+      "required": ["target_experience", "synthesis_summary", "key_design_decisions"],
       "properties": {
-        "role": {
-          "$ref": "#/$defs/identifier"
-        },
-        "value": {
-          "type": "string",
-          "pattern": "^#[0-9A-Fa-f]{6}$"
-        },
-        "usage": {
-          "type": "string",
-          "minLength": 1
-        }
+        "target_experience": {"$ref": "#/$defs/text"},
+        "synthesis_summary": {"$ref": "#/$defs/text"},
+        "key_design_decisions": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}}
+      }
+    },
+    "layout_reference_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "source_kind", "source_ids", "source_meaning", "disposition", "target_application", "rationale"],
+      "properties": {
+        "decision_id": {"$ref": "#/$defs/identifier"},
+        "source_kind": {"type": "string", "enum": ["region", "region_relationship", "component_group", "visual_hierarchy", "layout_rule", "excluded_content", "uncertainty"]},
+        "source_ids": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "source_meaning": {"$ref": "#/$defs/text"},
+        "disposition": {"type": "string", "enum": ["adopted", "adapted", "ignored", "rejected"]},
+        "target_application": {"type": ["string", "null"], "minLength": 1},
+        "rationale": {"$ref": "#/$defs/text"}
+      }
+    },
+    "style_reference_decision": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision_id", "trait_id", "dimension", "classification", "disposition", "target_scope", "target_application", "rationale"],
+      "properties": {
+        "decision_id": {"$ref": "#/$defs/identifier"},
+        "trait_id": {"$ref": "#/$defs/identifier"},
+        "dimension": {"type": "string", "enum": ["color", "material", "shape", "rendering", "lighting", "decoration", "world_visual"]},
+        "classification": {"type": "string", "enum": ["stable", "secondary", "local", "conflicting", "uncertain"]},
+        "disposition": {"type": "string", "enum": ["adopted", "conditionally_adopted", "ignored", "rejected_due_to_conflict", "overridden_by_user"]},
+        "target_scope": {"$ref": "#/$defs/identifier_array"},
+        "target_application": {"type": ["string", "null"], "minLength": 1},
+        "rationale": {"$ref": "#/$defs/text"}
+      }
+    },
+    "reference_application": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["layout_analysis_id", "style_profile_id", "layout", "style"],
+      "properties": {
+        "layout_analysis_id": {"$ref": "#/$defs/identifier"},
+        "style_profile_id": {"$ref": "#/$defs/identifier"},
+        "layout": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/layout_reference_decision"}},
+        "style": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/style_reference_decision"}}
+      }
+    },
+    "visual_directive": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["directive_id", "dimension", "direction", "source_trait_ids", "target_scope", "user_override", "notes"],
+      "properties": {
+        "directive_id": {"$ref": "#/$defs/identifier"},
+        "dimension": {"type": "string", "enum": ["color", "material", "shape", "rendering", "lighting", "decoration", "world_visual", "surface_treatment"]},
+        "direction": {"$ref": "#/$defs/text"},
+        "source_trait_ids": {"$ref": "#/$defs/identifier_array"},
+        "target_scope": {"$ref": "#/$defs/identifier_array"},
+        "user_override": {"type": "boolean"},
+        "notes": {"$ref": "#/$defs/text_array"}
       }
     },
     "visual_direction": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "summary",
-        "style_keywords",
-        "palette",
-        "hierarchy_principles",
-        "asset_style_notes"
-      ],
+      "required": ["summary", "directives", "hierarchy_emphasis", "page_specific_notes"],
       "properties": {
-        "summary": {
-          "type": "string",
-          "minLength": 1
-        },
-        "style_keywords": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "uniqueItems": true
-        },
-        "palette": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/palette_entry"
-          }
-        },
-        "hierarchy_principles": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "asset_style_notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
+        "summary": {"$ref": "#/$defs/text"},
+        "directives": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/visual_directive"}},
+        "hierarchy_emphasis": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/text"}},
+        "page_specific_notes": {"$ref": "#/$defs/text_array"}
       }
     },
     "page_state": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "state_id",
-        "description"
-      ],
+      "required": ["state_id", "description", "is_initial"],
       "properties": {
-        "state_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        },
-        "is_initial": {
-          "type": "boolean",
-          "default": false
-        }
+        "state_id": {"$ref": "#/$defs/identifier"},
+        "description": {"$ref": "#/$defs/text"},
+        "is_initial": {"type": "boolean"}
       }
     },
     "page": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "page_id",
-        "page_type",
-        "purpose",
-        "root_component_id",
-        "states",
-        "entry_conditions",
-        "exit_conditions"
-      ],
+      "required": ["page_id", "page_type", "purpose", "root_component_id", "states", "entry_conditions", "exit_conditions"],
       "properties": {
-        "page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "page_type": {
-          "type": "string",
-          "enum": [
-            "login",
-            "loading",
-            "home",
-            "main_menu",
-            "gameplay",
-            "hud",
-            "settings",
-            "result",
-            "mode_select",
-            "level_select",
-            "popup",
-            "other"
-          ]
-        },
-        "purpose": {
-          "type": "string",
-          "minLength": 1
-        },
-        "root_component_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "states": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/page_state"
-          }
-        },
-        "entry_conditions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "exit_conditions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
-      }
-    },
-    "asset_usage": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": [
-        "usage_id",
-        "asset_id",
-        "source_ref",
-        "page_id",
-        "component_id",
-        "semantic_role",
-        "usage_intent",
-        "fit_mode",
-        "resizing_policy",
-        "visual_priority",
-        "analysis_confidence"
-      ],
-      "properties": {
-        "usage_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "asset_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "source_ref": {
-          "$ref": "#/$defs/source_ref"
-        },
-        "page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "component_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "semantic_role": {
-          "$ref": "#/$defs/identifier"
-        },
-        "usage_intent": {
-          "type": "string",
-          "minLength": 1
-        },
-        "fit_mode": {
-          "type": "string",
-          "enum": [
-            "cover",
-            "contain",
-            "stretch",
-            "tile",
-            "native",
-            "crop",
-            "unknown"
-          ]
-        },
-        "crop_intent": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "resizing_policy": {
-          "type": "object",
-          "additionalProperties": false,
-          "required": [
-            "stretch_allowed",
-            "slice_scaling",
-            "protected_region_note"
-          ],
-          "properties": {
-            "stretch_allowed": {
-              "type": "boolean"
-            },
-            "slice_scaling": {
-              "type": "string",
-              "enum": [
-                "not_applicable",
-                "candidate",
-                "recommended",
-                "manual_confirmation"
-              ]
-            },
-            "protected_region_note": {
-              "type": [
-                "string",
-                "null"
-              ]
-            }
-          }
-        },
-        "visual_priority": {
-          "type": "string",
-          "enum": [
-            "background",
-            "supporting",
-            "primary",
-            "critical"
-          ]
-        },
-        "visible_in_states": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true,
-          "default": []
-        },
-        "analysis_confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": []
-        }
+        "page_id": {"$ref": "#/$defs/identifier"},
+        "page_type": {"$ref": "#/$defs/identifier"},
+        "purpose": {"$ref": "#/$defs/text"},
+        "root_component_id": {"$ref": "#/$defs/identifier"},
+        "states": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/page_state"}},
+        "entry_conditions": {"$ref": "#/$defs/text_array"},
+        "exit_conditions": {"$ref": "#/$defs/text_array"}
       }
     },
     "component_content": {
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "text": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "localization_key": {
-          "type": [
-            "string",
-            "null"
-          ]
-        },
-        "accessibility_label": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
+        "text": {"type": ["string", "null"]},
+        "text_role": {"type": ["string", "null"], "minLength": 1},
+        "data_role": {"type": ["string", "null"], "minLength": 1},
+        "accessibility_label": {"type": ["string", "null"], "minLength": 1}
+      }
+    },
+    "repeat_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["count", "arrangement", "content_variation"],
+      "properties": {
+        "count": {"type": "integer", "minimum": 1},
+        "arrangement": {"type": "string", "enum": ["row", "column", "grid", "list", "carousel", "custom"]},
+        "content_variation": {"$ref": "#/$defs/text"}
       }
     },
     "component": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "component_id",
-        "page_id",
-        "parent_id",
-        "name",
-        "semantic_type",
-        "order",
-        "asset_usage_ids",
-        "state_ids"
-      ],
+      "required": ["component_id", "page_id", "parent_id", "name", "semantic_type", "order", "state_ids", "design_intent", "notes"],
       "properties": {
-        "component_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "parent_id": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/identifier"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "name": {
-          "type": "string",
-          "minLength": 1
-        },
-        "semantic_type": {
-          "type": "string",
-          "enum": [
-            "page_root",
-            "container",
-            "visual",
-            "button",
-            "text",
-            "progress",
-            "status",
-            "overlay",
-            "decoration",
-            "spacer",
-            "custom"
-          ]
-        },
-        "order": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "asset_usage_ids": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true
-        },
-        "state_ids": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true
-        },
-        "content": {
-          "$ref": "#/$defs/component_content"
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": []
-        }
+        "component_id": {"$ref": "#/$defs/identifier"},
+        "page_id": {"$ref": "#/$defs/identifier"},
+        "parent_id": {"anyOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
+        "name": {"$ref": "#/$defs/text"},
+        "semantic_type": {"type": "string", "enum": ["page_root", "container", "panel", "navigation", "list", "grid", "item", "button", "text", "status", "overlay", "decoration", "custom"]},
+        "order": {"type": "integer", "minimum": 0},
+        "state_ids": {"$ref": "#/$defs/identifier_array"},
+        "design_intent": {"$ref": "#/$defs/text"},
+        "content": {"$ref": "#/$defs/component_content"},
+        "repeat": {"$ref": "#/$defs/repeat_spec"},
+        "notes": {"$ref": "#/$defs/text_array"}
       }
     },
     "normalized_point": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "x",
-        "y"
-      ],
+      "required": ["x", "y"],
       "properties": {
-        "x": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        },
-        "y": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        }
+        "x": {"type": "number", "minimum": 0, "maximum": 1},
+        "y": {"type": "number", "minimum": 0, "maximum": 1}
       }
     },
-    "relative_dimensions": {
+    "dimensions": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "width",
-        "height",
-        "unit"
-      ],
+      "required": ["width", "height", "unit"],
       "properties": {
-        "width": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "height": {
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
-        "unit": {
-          "type": "string",
-          "enum": [
-            "normalized_parent",
-            "logical_pixel"
-          ]
-        }
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "unit": {"type": "string", "enum": ["normalized_parent", "logical_pixel"]}
+      }
+    },
+    "layout_relationship": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relationship_type", "target_component_id", "description"],
+      "properties": {
+        "relationship_type": {"type": "string", "enum": ["left_of", "right_of", "above", "below", "inside", "centered_within", "aligned_with", "spaced_from", "overlays", "repeated_within"]},
+        "target_component_id": {"$ref": "#/$defs/identifier"},
+        "description": {"$ref": "#/$defs/text"}
       }
     },
     "layout_rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "rule_id",
-        "page_id",
-        "component_id",
-        "relative_to",
-        "anchor",
-        "pivot",
-        "position",
-        "dimensions",
-        "stack_order",
-        "safe_area_policy",
-        "notes"
-      ],
+      "required": ["rule_id", "page_id", "component_id", "relative_to", "anchor", "pivot", "position", "dimensions", "stack_order", "safe_area_policy", "relationships", "content_adaptation", "notes"],
       "properties": {
-        "rule_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "component_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "relative_to": {
-          "type": "string",
-          "enum": [
-            "canvas",
-            "safe_area",
-            "parent"
-          ]
-        },
-        "anchor": {
-          "type": "string",
-          "enum": [
-            "top_left",
-            "top_center",
-            "top_right",
-            "center_left",
-            "center",
-            "center_right",
-            "bottom_left",
-            "bottom_center",
-            "bottom_right",
-            "stretch"
-          ]
-        },
-        "pivot": {
-          "$ref": "#/$defs/normalized_point"
-        },
-        "position": {
-          "$ref": "#/$defs/normalized_point"
-        },
-        "dimensions": {
-          "$ref": "#/$defs/relative_dimensions"
-        },
-        "stack_order": {
-          "type": "integer"
-        },
-        "safe_area_policy": {
-          "type": "string",
-          "enum": [
-            "inside",
-            "may_extend",
-            "full_bleed",
-            "not_applicable"
-          ]
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        }
+        "rule_id": {"$ref": "#/$defs/identifier"},
+        "page_id": {"$ref": "#/$defs/identifier"},
+        "component_id": {"$ref": "#/$defs/identifier"},
+        "relative_to": {"type": "string", "enum": ["canvas", "safe_area", "parent"]},
+        "anchor": {"type": "string", "enum": ["top_left", "top_center", "top_right", "center_left", "center", "center_right", "bottom_left", "bottom_center", "bottom_right", "stretch"]},
+        "pivot": {"$ref": "#/$defs/normalized_point"},
+        "position": {"$ref": "#/$defs/normalized_point"},
+        "dimensions": {"$ref": "#/$defs/dimensions"},
+        "stack_order": {"type": "integer"},
+        "safe_area_policy": {"type": "string", "enum": ["inside", "may_extend", "full_bleed", "not_applicable"]},
+        "relationships": {"type": "array", "items": {"$ref": "#/$defs/layout_relationship"}},
+        "content_adaptation": {"$ref": "#/$defs/text_array"},
+        "notes": {"$ref": "#/$defs/text_array"}
       }
     },
     "state_change": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "target_id",
-        "from_state",
-        "to_state"
-      ],
+      "required": ["target_id", "from_state", "to_state"],
       "properties": {
-        "target_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "from_state": {
-          "$ref": "#/$defs/identifier"
-        },
-        "to_state": {
-          "$ref": "#/$defs/identifier"
-        }
+        "target_id": {"$ref": "#/$defs/identifier"},
+        "from_state": {"$ref": "#/$defs/identifier"},
+        "to_state": {"$ref": "#/$defs/identifier"}
       }
     },
     "interaction": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "interaction_id",
-        "page_id",
-        "trigger_component_id",
-        "trigger",
-        "action",
-        "conditions",
-        "state_changes"
-      ],
+      "required": ["interaction_id", "page_id", "trigger_component_id", "trigger", "action", "conditions", "state_changes", "navigation_id", "feedback"],
       "properties": {
-        "interaction_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "trigger_component_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "trigger": {
-          "type": "string",
-          "enum": [
-            "tap",
-            "click",
-            "press",
-            "release",
-            "long_press",
-            "submit",
-            "value_change",
-            "automatic"
-          ]
-        },
-        "action": {
-          "$ref": "#/$defs/identifier"
-        },
-        "conditions": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          }
-        },
-        "state_changes": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/state_change"
-          }
-        },
-        "navigation_id": {
-          "anyOf": [
-            {
-              "$ref": "#/$defs/identifier"
-            },
-            {
-              "type": "null"
-            }
-          ]
-        },
-        "feedback": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": []
-        }
+        "interaction_id": {"$ref": "#/$defs/identifier"},
+        "page_id": {"$ref": "#/$defs/identifier"},
+        "trigger_component_id": {"$ref": "#/$defs/identifier"},
+        "trigger": {"type": "string", "enum": ["tap", "click", "press", "release", "long_press", "submit", "value_change", "automatic"]},
+        "action": {"$ref": "#/$defs/identifier"},
+        "conditions": {"$ref": "#/$defs/text_array"},
+        "state_changes": {"type": "array", "items": {"$ref": "#/$defs/state_change"}},
+        "navigation_id": {"anyOf": [{"$ref": "#/$defs/identifier"}, {"type": "null"}]},
+        "feedback": {"$ref": "#/$defs/text_array"}
       }
     },
     "navigation_rule": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "navigation_id",
-        "from_page_id",
-        "to_page_id",
-        "trigger_interaction_id",
-        "transition_style",
-        "history_behavior"
-      ],
+      "required": ["navigation_id", "from_page_id", "to_page_id", "trigger_interaction_id", "transition_style", "history_behavior", "notes"],
       "properties": {
-        "navigation_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "from_page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "to_page_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "trigger_interaction_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "transition_style": {
-          "type": "string",
-          "enum": [
-            "immediate",
-            "fade",
-            "slide",
-            "overlay",
-            "custom"
-          ]
-        },
-        "transition_duration_ms": {
-          "type": [
-            "integer",
-            "null"
-          ],
-          "minimum": 0
-        },
-        "history_behavior": {
-          "type": "string",
-          "enum": [
-            "push",
-            "replace",
-            "clear"
-          ]
-        },
-        "notes": {
-          "type": "array",
-          "items": {
-            "type": "string",
-            "minLength": 1
-          },
-          "default": []
-        }
+        "navigation_id": {"$ref": "#/$defs/identifier"},
+        "from_page_id": {"$ref": "#/$defs/identifier"},
+        "to_page_id": {"$ref": "#/$defs/identifier"},
+        "trigger_interaction_id": {"$ref": "#/$defs/identifier"},
+        "transition_style": {"type": "string", "enum": ["immediate", "fade", "slide", "overlay", "custom"]},
+        "transition_duration_ms": {"type": ["integer", "null"], "minimum": 0},
+        "history_behavior": {"type": "string", "enum": ["push", "replace", "clear"]},
+        "notes": {"$ref": "#/$defs/text_array"}
       }
     },
-    "missing_asset": {
+    "exact_count": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "missing_asset_id",
-        "needed_for",
-        "description",
-        "severity",
-        "fallback"
-      ],
+      "required": ["component_id", "count", "requirement"],
       "properties": {
-        "missing_asset_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "needed_for": {
-          "type": "array",
-          "minItems": 1,
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true
-        },
-        "description": {
-          "type": "string",
-          "minLength": 1
-        },
-        "severity": {
-          "type": "string",
-          "enum": [
-            "blocker",
-            "important",
-            "optional"
-          ]
-        },
-        "fallback": {
-          "type": [
-            "string",
-            "null"
-          ]
-        }
+        "component_id": {"$ref": "#/$defs/identifier"},
+        "count": {"type": "integer", "minimum": 0},
+        "requirement": {"$ref": "#/$defs/text"}
+      }
+    },
+    "content_zone": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "content_role", "requirement"],
+      "properties": {
+        "component_id": {"$ref": "#/$defs/identifier"},
+        "content_role": {"$ref": "#/$defs/identifier"},
+        "requirement": {"$ref": "#/$defs/text"}
+      }
+    },
+    "generation_constraints": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_include", "must_not_include", "exact_counts", "key_content_zones", "focal_hierarchy", "component_separability", "overlap_restrictions", "readability_requirements", "clean_boundary_requirements", "cutout_friendly_requirements", "reference_fidelity_boundaries"],
+      "properties": {
+        "must_include": {"$ref": "#/$defs/text_array"},
+        "must_not_include": {"$ref": "#/$defs/text_array"},
+        "exact_counts": {"type": "array", "items": {"$ref": "#/$defs/exact_count"}},
+        "key_content_zones": {"type": "array", "items": {"$ref": "#/$defs/content_zone"}},
+        "focal_hierarchy": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
+        "component_separability": {"$ref": "#/$defs/text_array"},
+        "overlap_restrictions": {"$ref": "#/$defs/text_array"},
+        "readability_requirements": {"$ref": "#/$defs/text_array"},
+        "clean_boundary_requirements": {"$ref": "#/$defs/text_array"},
+        "cutout_friendly_requirements": {"$ref": "#/$defs/text_array"},
+        "reference_fidelity_boundaries": {"$ref": "#/$defs/text_array"}
       }
     },
     "assumption": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "assumption_id",
-        "statement",
-        "impact",
-        "confidence"
-      ],
+      "required": ["assumption_id", "statement", "basis", "impact", "confidence"],
       "properties": {
-        "assumption_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "statement": {
-          "type": "string",
-          "minLength": 1
-        },
-        "impact": {
-          "type": "string",
-          "minLength": 1
-        },
-        "confidence": {
-          "type": "number",
-          "minimum": 0,
-          "maximum": 1
-        }
+        "assumption_id": {"$ref": "#/$defs/identifier"},
+        "statement": {"$ref": "#/$defs/text"},
+        "basis": {"type": "string", "enum": ["user_ambiguity", "layout_uncertainty", "style_uncertainty", "design_completion"]},
+        "impact": {"$ref": "#/$defs/text"},
+        "confidence": {"$ref": "#/$defs/confidence"}
       }
     },
     "warning": {
       "type": "object",
       "additionalProperties": false,
-      "required": [
-        "warning_id",
-        "severity",
-        "message",
-        "related_ids"
-      ],
+      "required": ["warning_id", "severity", "category", "message", "related_ids"],
       "properties": {
-        "warning_id": {
-          "$ref": "#/$defs/identifier"
-        },
-        "severity": {
-          "type": "string",
-          "enum": [
-            "info",
-            "warning",
-            "error"
-          ]
-        },
-        "message": {
-          "type": "string",
-          "minLength": 1
-        },
-        "related_ids": {
-          "type": "array",
-          "items": {
-            "$ref": "#/$defs/identifier"
-          },
-          "uniqueItems": true
-        }
+        "warning_id": {"$ref": "#/$defs/identifier"},
+        "severity": {"type": "string", "enum": ["info", "warning", "error"]},
+        "category": {"type": "string", "enum": ["user_layout_conflict", "user_style_deviation", "style_conflict", "low_confidence_evidence", "orientation_adaptation", "insufficient_requirement", "reference_scope"]},
+        "message": {"$ref": "#/$defs/text"},
+        "related_ids": {"$ref": "#/$defs/identifier_array"}
       }
     }
   }

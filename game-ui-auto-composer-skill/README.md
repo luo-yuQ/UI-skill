@@ -1,198 +1,88 @@
-# Game-UI-Auto-Composer-Skill
+# Game UI Auto Composer v2
 
-<p align="center">
-  <strong>从资源出发，自动编排游戏 UI。</strong>
-</p>
-
-<p align="center">
-  <em>「开发者只提供必要信息，其余尽量交给 AI 自动完成。」</em>
-</p>
-
-<p align="center">
-  <a href="./README_EN.md">English</a> ·
-  <a href="./README_JA.md">日本語</a> ·
-  <a href="./README_KO.md">한국어</a> ·
-  <a href="./README_ES.md">Español</a>
-</p>
-
-<p align="center">
-  <img alt="License MIT" src="https://img.shields.io/badge/License-MIT-yellow.svg">
-  <img alt="Claude Code Skill" src="https://img.shields.io/badge/Claude%20Code-Skill-7C3AED">
-  <img alt="skills.sh Compatible" src="https://img.shields.io/badge/skills.sh-Compatible-84cc16">
-  <img alt="Game UI" src="https://img.shields.io/badge/Game%20UI-Auto%20Composer-0ea5e9">
-</p>
-
----
-
-## 这是什么？
-
-**Game-UI-Auto-Composer-Skill** 是一个面向游戏开发的 **UI 自动编排 Skill**。
-
-当你只有：
-- 一些图片资源（背景、按钮底板、图标、角色帧、装饰等）
-- 一段简要游戏描述
-- 但还没有完整设计稿
-
-它会尽量自动完成：
-
-- 理解游戏类型、平台与玩法特征
-- 识别资源用途与优先级
-- 推理页面范围与页面结构
-- 规划布局、组件树与风格收敛
-- 生成 **Engine-Neutral UI Spec**
-- 输出适合实现的说明，减少开发者手动参与
-
----
-
-## 适合什么场景？
-
-这个 Skill 当前的 **v1 / MVP** 更适合：
-
-- 微信小游戏
-- H5 轻量小游戏
-- 轻度休闲游戏
-- 跑酷 / 换道 / 点击切换 / 轻合成 / 轻节奏类
-- 没有设计稿，但已有部分资源
-- 希望先快速得到核心页面 UI 方案的项目
-
-默认优先处理的核心页面：
-
-1. 首页（Home）
-2. 游戏中 HUD（Gameplay HUD）
-3. 结算页（Result）
-
----
-
-## 它能做什么？
-
-给定图片资源与游戏描述后，这个 Skill 会尽量自动：
-
-1. **分析游戏信息**  
-   提取平台、横竖屏、玩法节奏、核心交互、适合的 UI 密度
-
-2. **识别资源用途**  
-   判断哪些图更适合做背景、按钮、标题框、面板、角色展示、装饰等
-
-3. **定义页面范围**  
-   默认优先形成核心页面闭环，而不是盲目扩页
-
-4. **组合生成 UI 方案**  
-   输出页面结构、资源映射、组件层级、布局约束、动效建议
-
-5. **输出实现友好的结果**  
-   优先给出结构化结果，而不是只给一张“看起来好看但难实现”的图
-
----
-
-## 工作原理
-
-这个 Skill 的内部思路大致是：
-
-**输入资源与描述 → 识别游戏类型 → 识别资源角色 → 推理页面 → 规划布局 → 风格收敛 → 输出实现规格**
-
-它遵循几个核心原则：
-
-- **开发者最小参与**
-- **最小提问策略**
-- **核心页面闭环优先**
-- **可落地实现优先**
-- **引擎友好表达**
-- **轻量动效优先**
-- **低置信度时保守降级**
-
-它不是单纯“画图”，而是一个偏 **规则 + 推断** 的游戏 UI 自动实现引擎雏形。
-
----
-
-## 安装
-
-### 方式一：使用 `npx skills add`
-```bash
-npx skills add Flycan-Fanc/game-ui-auto-composer-skill
-```
-
-### 方式二：手动安装到 Claude / Claude Code
-1. 下载本仓库
-2. 找到 skill 文件夹 `game-ui-auto-composer-skill/`
-3. 在 Claude 中上传该 skill 文件夹（或压缩后上传）
-4. 或将其放入 Claude Code 的 skills 目录中
-
----
-
-## 仓库结构
+Composer v2 把三个权威来源合成为一个新的、引擎无关的 UI 设计意图：
 
 ```text
-game-ui-auto-composer-skill/
-├── .git/
-├── assets/
-├── references/
-├── scripts/
-├── LICENSE
-├── README.md
-├── README_EN.md
-├── README_ES.md
-├── README_JA.md
-├── README_KO.md
-└── SKILL.md
+A final layout-reference analysis
++ B2 style profile
++ ordinary user requirement
+→ ui-compose-plan v2
 ```
 
----
+它不是 A/B 拼接器，也不再负责“已有素材应该放在哪里”。用户决定本次要设计什么，A 提供可复用的布局证据，B2 提供分级的视觉风格证据；Composer 可以继承、调整、删除、新增和重组，最后形成新的页面、组件树、布局意图与视觉方向。
 
-## 输出重点
+## 输入
 
-当前版本优先输出：
+```json
+{
+  "schema_version": "2.0",
+  "request": {
+    "user_requirement": "设计一个公会委托页面……"
+  },
+  "layout_reference_analysis": {},
+  "style_profile": {}
+}
+```
 
-- 页面清单
-- 资源用途映射
-- 页面布局方案
-- 组件树 / 约束布局
-- Engine-Neutral UI Spec
-- HTML + CSS 原型说明
-- 轻量动效建议
-- 质量检查与保守 fallback 说明
+- `request.user_requirement`：目标业务、内容、数量、交互和显式变化的最高权威。
+- `layout_reference_analysis`：直接接收 A 的完整 final，负责结构证据。
+- `style_profile`：直接接收 B2 完整 profile，负责视觉语言证据。
 
----
+输入 schema 直接引用相邻 A/B Skill 的权威 schema，不维护 Composer 私有副本。
 
-## 当前边界
+## 输出
 
-v1 暂不追求：
+`ui-compose-plan.json` 使用 `schema_version: 2.0`，包含：
 
-- 全类型大型游戏全面支持
-- 品牌级商业视觉终稿
-- 深度引擎专用导出
-- 复杂富演出动态页面
-- 完整 MMO / SLG / RPG UI 系统自动化
+```text
+project_context
+design_summary
+reference_application
+visual_direction
+pages
+component_tree
+layout_rules
+interactions
+navigation
+generation_constraints
+assumptions
+warnings
+```
 
-这不是能力上限，而是 **MVP 迭代策略**：先聚焦真实可落地场景，再逐步扩展到 v2 / v3。
+`reference_application` 记录 A 的结构如何 adopted/adapted/ignored/rejected，以及 B2 trait 如何采用、限域、忽略或因冲突拒绝。`generation_constraints` 为后续生图阶段提供结构化约束，但不是 GPT Image prompt。
 
----
+v2 不再输出 `asset_usages` 和 `missing_assets`。
 
-## 为什么要做这个 Skill？
+## 权威与冲突
 
-因为现实里经常会遇到一种尴尬情况：
+- 用户要求决定目标页面、业务内容、数量、交互和显式变化。
+- A 只负责布局组织，不负责目标业务内容。
+- B2 只负责视觉语言，不覆盖 A 的正式布局关系。
+- 用户显式要求覆盖 A/B，并记录适配或 style deviation。
+- B2 `stable` 优先；`secondary` 按语境；`local` 仅限语义匹配组件；`conflicting` 不静默选边；`uncertain` 不变成事实。
+- 参考图中的城堡、战斗、角色、奖励、文案等语义不是用户需求，不得自动泄漏到目标页面。
 
-- 有角色图
-- 有按钮图
-- 有背景图
-- 甚至有些 UI 碎片素材
-- 但没有完整设计稿
-- 也不想从零手动画页面草图
+## 验证
 
-于是开发者只能自己一边猜、一边摆、一边反复试错。
+在 `game-ui-auto-composer-skill` 目录运行：
 
-这个 Skill 想解决的，就是这个问题：
+```powershell
+python scripts/validate_input.py references/examples/example-ui-compose-input.json
+python scripts/validate_plan.py references/examples/example-ui-compose-plan.json
+python -m unittest discover -s tests -p "test_*.py"
+```
 
-> **让 AI 像一个懂游戏 UI 结构、懂资源编排、懂实现约束的助手一样，先帮你把“从资源到 UI”的这一步走通。**
+真实 v2 示例：
 
----
+- `references/examples/example-ui-compose-input.json`
+- `references/examples/example-ui-compose-plan.json`
+
+## 边界
+
+Composer core 不接收原图，不重新视觉识别，不生成图片、GPT Image prompt、HTML/CSS、FairyGUI XML 或 Laya/Unity/Cocos/FairyGUI 实现字段。
+
+`asset-analysis.schema.json`、旧 samples、asset taxonomy、templates、engine compatibility、prototype helpers、GPT Image/ToAPIs preview adapter 等仍保留为 legacy 或下游资源，但不属于 v2 core。现有 adapter 尚未迁移到 v2 plan，后续应独立处理。
 
 ## License
 
 MIT
-
----
-
-## 作者
-
-- **Author:** Flycan-Fanc
-- **Co-created-with:** OpenAI ChatGPT

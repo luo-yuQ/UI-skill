@@ -1,219 +1,88 @@
-# Workflow
+# Composer v2 Workflow
 
 ## Contract boundary
 
 Input:
 
-- one JSON object conforming to `schemas/ui-compose-input.schema.json`
-- structured user requirements in `request`
-- authoritative upstream asset facts in `assets[].asset_analysis`
-- opaque downstream references in `assets[].source_ref`
+- one valid `ui-compose-input` v2 object;
+- one ordinary-language user requirement;
+- one complete authoritative A final analysis;
+- one complete authoritative B2 style profile.
 
 Output:
 
-- one JSON object conforming to `schemas/ui-compose-plan.schema.json`
+- one valid `ui-compose-plan` v2 object expressing a new UI design intent.
 
-No alternate input or successful output mode exists in the core workflow.
+No raw-image, legacy asset-placement, or alternate successful core mode exists.
 
-## Core flow
+## Step 1: Validate v2 input
+
+Resolve and validate the Composer, A, and B schemas. Reject `pics`, top-level `assets`, empty user requirements, and unexpected fields. Stop on any error; never partially compose or repair upstream evidence.
+
+## Step 2: Interpret the user target
+
+Establish what is being designed: target business goal, page scope, content semantics, exact counts, requested interactions, requested changes, orientation, resolution, constraints, and explicit visual preferences.
+
+Create the target model before selecting reference material.
+
+## Step 3: Extract applicable A principles
+
+Review A regions, relationships, groups, hierarchy, rules, excluded content, and uncertainty. Select portable organization such as grouping, adjacency, containment, alignment, proportions, repetition, focal order, and action placement.
+
+Do not copy reference text, theme, item identity, character identity, event meaning, exact pixel coordinates, or irrelevant components.
+
+## Step 4: Select applicable B traits
+
+Index B traits by dimension and classification. Prefer relevant `stable`; condition relevant `secondary`; scope `local` narrowly; do not silently choose `conflicting`; do not turn `uncertain` into fact.
+
+## Step 5: Resolve authority and scope
+
+Apply the priority:
 
 ```text
-validate
-→ understand
-→ consume asset facts
-→ plan
-→ compose
-→ define behavior
-→ review
-→ output
+explicit user target > A for target content/count/change
+explicit user visual request > B
+A > B for formal layout
+reliable unoverridden B > unsupported style invention
 ```
 
-## Phase 1: Validate
+Prevent A/B reference semantics from leaking into target content.
 
-Input:
+## Step 6: Design new pages and components
 
-- candidate `ui-compose-input` JSON object
+Create only user-justified pages. Build a new target component hierarchy that satisfies target content and interactions. Add low-risk structural components only when required for completeness and record the assumption.
 
-Checks:
+## Step 7: Adapt layout
 
-- reject `pics`
-- contract `schema_version`
-- required `request` structure
-- non-empty `assets`
-- required `asset_analysis` and `source_ref`
-- non-empty, unique `asset_id` values
-- valid `primary_page_id`
+Map useful A relations onto the new tree. Recalculate for target counts, semantics, orientation, resolution, and safe area. Prefer normalized and relational intent over copied coordinates.
 
-Output:
+## Step 8: Derive target visual direction
 
-- validated input, or
-- structured validation error and immediate stop
+Convert selected B evidence and explicit user visual changes into page-specific directives. Preserve trait traceability. Do not copy the B profile wholesale or invent unsupported treatment.
 
-Do not continue with partial data when a required check fails.
+## Step 9: Define behavior
 
-## Phase 2: Understand
+Add only necessary interactions, state changes, feedback, and page navigation. Allow empty navigation for a single-page requirement. Keep behavior engine-neutral.
 
-Input:
+## Step 10: Define generation constraints
 
-- validated `request`
+Record exact counts, required and forbidden content, content zones, focal order, separability, overlap, readability, clean boundaries, cutout suitability, and reference-fidelity limits. Do not compile a prompt.
 
-Process:
+## Step 11: Record decisions and risk
 
-- establish project context
-- read the requested page scope and flow
-- identify orientation and target resolution
-- collect explicit requirements, constraints, and visual preferences
+Complete `reference_application` for adopted, adapted, ignored, and rejected A principles and for material B trait decisions. Record low-risk gaps as assumptions and material conflicts or uncertainty as warnings.
 
-Output:
+## Step 12: Validate and return
 
-- `project_context`
-- initial page goals
-- low-impact interpretation candidates for `assumptions`
+Validate the completed object against `schemas/ui-compose-plan.schema.json`. Return exactly one JSON object with no surrounding prose or downstream adapter output.
 
-## Phase 3: Consume asset facts
+## Review gates
 
-Input:
-
-- validated `assets[].asset_analysis`
-- opaque `assets[].source_ref`
-
-Process:
-
-- index assets by stable `asset_id`
-- retain engine-neutral visual and technical facts
-- retain confidence and uncertainty
-- ignore implementation-specific upstream fields
-- detect conflicts between requested use and upstream facts
-
-Output:
-
-- engine-neutral asset fact index
-- unchanged source-reference map
-- candidate usage constraints and warnings
-
-Do not reopen `source_ref`, guess from file names, or override upstream asset identity and category.
-
-## Phase 4: Plan
-
-Input:
-
-- project context
-- requested pages and flow
-- engine-neutral asset fact index
-
-Process:
-
-- determine justified page scope
-- define page purposes
-- define page states
-- define entry and exit conditions
-- identify missing assets
-
-Output:
-
-- `pages`
-- initial `missing_assets`
-- page-level assumptions
-
-## Phase 5: Compose
-
-Input:
-
-- planned pages
-- asset fact index
-- source-reference map
-
-Process:
-
-- decide actual asset use per page
-- map asset usages to components
-- define component parent relationships and semantic roles
-- define visual priority
-- define engine-neutral layout constraints
-
-Output:
-
-- `visual_direction`
-- `asset_usages`
-- `component_tree`
-- `layout_rules`
-
-The composition may decide not to use an analyzed asset. It must not redefine what the asset is.
-
-## Phase 6: Define behavior
-
-Input:
-
-- pages and component tree
-- requested user flow
-
-Process:
-
-- define semantic triggers and actions
-- define page and component state changes
-- define navigation relationships
-- define transition and feedback intent
-
-Output:
-
-- `interactions`
-- `navigation`
-
-Keep behavior free of implementation class names, callback signatures, and file formats.
-
-## Phase 7: Review
-
-Input:
-
-- complete draft plan
-
-Checks:
-
-- every page has a valid root component
-- every used asset maps to a known component and page
-- every `source_ref` is passed through unchanged
-- layout respects safe areas and upstream protected regions
-- interactions and navigation reference planned entities
-- missing assets have severity and fallback
-- assumptions are explicit
-- warnings reflect uncertainty and confidence
-- no implementation-specific fields entered the core output
-
-Output:
-
-- finalized `missing_assets`
-- finalized `assumptions`
-- finalized `warnings`
-- reviewed plan candidate
-
-## Phase 8: Output
-
-Input:
-
-- reviewed plan candidate
-
-Process:
-
-- validate against `schemas/ui-compose-plan.schema.json`
-
-Output:
-
-- exactly one valid `ui-compose-plan` JSON object
-
-Do not append a report, prompt, implementation mapping, code, or secondary artifact.
-
-## Failure behavior
-
-If input validation fails:
-
-1. return a structured error object
-2. include machine-readable error paths and messages
-3. include non-fatal warnings separately
-4. stop before planning
-
-If optional information is uncertain after validation:
-
-1. choose the most conservative structural interpretation
-2. record it in `assumptions`
-3. record material risk in `warnings`
-4. use `missing_assets` when a required visual resource is absent
+- User counts and explicit requirements win over reference counts.
+- Component IDs and semantics describe the target, not renamed A objects.
+- Every adopted style directive is traceable to B or an explicit user override.
+- Local traits are not globalized.
+- Conflicting and uncertain traits are not hard requirements.
+- Reference-specific narrative and business content do not appear without user authorization.
+- Generation constraints express structure, not a full prompt.
+- No v1 `asset_usages`, `missing_assets`, or engine-specific fields remain.

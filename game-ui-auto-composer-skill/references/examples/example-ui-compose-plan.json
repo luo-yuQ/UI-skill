@@ -1,263 +1,630 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "project_context": {
-    "project_name": "Sky Vanguard",
-    "game_description": {
-      "genre": "portrait arcade flight shooter",
-      "gameplay_summary": "The player pilots a fighter aircraft through vertically scrolling combat stages.",
-      "core_interaction": "Tap the login button to enter the loading flow before gameplay.",
-      "audience": "casual mobile players"
-    },
-    "orientation": "portrait",
+    "project_name": "Guild Ledger",
+    "user_requirement": "Design a single-page guild commission board. Put exactly three commission categories on the left, show exactly eight commission cards in a two-row grid in the center, keep selected commission details and an Accept Commission primary action on the right, and add a Refresh button. Do not reuse the reference shop copy, products, prices, characters, or castle/battle narrative.",
+    "game_context": "A cooperative dark-fantasy RPG where guild members review and accept timed commissions.",
+    "orientation": "landscape",
     "target_resolution": {
-      "width": 1080,
-      "height": 1920,
+      "width": 1920,
+      "height": 1080,
       "unit": "px"
     },
     "page_scope": [
-      "login",
-      "loading"
+      "guild_commission_board"
     ],
     "constraints": [
-      "Keep the upper-center castle silhouette visible.",
-      "Use only the supplied analyzed image assets."
+      "Keep all functional text readable at 1920x1080.",
+      "Do not add pages or navigation not requested.",
+      "Use reference evidence as structure and style guidance, not as target content."
+    ]
+  },
+  "design_summary": {
+    "target_experience": "A single-screen guild workspace for filtering, comparing, inspecting, refreshing, and accepting commissions.",
+    "synthesis_summary": "Adapt the reference's left-navigation, dominant center-grid, and right-detail progression to a new guild commission workflow while replacing its original business semantics, counts, and primary-action meaning. Apply only reliable and relevant B2 dark-fantasy visual traits.",
+    "key_design_decisions": [
+      "Use exactly three left-side category tabs because the user count overrides the five-tab reference.",
+      "Use exactly eight commission cards in a two-row grid because the user count overrides the six visible reference cards.",
+      "Replace the reference primary-action semantics with commission selection and acceptance.",
+      "Keep Refresh secondary and spatially separate from the Accept Commission action.",
+      "Keep the page self-contained with no invented navigation."
+    ]
+  },
+  "reference_application": {
+    "layout_analysis_id": "sky-vanguard-shop-final-001",
+    "style_profile_id": "dark_fantasy_reference_profile_01",
+    "layout": [
+      {
+        "decision_id": "layout_progression_adapted",
+        "source_kind": "layout_rule",
+        "source_ids": [
+          "rule_progressive_browse_to_detail"
+        ],
+        "source_meaning": "Organize a left-to-right progression from category control through a dominant repeated collection to a contextual detail region.",
+        "disposition": "adapted",
+        "target_application": "Use category navigation on the left, an eight-card commission grid in the center, and selected commission details on the right.",
+        "rationale": "The relationship is portable, but all shop content and reference counts are replaced by the user's commission workflow."
+      },
+      {
+        "decision_id": "layout_category_count_adapted",
+        "source_kind": "component_group",
+        "source_ids": [
+          "category_tabs"
+        ],
+        "source_meaning": "A vertically repeated category-control group appears at the left edge.",
+        "disposition": "adapted",
+        "target_application": "Create exactly three vertically stacked commission category tabs.",
+        "rationale": "The user explicitly requests three categories, overriding the five visible reference tabs."
+      },
+      {
+        "decision_id": "layout_grid_count_adapted",
+        "source_kind": "component_group",
+        "source_ids": [
+          "product_cards"
+        ],
+        "source_meaning": "A repeated two-row grid is the dominant browsing region.",
+        "disposition": "adapted",
+        "target_application": "Create exactly eight commission cards in a four-column by two-row grid.",
+        "rationale": "Preserve the grid organization while changing the visible count from six to the user-required eight."
+      },
+      {
+        "decision_id": "layout_detail_action_adapted",
+        "source_kind": "region_relationship",
+        "source_ids": [
+          "rel_detail_contains_action"
+        ],
+        "source_meaning": "The primary action is contained within the contextual detail region.",
+        "disposition": "adapted",
+        "target_application": "Place Accept Commission inside the selected commission detail panel and isolate it from Refresh.",
+        "rationale": "The containment and emphasis remain useful, but purchase semantics are rejected."
+      },
+      {
+        "decision_id": "layout_global_status_adopted",
+        "source_kind": "region",
+        "source_ids": [
+          "top_status"
+        ],
+        "source_meaning": "A shallow top region carries global status separately from the main browse-detail workspace.",
+        "disposition": "adopted",
+        "target_application": "Use a compact guild status header above the three-column workspace.",
+        "rationale": "Global guild context is useful without copying the reference currency content."
+      },
+      {
+        "decision_id": "layout_reference_content_rejected",
+        "source_kind": "excluded_content",
+        "source_ids": [
+          "original_copy",
+          "currency_design"
+        ],
+        "source_meaning": "Reference copy and currency icon design are not portable layout knowledge.",
+        "disposition": "rejected",
+        "target_application": null,
+        "rationale": "The target uses original guild commission semantics and does not inherit product names, prices, or currency visuals."
+      }
+    ],
+    "style": [
+      {
+        "decision_id": "style_cool_palette_adopted",
+        "trait_id": "color_cool_blue_gray",
+        "dimension": "color",
+        "classification": "stable",
+        "disposition": "adopted",
+        "target_scope": [
+          "guild_commission_board"
+        ],
+        "target_application": "Use low-saturation cool blue-gray and near-black as the page-wide base with silver-white information contrast.",
+        "rationale": "This stable trait has diverse support and does not conflict with the user."
+      },
+      {
+        "decision_id": "style_hard_surface_adopted",
+        "trait_id": "material_silver_black_hard_surfaces",
+        "dimension": "material",
+        "classification": "stable",
+        "disposition": "adopted",
+        "target_scope": [
+          "resource_header",
+          "category_navigation",
+          "commission_grid",
+          "commission_detail"
+        ],
+        "target_application": "Express primary UI surfaces with silver-black hard-surface framing.",
+        "rationale": "The stable material language is appropriate for a dark-fantasy guild interface."
+      },
+      {
+        "decision_id": "style_shape_adopted",
+        "trait_id": "shape_sharp_elongated",
+        "dimension": "shape",
+        "classification": "stable",
+        "disposition": "adopted",
+        "target_scope": [
+          "category_navigation",
+          "commission_card_template",
+          "accept_action"
+        ],
+        "target_application": "Use restrained pointed corners and elongated control silhouettes.",
+        "rationale": "The stable contour tendency can transfer without copying reference objects."
+      },
+      {
+        "decision_id": "style_lighting_adopted",
+        "trait_id": "lighting_blue_white_local",
+        "dimension": "lighting",
+        "classification": "stable",
+        "disposition": "adopted",
+        "target_scope": [
+          "commission_card_template",
+          "commission_detail",
+          "accept_action"
+        ],
+        "target_application": "Use localized blue-white light for selection, status, and primary-action emphasis.",
+        "rationale": "The trait is stable and works as functional emphasis."
+      },
+      {
+        "decision_id": "style_matting_conditional",
+        "trait_id": "material_heavy_matte_bases",
+        "dimension": "material",
+        "classification": "secondary",
+        "disposition": "conditionally_adopted",
+        "target_scope": [
+          "commission_grid",
+          "commission_detail"
+        ],
+        "target_application": "Use matte dark bases on large panels while keeping text zones lighter and readable.",
+        "rationale": "The secondary evidence is relevant to large guild-workspace surfaces but is not made global."
+      },
+      {
+        "decision_id": "style_gothic_conditional",
+        "trait_id": "decoration_restrained_gothic",
+        "dimension": "decoration",
+        "classification": "secondary",
+        "disposition": "conditionally_adopted",
+        "target_scope": [
+          "resource_header",
+          "commission_detail"
+        ],
+        "target_application": "Limit sparse pointed caps and fine engraving to major framing areas.",
+        "rationale": "Restrained use supports the page context without turning decoration into a global requirement."
+      },
+      {
+        "decision_id": "style_local_red_ignored",
+        "trait_id": "color_local_red",
+        "dimension": "color",
+        "classification": "local",
+        "disposition": "ignored",
+        "target_scope": [],
+        "target_application": null,
+        "rationale": "The red evidence is tied to specific source content and has no matching target role."
+      },
+      {
+        "decision_id": "style_rendering_conflict_rejected",
+        "trait_id": "rendering_approach_conflict",
+        "dimension": "rendering",
+        "classification": "conflicting",
+        "disposition": "rejected_due_to_conflict",
+        "target_scope": [],
+        "target_application": null,
+        "rationale": "B2 does not establish one rendering treatment, so Composer does not silently select a global approach."
+      },
+      {
+        "decision_id": "style_world_adopted",
+        "trait_id": "world_dark_fantasy",
+        "dimension": "world_visual",
+        "classification": "stable",
+        "disposition": "adopted",
+        "target_scope": [
+          "guild_commission_board"
+        ],
+        "target_application": "Maintain an abstract dark-fantasy guild atmosphere through surface, color, and ornament language only.",
+        "rationale": "The target game context matches this stable trait without importing source narrative objects."
+      },
+      {
+        "decision_id": "style_world_uncertainty_ignored",
+        "trait_id": "world_magic_technology_balance",
+        "dimension": "world_visual",
+        "classification": "uncertain",
+        "disposition": "ignored",
+        "target_scope": [],
+        "target_application": null,
+        "rationale": "The uncertain meaning of blue-white indicators cannot become a target-world fact."
+      }
     ]
   },
   "visual_direction": {
-    "summary": "Use the cool misty castle background as the atmospheric foundation and reserve the bright yellow action surface as the dominant interactive accent.",
-    "style_keywords": [
-      "atmospheric",
-      "arcade",
-      "sparse",
-      "high-contrast CTA"
-    ],
-    "palette": [
+    "summary": "A cold, disciplined dark-fantasy guild interface with matte silver-black surfaces, sharp restrained geometry, and localized blue-white functional highlights. The style supports commission browsing without importing source characters, locations, products, or battle narrative.",
+    "directives": [
       {
-        "role": "background_neutral",
-        "value": "#59636F",
-        "usage": "Primary environmental tone derived from the analyzed login background."
+        "directive_id": "visual_cool_color",
+        "dimension": "color",
+        "direction": "Use low-saturation cool blue-gray and near-black for large fields, silver-white for readable information, and blue-white only for controlled functional emphasis.",
+        "source_trait_ids": [
+          "color_cool_blue_gray"
+        ],
+        "target_scope": [
+          "guild_commission_board"
+        ],
+        "user_override": false,
+        "notes": [
+          "Do not globalize the local red trait."
+        ]
       },
       {
-        "role": "primary_action",
-        "value": "#F4C542",
-        "usage": "Dominant action color derived from the analyzed login button surface."
+        "directive_id": "visual_silver_black_material",
+        "dimension": "material",
+        "direction": "Use silver-black hard-surface frames with matte dark interiors on major panels.",
+        "source_trait_ids": [
+          "material_silver_black_hard_surfaces",
+          "material_heavy_matte_bases"
+        ],
+        "target_scope": [
+          "resource_header",
+          "category_navigation",
+          "commission_grid",
+          "commission_detail"
+        ],
+        "user_override": false,
+        "notes": [
+          "Keep matte treatment subordinate to text readability."
+        ]
       },
       {
-        "role": "text_on_action",
-        "value": "#1A1A1A",
-        "usage": "High-contrast runtime text placed over the primary action."
+        "directive_id": "visual_sharp_shape",
+        "dimension": "shape",
+        "direction": "Use elongated proportions and restrained pointed corners for tabs, cards, and the primary action.",
+        "source_trait_ids": [
+          "shape_sharp_elongated"
+        ],
+        "target_scope": [
+          "category_tab_template",
+          "commission_card_template",
+          "accept_action"
+        ],
+        "user_override": false,
+        "notes": []
+      },
+      {
+        "directive_id": "visual_blue_white_lighting",
+        "dimension": "lighting",
+        "direction": "Reserve localized blue-white rim or inset light for selected cards, active category state, and Accept Commission.",
+        "source_trait_ids": [
+          "lighting_blue_white_local"
+        ],
+        "target_scope": [
+          "category_tab_template",
+          "commission_card_template",
+          "accept_action"
+        ],
+        "user_override": false,
+        "notes": [
+          "Do not imply whether the light is magical or technological."
+        ]
+      },
+      {
+        "directive_id": "visual_restrained_decoration",
+        "dimension": "decoration",
+        "direction": "Confine sparse gothic engraving and pointed caps to the header and detail frame.",
+        "source_trait_ids": [
+          "decoration_restrained_gothic"
+        ],
+        "target_scope": [
+          "resource_header",
+          "commission_detail"
+        ],
+        "user_override": false,
+        "notes": [
+          "This secondary trait is intentionally limited to major framing surfaces."
+        ]
+      },
+      {
+        "directive_id": "visual_dark_fantasy_context",
+        "dimension": "world_visual",
+        "direction": "Express dark-fantasy context abstractly through palette, material, and ornament rather than literal reference scenes or characters.",
+        "source_trait_ids": [
+          "world_dark_fantasy"
+        ],
+        "target_scope": [
+          "guild_commission_board"
+        ],
+        "user_override": false,
+        "notes": []
       }
     ],
-    "hierarchy_principles": [
-      "Preserve the castle silhouette as the main environmental focal point.",
-      "Keep the login button as the only dominant interactive control.",
-      "Use minimal runtime text and avoid decorative clutter."
+    "hierarchy_emphasis": [
+      "Commission grid is the primary browsing focal region.",
+      "Selected commission detail is the secondary information focal region.",
+      "Accept Commission is the dominant action; Refresh remains secondary.",
+      "Guild status header supports context without competing with the workspace."
     ],
-    "asset_style_notes": [
-      "Use proportional coverage for the portrait background.",
-      "Preserve the irregular edge character of the yellow button surface."
+    "page_specific_notes": [
+      "Selected state must be legible without relying on red.",
+      "The three categories and eight commissions must remain countable at a glance."
     ]
   },
   "pages": [
     {
-      "page_id": "login",
-      "page_type": "login",
-      "purpose": "Introduce the game and expose one clear login action.",
-      "root_component_id": "login_root",
+      "page_id": "guild_commission_board",
+      "page_type": "guild_commission_board",
+      "purpose": "Filter, compare, inspect, refresh, and accept guild commissions on one screen.",
+      "root_component_id": "guild_commission_root",
       "states": [
         {
           "state_id": "ready",
-          "description": "The login action is available.",
+          "description": "Three categories and eight commissions are available, with one commission selected.",
           "is_initial": true
         },
         {
-          "state_id": "submitting",
-          "description": "The login action was accepted and navigation is beginning.",
+          "state_id": "refreshing",
+          "description": "Commission content is temporarily updating while the page structure remains stable.",
+          "is_initial": false
+        },
+        {
+          "state_id": "accepting",
+          "description": "The selected commission acceptance action is being confirmed.",
           "is_initial": false
         }
       ],
       "entry_conditions": [
-        "Application startup has completed."
+        "The user opens the guild commission board."
       ],
-      "exit_conditions": [
-        "The login action has been accepted."
-      ]
-    },
-    {
-      "page_id": "loading",
-      "page_type": "loading",
-      "purpose": "Provide a stable transition destination while game resources are prepared.",
-      "root_component_id": "loading_root",
-      "states": [
-        {
-          "state_id": "loading_active",
-          "description": "Resource preparation is in progress.",
-          "is_initial": true
-        }
-      ],
-      "entry_conditions": [
-        "Navigation from the login page has completed."
-      ],
-      "exit_conditions": [
-        "Required game resources are ready."
-      ]
-    }
-  ],
-  "asset_usages": [
-    {
-      "usage_id": "login_background_usage",
-      "asset_id": "login_bg_castle",
-      "source_ref": {
-        "ref_type": "workspace_path",
-        "value": "user-assets/gray_castle_bg.png",
-        "media_type": "image/png",
-        "checksum": null
-      },
-      "page_id": "login",
-      "component_id": "login_background",
-      "semantic_role": "login_background",
-      "usage_intent": "Fill the page while retaining the upper-center castle silhouette.",
-      "fit_mode": "cover",
-      "crop_intent": "Prefer symmetrical side cropping before cropping the top-center focal area.",
-      "resizing_policy": {
-        "stretch_allowed": false,
-        "slice_scaling": "not_applicable",
-        "protected_region_note": "Keep the castle silhouette in the upper-center area visible."
-      },
-      "visual_priority": "background",
-      "visible_in_states": [
-        "ready",
-        "submitting"
-      ],
-      "analysis_confidence": 0.97,
-      "notes": [
-        "Do not reopen the source asset for visual reanalysis."
-      ]
-    },
-    {
-      "usage_id": "login_button_usage",
-      "asset_id": "login_button_yellow",
-      "source_ref": {
-        "ref_type": "workspace_path",
-        "value": "user-assets/yellow_login_button.png",
-        "media_type": "image/png",
-        "checksum": null
-      },
-      "page_id": "login",
-      "component_id": "login_button",
-      "semantic_role": "primary_action_surface",
-      "usage_intent": "Provide the visual surface of the primary login action at the bottom center.",
-      "fit_mode": "stretch",
-      "crop_intent": null,
-      "resizing_policy": {
-        "stretch_allowed": true,
-        "slice_scaling": "manual_confirmation",
-        "protected_region_note": "Preserve the irregular decorative outer edges."
-      },
-      "visual_priority": "critical",
-      "visible_in_states": [
-        "ready",
-        "submitting"
-      ],
-      "analysis_confidence": 0.92,
-      "notes": [
-        "Protect the decorative outer edges during resizing."
-      ]
+      "exit_conditions": []
     }
   ],
   "component_tree": [
     {
-      "component_id": "login_root",
-      "page_id": "login",
+      "component_id": "guild_commission_root",
+      "page_id": "guild_commission_board",
       "parent_id": null,
-      "name": "Login Page Root",
+      "name": "Guild Commission Board",
       "semantic_type": "page_root",
       "order": 0,
-      "asset_usage_ids": [],
       "state_ids": [
         "ready",
-        "submitting"
+        "refreshing",
+        "accepting"
       ],
+      "design_intent": "Own the complete single-page guild commission experience.",
       "notes": []
     },
     {
-      "component_id": "login_background",
-      "page_id": "login",
-      "parent_id": "login_root",
-      "name": "Login Background",
-      "semantic_type": "visual",
+      "component_id": "resource_header",
+      "page_id": "guild_commission_board",
+      "parent_id": "guild_commission_root",
+      "name": "Guild Status Header",
+      "semantic_type": "status",
       "order": 0,
-      "asset_usage_ids": [
-        "login_background_usage"
-      ],
       "state_ids": [
         "ready",
-        "submitting"
+        "refreshing",
+        "accepting"
       ],
-      "notes": []
-    },
-    {
-      "component_id": "login_button",
-      "page_id": "login",
-      "parent_id": "login_root",
-      "name": "Primary Login Action",
-      "semantic_type": "button",
-      "order": 1,
-      "asset_usage_ids": [
-        "login_button_usage"
-      ],
-      "state_ids": [
-        "ready",
-        "submitting"
-      ],
+      "design_intent": "Provide compact guild identity and current commission-capacity context.",
       "content": {
-        "text": "LOGIN",
-        "localization_key": "ui.login.action",
-        "accessibility_label": "Enter the game"
+        "text": null,
+        "text_role": "guild_status_summary",
+        "data_role": "guild_name_and_capacity",
+        "accessibility_label": "Guild status"
       },
       "notes": [
-        "Disable repeated activation while the page is in the submitting state."
+        "Do not copy reference currency iconography."
       ]
     },
     {
-      "component_id": "loading_root",
-      "page_id": "loading",
-      "parent_id": null,
-      "name": "Loading Page Root",
-      "semantic_type": "page_root",
-      "order": 0,
-      "asset_usage_ids": [],
+      "component_id": "workspace",
+      "page_id": "guild_commission_board",
+      "parent_id": "guild_commission_root",
+      "name": "Commission Workspace",
+      "semantic_type": "container",
+      "order": 1,
       "state_ids": [
-        "loading_active"
+        "ready",
+        "refreshing",
+        "accepting"
       ],
+      "design_intent": "Coordinate left navigation, central browsing, and right detail regions.",
       "notes": []
     },
     {
-      "component_id": "loading_status",
-      "page_id": "loading",
-      "parent_id": "loading_root",
-      "name": "Loading Status",
-      "semantic_type": "status",
+      "component_id": "category_navigation",
+      "page_id": "guild_commission_board",
+      "parent_id": "workspace",
+      "name": "Commission Categories",
+      "semantic_type": "navigation",
       "order": 0,
-      "asset_usage_ids": [],
       "state_ids": [
-        "loading_active"
+        "ready",
+        "refreshing",
+        "accepting"
       ],
+      "design_intent": "Filter the visible commission set using exactly three categories.",
+      "notes": []
+    },
+    {
+      "component_id": "category_tab_template",
+      "page_id": "guild_commission_board",
+      "parent_id": "category_navigation",
+      "name": "Category Tab",
+      "semantic_type": "button",
+      "order": 0,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Represent one commission category with clear selected and unselected states.",
       "content": {
-        "text": "LOADING…",
-        "localization_key": "ui.loading.status",
-        "accessibility_label": "Loading game resources"
+        "text": null,
+        "text_role": "category_label",
+        "data_role": "category_identity",
+        "accessibility_label": "Commission category"
+      },
+      "repeat": {
+        "count": 3,
+        "arrangement": "column",
+        "content_variation": "Each instance has a distinct category label and one instance is selected."
+      },
+      "notes": []
+    },
+    {
+      "component_id": "commission_area",
+      "page_id": "guild_commission_board",
+      "parent_id": "workspace",
+      "name": "Commission Browse Area",
+      "semantic_type": "panel",
+      "order": 1,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Hold the dominant repeated commission collection and its secondary refresh control.",
+      "notes": []
+    },
+    {
+      "component_id": "commission_grid",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_area",
+      "name": "Commission Grid",
+      "semantic_type": "grid",
+      "order": 0,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Present exactly eight commissions in a stable two-row comparison grid.",
+      "notes": []
+    },
+    {
+      "component_id": "commission_card_template",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_grid",
+      "name": "Commission Card",
+      "semantic_type": "item",
+      "order": 0,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Summarize one commission and expose a clear selection state without performing acceptance.",
+      "content": {
+        "text": null,
+        "text_role": "commission_summary",
+        "data_role": "commission_identity_status_and_duration",
+        "accessibility_label": "Commission card"
+      },
+      "repeat": {
+        "count": 8,
+        "arrangement": "grid",
+        "content_variation": "Each instance represents a distinct commission; exactly one may be selected."
       },
       "notes": [
-        "Use runtime text because no analyzed loading visual was supplied."
+        "Use a four-column by two-row arrangement."
+      ]
+    },
+    {
+      "component_id": "refresh_action",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_area",
+      "name": "Refresh Commissions",
+      "semantic_type": "button",
+      "order": 1,
+      "state_ids": [
+        "ready",
+        "refreshing"
+      ],
+      "design_intent": "Refresh the commission set as a secondary action that cannot compete with acceptance.",
+      "content": {
+        "text": "Refresh",
+        "text_role": "secondary_action_label",
+        "data_role": null,
+        "accessibility_label": "Refresh commissions"
+      },
+      "notes": []
+    },
+    {
+      "component_id": "commission_detail",
+      "page_id": "guild_commission_board",
+      "parent_id": "workspace",
+      "name": "Selected Commission Detail",
+      "semantic_type": "panel",
+      "order": 2,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Explain the selected commission and contain its primary acceptance action.",
+      "notes": []
+    },
+    {
+      "component_id": "detail_title",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_detail",
+      "name": "Commission Title",
+      "semantic_type": "text",
+      "order": 0,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Identify the selected commission with the strongest text emphasis in the detail panel.",
+      "content": {
+        "text": null,
+        "text_role": "selected_commission_title",
+        "data_role": "selected_commission_name",
+        "accessibility_label": "Selected commission title"
+      },
+      "notes": []
+    },
+    {
+      "component_id": "detail_requirements",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_detail",
+      "name": "Commission Requirements",
+      "semantic_type": "text",
+      "order": 1,
+      "state_ids": [
+        "ready",
+        "refreshing",
+        "accepting"
+      ],
+      "design_intent": "Present concise eligibility, duration, and objective information in a readable block.",
+      "content": {
+        "text": null,
+        "text_role": "selected_commission_details",
+        "data_role": "requirements_duration_and_objective",
+        "accessibility_label": "Selected commission requirements"
+      },
+      "notes": []
+    },
+    {
+      "component_id": "accept_action",
+      "page_id": "guild_commission_board",
+      "parent_id": "commission_detail",
+      "name": "Accept Commission",
+      "semantic_type": "button",
+      "order": 2,
+      "state_ids": [
+        "ready",
+        "accepting"
+      ],
+      "design_intent": "Act as the isolated primary CTA for the selected commission.",
+      "content": {
+        "text": "Accept Commission",
+        "text_role": "primary_action_label",
+        "data_role": null,
+        "accessibility_label": "Accept selected commission"
+      },
+      "notes": [
+        "Do not merge visually with Refresh."
       ]
     }
   ],
   "layout_rules": [
     {
-      "rule_id": "layout_login_root",
-      "page_id": "login",
-      "component_id": "login_root",
+      "rule_id": "layout_root",
+      "page_id": "guild_commission_board",
+      "component_id": "guild_commission_root",
       "relative_to": "canvas",
       "anchor": "stretch",
       "pivot": {
@@ -275,13 +642,50 @@
       },
       "stack_order": 0,
       "safe_area_policy": "full_bleed",
+      "relationships": [],
+      "content_adaptation": [
+        "Keep functional children inside the safe area."
+      ],
       "notes": []
     },
     {
-      "rule_id": "layout_login_background",
-      "page_id": "login",
-      "component_id": "login_background",
-      "relative_to": "canvas",
+      "rule_id": "layout_header",
+      "page_id": "guild_commission_board",
+      "component_id": "resource_header",
+      "relative_to": "safe_area",
+      "anchor": "top_center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0
+      },
+      "dimensions": {
+        "width": 1,
+        "height": 0.1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "above",
+          "target_component_id": "workspace",
+          "description": "Remain above the main workspace without overlapping it."
+        }
+      ],
+      "content_adaptation": [
+        "Collapse nonessential status decoration before reducing text legibility."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_workspace",
+      "page_id": "guild_commission_board",
+      "component_id": "workspace",
+      "relative_to": "safe_area",
       "anchor": "stretch",
       "pivot": {
         "x": 0.5,
@@ -289,24 +693,225 @@
       },
       "position": {
         "x": 0.5,
-        "y": 0.5
+        "y": 0.55
       },
       "dimensions": {
         "width": 1,
-        "height": 1,
+        "height": 0.9,
         "unit": "normalized_parent"
       },
-      "stack_order": 0,
-      "safe_area_policy": "full_bleed",
-      "notes": [
-        "Keep the upper-center focal region visible when applying cover behavior."
-      ]
+      "stack_order": 1,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "below",
+          "target_component_id": "resource_header",
+          "description": "Fill the safe area below the status header."
+        }
+      ],
+      "content_adaptation": [
+        "Preserve left-center-right order at landscape resolutions."
+      ],
+      "notes": []
     },
     {
-      "rule_id": "layout_login_button",
-      "page_id": "login",
-      "component_id": "login_button",
-      "relative_to": "safe_area",
+      "rule_id": "layout_categories",
+      "page_id": "guild_commission_board",
+      "component_id": "category_navigation",
+      "relative_to": "parent",
+      "anchor": "center_left",
+      "pivot": {
+        "x": 0,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.02,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.15,
+        "height": 0.84,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "left_of",
+          "target_component_id": "commission_area",
+          "description": "Remain left of the dominant commission browse area."
+        },
+        {
+          "relationship_type": "aligned_with",
+          "target_component_id": "commission_area",
+          "description": "Align top and bottom rhythm with the browse area."
+        }
+      ],
+      "content_adaptation": [
+        "Distribute exactly three tabs vertically with equal height and gaps."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_commission_area",
+      "page_id": "guild_commission_board",
+      "component_id": "commission_area",
+      "relative_to": "parent",
+      "anchor": "center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.43,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.48,
+        "height": 0.84,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "right_of",
+          "target_component_id": "category_navigation",
+          "description": "Follow category navigation in the browse sequence."
+        },
+        {
+          "relationship_type": "left_of",
+          "target_component_id": "commission_detail",
+          "description": "Precede the selected commission detail."
+        }
+      ],
+      "content_adaptation": [
+        "Arrange exactly eight cards as four columns by two rows.",
+        "Reserve a separate lower edge zone for Refresh without reducing the card count."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_commission_grid",
+      "page_id": "guild_commission_board",
+      "component_id": "commission_grid",
+      "relative_to": "parent",
+      "anchor": "top_center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.02
+      },
+      "dimensions": {
+        "width": 0.96,
+        "height": 0.82,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "repeated_within",
+          "target_component_id": "commission_area",
+          "description": "Use a stable four-column by two-row repeated structure inside the browse area."
+        },
+        {
+          "relationship_type": "above",
+          "target_component_id": "refresh_action",
+          "description": "Keep all eight cards above the secondary refresh control."
+        }
+      ],
+      "content_adaptation": [
+        "Keep all eight cards visible simultaneously at the target resolution.",
+        "Use uniform card bounds so count and selection remain scannable."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_refresh",
+      "page_id": "guild_commission_board",
+      "component_id": "refresh_action",
+      "relative_to": "parent",
+      "anchor": "bottom_right",
+      "pivot": {
+        "x": 1,
+        "y": 1
+      },
+      "position": {
+        "x": 0.98,
+        "y": 0.98
+      },
+      "dimensions": {
+        "width": 0.22,
+        "height": 0.1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 3,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "below",
+          "target_component_id": "commission_grid",
+          "description": "Remain below and secondary to the repeated commission grid."
+        },
+        {
+          "relationship_type": "spaced_from",
+          "target_component_id": "accept_action",
+          "description": "Maintain clear spatial separation from the primary action."
+        }
+      ],
+      "content_adaptation": [
+        "Keep label on one line."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_detail",
+      "page_id": "guild_commission_board",
+      "component_id": "commission_detail",
+      "relative_to": "parent",
+      "anchor": "center_right",
+      "pivot": {
+        "x": 1,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.98,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.31,
+        "height": 0.84,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "right_of",
+          "target_component_id": "commission_area",
+          "description": "Complete the left-to-right browse-to-detail sequence."
+        },
+        {
+          "relationship_type": "inside",
+          "target_component_id": "workspace",
+          "description": "Stay within the shared workspace."
+        }
+      ],
+      "content_adaptation": [
+        "Allow detail text to wrap without covering the primary action.",
+        "Keep the action anchored when content length changes."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "layout_accept",
+      "page_id": "guild_commission_board",
+      "component_id": "accept_action",
+      "relative_to": "parent",
       "anchor": "bottom_center",
       "pivot": {
         "x": 0.5,
@@ -314,152 +919,260 @@
       },
       "position": {
         "x": 0.5,
-        "y": 0.9
+        "y": 0.96
       },
       "dimensions": {
-        "width": 0.58,
-        "height": 0.1,
+        "width": 0.78,
+        "height": 0.13,
         "unit": "normalized_parent"
       },
-      "stack_order": 10,
+      "stack_order": 4,
       "safe_area_policy": "inside",
-      "notes": [
-        "Maintain clear bottom and side margins.",
-        "Keep the action visually separated from the castle silhouette."
-      ]
-    },
-    {
-      "rule_id": "layout_loading_root",
-      "page_id": "loading",
-      "component_id": "loading_root",
-      "relative_to": "canvas",
-      "anchor": "stretch",
-      "pivot": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "position": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "dimensions": {
-        "width": 1,
-        "height": 1,
-        "unit": "normalized_parent"
-      },
-      "stack_order": 0,
-      "safe_area_policy": "full_bleed",
+      "relationships": [
+        {
+          "relationship_type": "inside",
+          "target_component_id": "commission_detail",
+          "description": "Remain contained within the detail panel."
+        },
+        {
+          "relationship_type": "below",
+          "target_component_id": "detail_requirements",
+          "description": "Follow selected commission information as the dominant action."
+        }
+      ],
+      "content_adaptation": [
+        "Maintain a minimum clear band around the CTA.",
+        "Do not compress below a one-line readable label."
+      ],
       "notes": []
-    },
-    {
-      "rule_id": "layout_loading_status",
-      "page_id": "loading",
-      "component_id": "loading_status",
-      "relative_to": "safe_area",
-      "anchor": "center",
-      "pivot": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "position": {
-        "x": 0.5,
-        "y": 0.5
-      },
-      "dimensions": {
-        "width": 0.6,
-        "height": 0.08,
-        "unit": "normalized_parent"
-      },
-      "stack_order": 1,
-      "safe_area_policy": "inside",
-      "notes": [
-        "Center the status text until a dedicated loading visual is supplied."
-      ]
     }
   ],
   "interactions": [
     {
-      "interaction_id": "activate_login",
-      "page_id": "login",
-      "trigger_component_id": "login_button",
+      "interaction_id": "choose_category",
+      "page_id": "guild_commission_board",
+      "trigger_component_id": "category_tab_template",
       "trigger": "tap",
-      "action": "begin_loading_flow",
+      "action": "filter_commissions",
       "conditions": [
-        "The login page is in the ready state."
+        "The page is ready."
+      ],
+      "state_changes": [],
+      "navigation_id": null,
+      "feedback": [
+        "Update the selected tab treatment.",
+        "Refresh the eight-card content without changing grid count."
+      ]
+    },
+    {
+      "interaction_id": "choose_commission",
+      "page_id": "guild_commission_board",
+      "trigger_component_id": "commission_card_template",
+      "trigger": "tap",
+      "action": "select_commission",
+      "conditions": [
+        "The page is ready."
+      ],
+      "state_changes": [],
+      "navigation_id": null,
+      "feedback": [
+        "Move the selection highlight to the chosen card.",
+        "Update the right-side detail content."
+      ]
+    },
+    {
+      "interaction_id": "refresh_commissions",
+      "page_id": "guild_commission_board",
+      "trigger_component_id": "refresh_action",
+      "trigger": "tap",
+      "action": "refresh_commission_set",
+      "conditions": [
+        "The page is ready."
       ],
       "state_changes": [
         {
-          "target_id": "login",
+          "target_id": "guild_commission_board",
           "from_state": "ready",
-          "to_state": "submitting"
+          "to_state": "refreshing"
         }
       ],
-      "navigation_id": "login_to_loading",
+      "navigation_id": null,
       "feedback": [
-        "Provide brief pressed feedback.",
-        "Prevent repeated activation after acceptance."
+        "Show restrained progress feedback without replacing the page.",
+        "Return to ready with exactly eight cards."
       ]
-    }
-  ],
-  "navigation": [
-    {
-      "navigation_id": "login_to_loading",
-      "from_page_id": "login",
-      "to_page_id": "loading",
-      "trigger_interaction_id": "activate_login",
-      "transition_style": "fade",
-      "transition_duration_ms": 200,
-      "history_behavior": "replace",
-      "notes": [
-        "Begin resource preparation as the loading page becomes active."
-      ]
-    }
-  ],
-  "missing_assets": [
-    {
-      "missing_asset_id": "loading_page_visual",
-      "needed_for": [
-        "loading",
-        "loading_status"
-      ],
-      "description": "No analyzed background, progress visual, or loading decoration was supplied for the loading page.",
-      "severity": "optional",
-      "fallback": "Use a plain neutral background and runtime loading text."
-    }
-  ],
-  "assumptions": [
-    {
-      "assumption_id": "runtime_login_label",
-      "statement": "The LOGIN label is runtime text rather than an image asset.",
-      "impact": "Text styling and localization remain downstream implementation decisions.",
-      "confidence": 0.9
     },
     {
-      "assumption_id": "login_action_local",
-      "statement": "Activating the login button can immediately start the loading flow without requesting additional credentials on this page.",
-      "impact": "No account form components are included in the login page tree.",
-      "confidence": 0.75
+      "interaction_id": "accept_commission",
+      "page_id": "guild_commission_board",
+      "trigger_component_id": "accept_action",
+      "trigger": "tap",
+      "action": "accept_selected_commission",
+      "conditions": [
+        "The page is ready.",
+        "A commission is selected and eligible."
+      ],
+      "state_changes": [
+        {
+          "target_id": "guild_commission_board",
+          "from_state": "ready",
+          "to_state": "accepting"
+        }
+      ],
+      "navigation_id": null,
+      "feedback": [
+        "Provide clear pressed and confirmation feedback.",
+        "Keep the current page visible."
+      ]
+    }
+  ],
+  "navigation": [],
+  "generation_constraints": {
+    "must_include": [
+      "One guild status header.",
+      "One left category navigation region.",
+      "One central commission grid.",
+      "One right selected commission detail panel.",
+      "One visually isolated Accept Commission action.",
+      "One secondary Refresh action."
+    ],
+    "must_not_include": [
+      "Reference shop product names, prices, purchase copy, or currency iconography.",
+      "Reference characters, castle scenery, battle scenes, or narrative events.",
+      "Additional pages, modal flows, or unrelated controls.",
+      "Global red styling derived from the B2 local red trait."
+    ],
+    "exact_counts": [
+      {
+        "component_id": "category_tab_template",
+        "count": 3,
+        "requirement": "Render exactly three category tabs."
+      },
+      {
+        "component_id": "commission_card_template",
+        "count": 8,
+        "requirement": "Render exactly eight commission cards in two rows."
+      },
+      {
+        "component_id": "accept_action",
+        "count": 1,
+        "requirement": "Render exactly one primary Accept Commission action."
+      },
+      {
+        "component_id": "refresh_action",
+        "count": 1,
+        "requirement": "Render exactly one secondary Refresh action."
+      }
+    ],
+    "key_content_zones": [
+      {
+        "component_id": "resource_header",
+        "content_role": "guild_status",
+        "requirement": "Reserve readable space for guild identity and capacity status."
+      },
+      {
+        "component_id": "commission_card_template",
+        "content_role": "commission_summary",
+        "requirement": "Keep title, status, and duration zones readable on every card."
+      },
+      {
+        "component_id": "commission_detail",
+        "content_role": "selected_commission_detail",
+        "requirement": "Reserve a stable text block above the primary action."
+      },
+      {
+        "component_id": "accept_action",
+        "content_role": "primary_action_label",
+        "requirement": "Keep the full Accept Commission label unobstructed."
+      }
+    ],
+    "focal_hierarchy": [
+      "commission_grid",
+      "commission_detail",
+      "accept_action",
+      "resource_header",
+      "refresh_action"
+    ],
+    "component_separability": [
+      "Every commission card must have an identifiable outer boundary.",
+      "Category tabs must be individually separable.",
+      "Accept Commission and Refresh must read as distinct controls.",
+      "The detail panel must be separable from the grid for future asset production."
+    ],
+    "overlap_restrictions": [
+      "No decoration may cover functional text.",
+      "No card may overlap another card or the detail panel.",
+      "The primary action must not overlap detail text.",
+      "The header must not overlap the workspace."
+    ],
+    "readability_requirements": [
+      "Functional text must remain readable at 1920x1080.",
+      "Selected and unselected states must remain distinguishable without red.",
+      "Panel interiors must provide sufficient contrast for silver-white text."
+    ],
+    "clean_boundary_requirements": [
+      "Major panels need clean continuous boundaries.",
+      "Repeated cards and tabs need consistent edge treatment.",
+      "Decorative caps and engraving must not break hit-area silhouettes."
+    ],
+    "cutout_friendly_requirements": [
+      "Keep tabs, cards, primary CTA, and secondary CTA visually self-contained.",
+      "Avoid soft atmospheric effects crossing component boundaries.",
+      "Keep localized glow close to the component that owns it."
+    ],
+    "reference_fidelity_boundaries": [
+      "Preserve A's abstract left-navigation, center-collection, right-detail organization only after adapting counts and semantics.",
+      "Use B2 palette, material, shape, lighting, and restrained decoration as visual language, not literal source objects.",
+      "Do not reproduce source branding, copy, characters, currency shapes, or scene narrative.",
+      "Do not choose a global rendering approach from B2's unresolved rendering conflict."
+    ]
+  },
+  "assumptions": [
+    {
+      "assumption_id": "assumption_selected_initial",
+      "statement": "One commission is selected when the page first becomes ready.",
+      "basis": "design_completion",
+      "impact": "The right detail panel has meaningful initial content.",
+      "confidence": 0.86
+    },
+    {
+      "assumption_id": "assumption_card_summary",
+      "statement": "Each card needs compact identity, status, and duration information to support comparison.",
+      "basis": "design_completion",
+      "impact": "Cards reserve structured text zones but do not prescribe final copy.",
+      "confidence": 0.8
     }
   ],
   "warnings": [
     {
-      "warning_id": "button_resize_confirmation",
-      "severity": "warning",
-      "message": "The analyzed login button is a stretch candidate, but exact protected edge values remain unconfirmed.",
+      "warning_id": "warning_reference_count_override",
+      "severity": "info",
+      "category": "user_layout_conflict",
+      "message": "The user-required three categories and eight cards override the reference's five visible tabs and six visible cards; the repeated organization is adapted rather than copied.",
       "related_ids": [
-        "login_button_yellow",
-        "login_button_usage",
-        "layout_login_button"
+        "category_tabs",
+        "product_cards",
+        "category_tab_template",
+        "commission_card_template"
       ]
     },
     {
-      "warning_id": "loading_visual_missing",
-      "severity": "info",
-      "message": "The loading page uses a structural fallback because no analyzed loading visual was supplied.",
+      "warning_id": "warning_rendering_conflict",
+      "severity": "warning",
+      "category": "style_conflict",
+      "message": "B2 reports conflicting semi-realistic and stylized interface rendering; no global rendering treatment is selected.",
       "related_ids": [
-        "loading",
-        "loading_status",
-        "loading_page_visual"
+        "rendering_approach_conflict"
+      ]
+    },
+    {
+      "warning_id": "warning_world_meaning_uncertain",
+      "severity": "info",
+      "category": "low_confidence_evidence",
+      "message": "The meaning of blue-white indicators is uncertain, so the plan uses them only as functional emphasis and not as world narrative.",
+      "related_ids": [
+        "world_magic_technology_balance",
+        "visual_blue_white_lighting"
       ]
     }
   ]

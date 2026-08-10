@@ -1,122 +1,75 @@
-# UI Compose Input Contract
+# UI Compose Input v2
 
 ## Authoritative contract
 
-The only supported input is a JSON object conforming to:
-
-- `schemas/ui-compose-input.schema.json`
-
-Use this complete example:
-
-- `references/examples/example-ui-compose-input.json`
-
-Do not use legacy raw-asset input examples in the current workflow.
-
-## Top-level structure
-
-The input requires exactly three top-level fields:
+Accept only a JSON object conforming to `schemas/ui-compose-input.schema.json`.
 
 ```text
 schema_version
 request
-assets
+layout_reference_analysis
+style_profile
 ```
 
-`schema_version` must match the version required by the Schema.
+`schema_version` is fixed to `2.0`. This is a breaking change; do not silently accept v1.
 
-## `request`
+## Request
 
-`request` contains the user's project and composition requirements.
+Require only a non-whitespace `request.user_requirement`. This ordinary-language field is the highest authority for the target business goal, content, counts, interactions, explicit layout changes, and explicit visual changes.
 
-Required sections:
+Allow optional:
 
-- `game_description`
-  - project title
-  - game genre
-  - gameplay summary
-  - optional core interaction, audience, and style keywords
-- `page_request`
-  - `primary_page_id`
-  - requested `pages`
-  - optional flow description
+- `project_name`
+- `game_context`
+- `page_context`
 - `orientation`
 - `target_resolution`
+- `constraints`
+- `visual_preferences`
 
-Optional request-level fields such as `constraints` and `visual_preferences` guide composition but do not replace asset-analysis facts.
+Do not require users to provide a professional UI decomposition before Composer can work.
 
-Every requested page must provide:
+## A layout reference
 
-- stable `page_id`
-- semantic `page_type`
-- page goal
-- at least one requirement
+`layout_reference_analysis` contains the complete A final object and resolves directly to the upstream `$id`:
 
-`primary_page_id` must match one of the requested page IDs.
+```text
+https://example.com/schemas/layout-reference-analysis.schema.json
+```
 
-## `assets`
+The local authority is `../game-ui-layout-reference-analyzer/schemas/layout-reference-analysis.schema.json`. Use A only for portable structure: regions, hierarchy, relationships, relative proportions, alignment, grouping, repetition, and layout-related focal relationships. Do not treat its business content as a target requirement.
 
-`assets` is a non-empty array of analyzed asset entries.
+## B2 style profile
 
-Each item requires:
+`style_profile` contains the complete B2 object and resolves directly to:
 
-- `asset_analysis`
-- `source_ref`
+```text
+https://example.com/schemas/style-profile.schema.json
+```
 
-Optional `request_notes` may constrain how that analyzed asset is used in the requested UI.
+The local authority is `../game-ui-style-reference-analyzer/schemas/style-profile.schema.json`. Use B only for classified visual-language evidence. Do not treat it as layout authority or target content.
 
-## `asset_analysis`
+## Strict rejection
 
-Each `asset_analysis` must conform to the existing `asset-analysis.schema.json` contract and must contain a stable, non-empty `asset_id`.
+Reject with JSON-path errors and stop when:
 
-Treat the following engine-neutral fields as authoritative upstream facts when present:
+- Composer `schema_version` is not `2.0`;
+- `user_requirement` is absent or whitespace-only;
+- A or B fails its authoritative schema;
+- `pics` occurs anywhere;
+- legacy top-level `assets` occurs;
+- a strict object contains unexpected fields.
 
-- file and visual identity
-- category and intended role
-- dimensions, aspect ratio, format, and transparency
-- visual description
-- scale, crop, stretching, protected-region, and slicing suitability
-- confidence and notes
-
-Do not infer a different category from a file name. Do not repeat visual analysis.
-
-Implementation-specific fields embedded in an upstream payload are outside the compose contract. Ignore them and do not copy them into `ui-compose-plan.json`.
-
-## `source_ref`
-
-`source_ref` is an opaque downstream retrieval reference.
-
-Allowed reference kinds are defined by `schemas/ui-compose-input.schema.json`.
-
-Within this skill:
-
-- preserve the object unchanged
-- associate it with the same `asset_id`
-- copy it only to the matching output asset usage
-- do not open it
-- do not fetch it
-- do not decode it
-- do not check whether a referenced path or URI exists
-- do not use it to confirm or revise asset-analysis facts
-
-## Unsupported legacy input
-
-The following are invalid for the current workflow:
-
-- a `pics` field
-- raw images as the input to this skill
-- a top-level legacy `game_description` object
-- file-name-only asset lists
-- assets without `asset_analysis`
-- automatic fallback to old input behavior
-
-Files that still demonstrate the old format are legacy repository material and must not be used as main-flow examples.
+Do not partially compose, automatically repair A/B, inspect source images, or fall back to the v1 asset workflow.
 
 ## Validation
 
-Run:
-
-```bash
+```powershell
 python scripts/validate_input.py references/examples/example-ui-compose-input.json
 ```
 
-Validation must stop composition when required structure or semantic identity checks fail. Optional recommendations may produce warnings but must not be promoted to required-field errors.
+The validator resolves both upstream schemas from their adjacent Skill directories. When the third-party `jsonschema` package is unavailable, it reports that fact and uses the bundled keyword-limited validator over all three real contracts; it never substitutes private A/B summaries.
+
+## Legacy
+
+`asset-analysis.schema.json`, `asset-analysis.example.json`, `assets/samples`, `pics`, `assets[].asset_analysis`, `source_ref` propagation, and `request_notes` are not Composer v2 input semantics.

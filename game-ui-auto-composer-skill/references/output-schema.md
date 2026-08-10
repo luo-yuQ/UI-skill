@@ -1,108 +1,62 @@
-# UI Compose Plan Output Contract
+# UI Compose Plan v2
 
 ## Authoritative contract
 
-The single successful core output is one JSON object conventionally named:
-
-```text
-ui-compose-plan.json
-```
-
-It must conform to:
-
-- `schemas/ui-compose-plan.schema.json`
-
-Use this complete example:
-
-- `references/examples/example-ui-compose-plan.json`
-
-Do not use the former multi-deliverable bundle as the default output.
+Return one JSON object conventionally named `ui-compose-plan.json` and conforming to `schemas/ui-compose-plan.schema.json`. `schema_version` is fixed to `2.0`.
 
 ## Required top-level fields
 
-All 12 fields below are required.
+- `schema_version` — contract version.
+- `project_context` — normalized user target, scope, resolution, and constraints.
+- `design_summary` — what is being designed and the main synthesis decisions.
+- `reference_application` — traceable A and B decisions.
+- `visual_direction` — target-page interpretation of selected B traits plus user overrides.
+- `pages` — only pages justified by the user requirement.
+- `component_tree` — the new target UI hierarchy.
+- `layout_rules` — normalized, relational, content-adaptive layout intent.
+- `interactions` — necessary engine-neutral triggers and state changes.
+- `navigation` — only justified page-to-page flow; may be empty for one page.
+- `generation_constraints` — structured requirements for later visual generation.
+- `assumptions` — low-risk decisions required to complete the design.
+- `warnings` — conflicts, uncertainty, risky trait use, or major adaptation.
 
-### `schema_version`
+`asset_usages` and `missing_assets` are not v2 fields. A and B are evidence, not a final target asset library.
 
-Identifies the compose-plan contract version.
+## Reference application
 
-### `project_context`
+For A decisions, retain stable source IDs and record source kind, source meaning, `adopted`/`adapted`/`ignored`/`rejected`, target application, and rationale.
 
-Records the project name, game description, orientation, target resolution, requested page scope, and governing constraints.
+For B decisions, retain `trait_id`, dimension, classification, disposition, target scope, target application, and rationale. Do not copy the complete A or B object into the plan.
 
-### `visual_direction`
+## Visual direction
 
-Defines the engine-neutral visual intent: summary, style keywords, palette roles, visual hierarchy principles, and asset-style notes.
+Emit target-specific directives for supported dimensions such as color, material, shape, rendering, lighting, decoration, world visual cues, and surface treatment. Link directives to B `trait_id` values. An empty source list is allowed only for an explicit user override.
 
-### `pages`
+Do not invent unsupported visual facts. Do not turn local, conflicting, or uncertain evidence into global rules.
 
-Defines every planned page, its purpose, root component, states, entry conditions, and exit conditions.
+## New component and layout intent
 
-### `asset_usages`
+Build `component_tree` from the user business requirement, applicable A structure, and conservative design completion. Use target IDs and target semantics; do not rename A IDs mechanically.
 
-Maps analyzed assets to page components and records their actual composition role, use intent, fit/crop/resizing policy, visual priority, visible states, confidence, and opaque `source_ref`.
+Use `layout_rules` for semantic anchors, normalized positions, relative dimensions, stack order, safe-area policy, spatial relationships, spacing, and content-dependent adaptation. Do not emit engine implementation fields.
 
-### `component_tree`
+## Generation constraints
 
-Defines a stable engine-neutral component hierarchy using component IDs, page IDs, parent IDs, semantic types, ordering, asset-usage references, state references, and content intent.
+Structure:
 
-### `layout_rules`
+- must include / must not include;
+- exact counts;
+- key content zones;
+- focal hierarchy;
+- component separability;
+- overlap restrictions;
+- readability requirements;
+- clean boundaries;
+- cutout-friendly requirements;
+- reference-fidelity boundaries.
 
-Defines reference space, semantic anchors, normalized position and pivot, dimensions, stack order, safe-area policy, and constraint notes.
+This section is not a GPT Image prompt. Prompt compilation belongs to a later adapter.
 
-### `interactions`
+## Successful response
 
-Defines triggers, semantic actions, conditions, state changes, feedback intent, and optional navigation references.
-
-### `navigation`
-
-Defines page-to-page flow, triggering interaction, transition intent, duration intent, and history behavior.
-
-### `missing_assets`
-
-Lists requested visual needs without supplied analyzed assets, their severity, affected IDs, and conservative fallback.
-
-### `assumptions`
-
-Records optional ambiguity resolved during planning, its impact, and confidence.
-
-### `warnings`
-
-Records non-fatal risks and the plan entities they affect.
-
-## Output rules
-
-- Return one JSON object and no surrounding prose.
-- Preserve each used asset's `source_ref` unchanged.
-- Keep component and layout semantics engine-neutral.
-- Represent missing visuals explicitly instead of inventing assets.
-- Use `assumptions` for low-impact interpretation.
-- Use `warnings` for uncertainty that does not block the plan.
-- Stop on invalid input rather than emitting an incomplete plan.
-
-## Not part of the core output
-
-The core plan must not include:
-
-- Markdown reports
-- prototype prompts
-- image-generation prompts or request payloads
-- implementation component classes
-- implementation resource formats
-- generated project files or source code
-
-## Future parallel adapters
-
-Two future adapters may independently consume the same valid `ui-compose-plan.json`:
-
-```text
-ui-compose-plan.json
-├─ GPT Image Preview Adapter
-└─ Laya New UI Adapter
-```
-
-These adapters are downstream consumers. Their request fields, implementation mappings, files, and API behavior are not part of the core output contract and are not produced by this workflow.
-
-## Validation failure
-
-When input validation fails, return a structured validation error rather than `ui-compose-plan.json`. Do not mix an error response with partial plan fields.
+Return only the valid JSON object. Do not append Markdown, prompts, implementation mappings, source code, or secondary artifacts.

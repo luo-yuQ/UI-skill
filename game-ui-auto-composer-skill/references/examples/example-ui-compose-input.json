@@ -1,149 +1,629 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "request": {
-    "game_description": {
-      "title": "Sky Vanguard",
-      "genre": "portrait arcade flight shooter",
-      "gameplay_summary": "The player pilots a fighter aircraft through vertically scrolling combat stages.",
-      "core_interaction": "Tap the login button to enter the loading flow before gameplay.",
-      "audience": "casual mobile players",
-      "style_keywords": [
-        "atmospheric",
-        "arcade",
-        "high-contrast CTA"
-      ]
-    },
-    "page_request": {
-      "primary_page_id": "login",
-      "pages": [
-        {
-          "page_id": "login",
-          "page_type": "login",
-          "goal": "Introduce the game and provide one clear login action.",
-          "requirements": [
-            "Use the analyzed login background as a full-page visual base.",
-            "Place the login button at the bottom center.",
-            "Navigate to the loading page after the login button is activated."
-          ],
-          "priority": "primary"
-        },
-        {
-          "page_id": "loading",
-          "page_type": "loading",
-          "goal": "Provide a temporary destination while game resources are prepared.",
-          "requirements": [
-            "Show a minimal loading state without inventing unavailable image assets."
-          ],
-          "priority": "supporting"
-        }
-      ],
-      "flow_description": "The user starts on the login page and enters the loading page after activating the login button."
-    },
-    "orientation": "portrait",
+    "user_requirement": "Design a single-page guild commission board. Put exactly three commission categories on the left, show exactly eight commission cards in a two-row grid in the center, keep selected commission details and an Accept Commission primary action on the right, and add a Refresh button. Do not reuse the reference shop copy, products, prices, characters, or castle/battle narrative.",
+    "project_name": "Guild Ledger",
+    "game_context": "A cooperative dark-fantasy RPG where guild members review and accept timed commissions.",
+    "page_context": "guild commission board",
+    "orientation": "landscape",
     "target_resolution": {
-      "width": 1080,
-      "height": 1920,
+      "width": 1920,
+      "height": 1080,
       "unit": "px"
     },
     "constraints": [
-      "Do not obscure the castle silhouette in the upper center of the background.",
-      "Use only assets represented by the supplied asset analyses."
+      "Keep all functional text readable at 1920x1080.",
+      "Do not add pages or navigation not requested.",
+      "Use reference evidence as structure and style guidance, not as target content."
     ],
     "visual_preferences": [
-      "Keep the login page sparse.",
-      "Make the login button the strongest interactive element."
+      "Use the reliable cold dark-fantasy language from B2.",
+      "Keep the Accept Commission action visually isolated from Refresh."
     ]
   },
-  "assets": [
-    {
-      "asset_analysis": {
-        "schema_version": "0.1",
-        "input_kind": "single_asset",
-        "asset_id": "login_bg_castle",
-        "file_name": "gray_castle_bg.png",
-        "source_hint": "Use this as the login background.",
-        "page_context": "login",
-        "asset_category": "background",
-        "visual_identity": "A tall castle scene surrounded by gray mist",
-        "intended_role": "login_background",
-        "visual_description": "A cool gray portrait composition with dense mist and a distant castle rising through the upper center, suitable for an atmospheric login page.",
-        "technical_metadata": {
-          "width": 1080,
-          "height": 1920,
-          "aspect_ratio": "9:16",
-          "format": "png",
-          "has_alpha": false
-        },
-        "layout_behavior": {
-          "stretchable": false,
-          "nine_slice_candidate": false,
-          "recommended_scale_mode": "cover",
-          "safe_overlay_note": "The lower area can support a compact action control.",
-          "protected_region_note": "Keep the castle silhouette in the upper-center area visible."
-        },
-        "laya_new_ui": {
-          "recommended_node_type": "Image",
-          "size_grid_candidate": null,
-          "usage_note": "Use as a full-page background with proportional coverage."
-        },
-        "confidence": 0.97,
-        "notes": []
-      },
-      "source_ref": {
-        "ref_type": "workspace_path",
-        "value": "user-assets/gray_castle_bg.png",
-        "media_type": "image/png",
-        "checksum": null
-      },
-      "request_notes": [
-        "Use on the login page only."
+  "layout_reference_analysis": {
+    "schema_version": "0.1",
+    "analysis_id": "sky-vanguard-shop-final-001",
+    "input_kind": "layout_reference_screenshot",
+    "source": {
+      "source_ref": "attachment:sky-vanguard-shop-a2-case",
+      "file_name": "sky-vanguard-shop.png",
+      "width": 1920,
+      "height": 1080,
+      "orientation": "landscape",
+      "capture_limitations": [
+        "截图右缘轻微裁切"
       ]
     },
-    {
-      "asset_analysis": {
-        "schema_version": "0.1",
-        "input_kind": "single_asset",
-        "asset_id": "login_button_yellow",
-        "file_name": "yellow_login_button.png",
-        "source_hint": "Use this as the login button base.",
-        "page_context": "login",
-        "asset_category": "surface",
-        "visual_identity": "A bright yellow irregular horizontal button surface",
-        "intended_role": "login_button",
-        "visual_description": "A wide bright-yellow surface with irregular decorative edges and a clear central area suitable for a short login label.",
-        "technical_metadata": {
-          "width": 640,
-          "height": 180,
-          "aspect_ratio": "32:9",
-          "format": "png",
-          "has_alpha": true
+    "user_focus": "主要参考分类、商品列表、详情和主要操作的布局关系。",
+    "page": {
+      "page_type": "shop",
+      "page_purpose": "浏览装备商品并查看当前选择。",
+      "page_state": "一个商品卡呈选中状态。",
+      "presentation_mode": "fullscreen",
+      "confidence": 0.93
+    },
+    "regions": [
+      {
+        "region_id": "page_background",
+        "region_type": "background_region",
+        "label": "页面背景区",
+        "description": "覆盖整页的低对比环境背景。",
+        "parent_region_id": null,
+        "approximate_bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 1
         },
-        "layout_behavior": {
-          "stretchable": true,
-          "nine_slice_candidate": true,
-          "recommended_scale_mode": "stretch",
-          "safe_overlay_note": "The center can carry a short text label.",
-          "protected_region_note": "Preserve the irregular outer edges when resizing."
-        },
-        "laya_new_ui": {
-          "recommended_node_type": "Button",
-          "size_grid_candidate": "manual_required",
-          "usage_note": "Use as the visual surface of the primary login action."
-        },
-        "confidence": 0.92,
-        "notes": [
-          "Exact nine-slice borders require downstream confirmation."
-        ]
+        "z_order": 0,
+        "evidence_level": "observed",
+        "confidence": 0.98
       },
-      "source_ref": {
-        "ref_type": "workspace_path",
-        "value": "user-assets/yellow_login_button.png",
-        "media_type": "image/png",
-        "checksum": null
+      {
+        "region_id": "top_status",
+        "region_type": "global_status_region",
+        "label": "顶部资源状态区",
+        "description": "横跨页面顶部，展示三组图标与数值摘要。",
+        "parent_region_id": null,
+        "approximate_bounds": {
+          "x": 0,
+          "y": 0,
+          "width": 1,
+          "height": 0.1
+        },
+        "z_order": 2,
+        "evidence_level": "observed",
+        "confidence": 0.97
       },
-      "request_notes": [
-        "Place at the bottom center and treat as the primary action."
+      {
+        "region_id": "category_navigation",
+        "region_type": "navigation_region",
+        "label": "左侧分类区",
+        "description": "左侧纵向排列五个分类标签。",
+        "parent_region_id": null,
+        "approximate_bounds": {
+          "x": 0.02,
+          "y": 0.13,
+          "width": 0.16,
+          "height": 0.75
+        },
+        "z_order": 2,
+        "evidence_level": "observed",
+        "confidence": 0.95
+      },
+      {
+        "region_id": "product_list",
+        "region_type": "object_list_region",
+        "label": "中央商品列表区",
+        "description": "中央区域以两行网格展示六张可见商品卡。",
+        "parent_region_id": null,
+        "approximate_bounds": {
+          "x": 0.2,
+          "y": 0.13,
+          "width": 0.46,
+          "height": 0.75
+        },
+        "z_order": 2,
+        "evidence_level": "observed",
+        "confidence": 0.96
+      },
+      {
+        "region_id": "product_detail",
+        "region_type": "detail_region",
+        "label": "右侧商品详情区",
+        "description": "展示当前商品的较大预览、属性和操作。",
+        "parent_region_id": null,
+        "approximate_bounds": {
+          "x": 0.68,
+          "y": 0.13,
+          "width": 0.3,
+          "height": 0.82
+        },
+        "z_order": 2,
+        "evidence_level": "observed",
+        "confidence": 0.94
+      },
+      {
+        "region_id": "purchase_action",
+        "region_type": "primary_action_region",
+        "label": "购买操作区",
+        "description": "详情区底部的高对比宽按钮式区域。",
+        "parent_region_id": "product_detail",
+        "approximate_bounds": {
+          "x": 0.72,
+          "y": 0.78,
+          "width": 0.22,
+          "height": 0.11
+        },
+        "z_order": 3,
+        "evidence_level": "inferred",
+        "confidence": 0.82
+      }
+    ],
+    "region_relationships": [
+      {
+        "relationship_id": "rel_categories_control_list",
+        "source_region_id": "category_navigation",
+        "target_region_id": "product_list",
+        "relationship_type": "controls",
+        "description": "高亮分类与商品网格并置，推断左侧分类控制中央列表。",
+        "evidence_level": "inferred",
+        "confidence": 0.78
+      },
+      {
+        "relationship_id": "rel_list_adjacent_detail",
+        "source_region_id": "product_list",
+        "target_region_id": "product_detail",
+        "relationship_type": "adjacent-to",
+        "description": "商品列表位于详情区左侧。",
+        "evidence_level": "observed",
+        "confidence": 0.96
+      },
+      {
+        "relationship_id": "rel_detail_contains_action",
+        "source_region_id": "product_detail",
+        "target_region_id": "purchase_action",
+        "relationship_type": "parent-child",
+        "description": "操作区位于详情区内部。",
+        "evidence_level": "observed",
+        "confidence": 0.95
+      }
+    ],
+    "component_groups": [
+      {
+        "group_id": "resource_summary",
+        "group_type": "resource_group",
+        "label": "资源摘要组",
+        "region_id": "top_status",
+        "description": "三组图标与数值沿顶部横向排列。",
+        "visible_item_count": 3,
+        "repeat_pattern": {
+          "is_repeated": true,
+          "direction": "row",
+          "count_certainty": "exact",
+          "notes": null
+        },
+        "evidence_level": "observed",
+        "confidence": 0.96
+      },
+      {
+        "group_id": "category_tabs",
+        "group_type": "tab_group",
+        "label": "分类标签组",
+        "region_id": "category_navigation",
+        "description": "五个纵向标签共享尺寸和选中样式。",
+        "visible_item_count": 5,
+        "repeat_pattern": {
+          "is_repeated": true,
+          "direction": "column",
+          "count_certainty": "exact",
+          "notes": null
+        },
+        "evidence_level": "observed",
+        "confidence": 0.95
+      },
+      {
+        "group_id": "product_cards",
+        "group_type": "card_list",
+        "label": "商品卡片组",
+        "region_id": "product_list",
+        "description": "六张可见商品卡按两行网格排列。",
+        "visible_item_count": 6,
+        "repeat_pattern": {
+          "is_repeated": true,
+          "direction": "grid",
+          "count_certainty": "exact",
+          "notes": "只记录当前可靠可见的六张卡，不推断裁切区域总量。"
+        },
+        "evidence_level": "observed",
+        "confidence": 0.97
+      },
+      {
+        "group_id": "product_information",
+        "group_type": "detail_panel",
+        "label": "商品信息组",
+        "region_id": "product_detail",
+        "description": "较大商品预览、名称位置和属性摘要组成详情。",
+        "visible_item_count": null,
+        "repeat_pattern": {
+          "is_repeated": false,
+          "direction": "none",
+          "count_certainty": "not_applicable",
+          "notes": null
+        },
+        "evidence_level": "observed",
+        "confidence": 0.9
+      },
+      {
+        "group_id": "purchase_controls",
+        "group_type": "action_group",
+        "label": "购买操作组",
+        "region_id": "purchase_action",
+        "description": "价格摘要和高对比按钮共同构成可能的购买操作。",
+        "visible_item_count": 1,
+        "repeat_pattern": {
+          "is_repeated": false,
+          "direction": "none",
+          "count_certainty": "not_applicable",
+          "notes": null
+        },
+        "evidence_level": "inferred",
+        "confidence": 0.82
+      }
+    ],
+    "visual_hierarchy": {
+      "primary_focal_point": {
+        "entity_id": "product_cards",
+        "description": "中央商品网格形成主要浏览焦点。",
+        "evidence_level": "observed",
+        "confidence": 0.92
+      },
+      "secondary_focal_points": [
+        {
+          "entity_id": "product_information",
+          "description": "右侧较大预览形成次级焦点。",
+          "evidence_level": "observed",
+          "confidence": 0.9
+        }
+      ],
+      "primary_action": {
+        "entity_id": "purchase_controls",
+        "description": "高亮操作组很可能承担主要购买动作。",
+        "evidence_level": "inferred",
+        "confidence": 0.82
+      },
+      "supporting_information": [
+        {
+          "entity_id": "resource_summary",
+          "description": "顶部资源摘要提供购买上下文。",
+          "evidence_level": "inferred",
+          "confidence": 0.76
+        }
+      ],
+      "background_content": [
+        {
+          "entity_id": "page_background",
+          "description": "低对比背景衬托前景内容。",
+          "evidence_level": "observed",
+          "confidence": 0.97
+        }
       ]
-    }
-  ]
+    },
+    "layout_rules": [
+      {
+        "rule_id": "rule_progressive_browse_to_detail",
+        "description": "按从左到右的分类、列表、详情顺序组织浏览。",
+        "source_evidence": [
+          "category_navigation",
+          "product_list",
+          "product_detail"
+        ],
+        "reuse_value": "适合先缩小范围、再比较对象和查看详情的原创页面。",
+        "confidence": 0.9
+      },
+      {
+        "rule_id": "rule_action_with_currency_icon",
+        "description": "把资源摘要放在稳定顶部，把主要操作固定在详情区底部。",
+        "source_evidence": [
+          "top_status",
+          "product_detail",
+          "purchase_controls"
+        ],
+        "reuse_value": "通过空间分离区分全局资源信息和当前对象操作，不继承具体图标造型。",
+        "confidence": 0.87
+      }
+    ],
+    "excluded_content": [
+      {
+        "category": "game_name",
+        "description": "虚构页面标题 Sky Vanguard。",
+        "reason": "具体名称不属于布局规律。"
+      },
+      {
+        "category": "original_copy",
+        "description": "商品和按钮文案。",
+        "reason": "原始文案不属于布局参考。"
+      },
+      {
+        "category": "currency_design",
+        "description": "顶部与操作区中的金色翼形货币图标。",
+        "reason": "只参考资源信息的位置和分组，不继承具体造型。"
+      }
+    ],
+    "uncertainties": [
+      {
+        "uncertainty_id": "uncertain_list_total",
+        "description": "无法确认列表完整总量。",
+        "affected_entities": [
+          "product_list",
+          "product_cards"
+        ],
+        "reason": "截图右缘轻微裁切。",
+        "recommended_handling": "只使用可靠可见的六张卡，不推断总量。"
+      }
+    ],
+    "overall_confidence": 0.91,
+    "notes": [
+      "该 final 已应用 A2 review 中的五项修正，并保持 A1 正式字段。"
+    ]
+  },
+  "style_profile": {
+    "schema_version": "0.1",
+    "profile_id": "dark_fantasy_reference_profile_01",
+    "source_analyses": [
+      {
+        "asset_id": "knight_character_01",
+        "source_ref": "user-reference-character-01",
+        "reference_kind": "character_art",
+        "analysis_schema_version": "0.2",
+        "confidence": 0.91
+      },
+      {
+        "asset_id": "castle_environment_01",
+        "source_ref": "user-reference-environment-01",
+        "reference_kind": "environment_art",
+        "analysis_schema_version": "0.2",
+        "confidence": 0.92
+      },
+      {
+        "asset_id": "existing_ui_panel_01",
+        "source_ref": "user-reference-ui-01",
+        "reference_kind": "ui_art",
+        "analysis_schema_version": "0.2",
+        "confidence": 0.9
+      }
+    ],
+    "overall_visual_identity": "The reference set consistently presents a low-saturation cool blue-gray dark-fantasy identity with silver-black hard surfaces, sharp elongated forms, and localized blue-white light. Restrained gothic ornament has moderate cross-reference support, while rendering differs between semi-realistic art and flatter stylized UI art.",
+    "visual_profiles": {
+      "color_profile": {
+        "stable": [
+          {
+            "trait_id": "color_cool_blue_gray",
+            "trait": "low-saturation cool blue-gray palette",
+            "classification": "stable",
+            "description": "Cool blue-gray and near-black dominate all three independent reference kinds, with silver-white secondary values.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.95,
+            "evidence_summary": "Character, environment, and UI analyses independently report low-saturation cool blue-gray dominance."
+          }
+        ],
+        "secondary": [],
+        "local": [
+          {
+            "trait_id": "color_local_red",
+            "trait": "localized red content accents",
+            "classification": "local",
+            "description": "Red appears on one character cape and one UI badge, both recorded as content-specific rather than global color evidence.",
+            "supporting_references": [
+              "knight_character_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.86,
+            "evidence_summary": "Both red instances belong to specific subjects or objects."
+          }
+        ],
+        "conflicting": [],
+        "uncertain": []
+      },
+      "material_profile": {
+        "stable": [
+          {
+            "trait_id": "material_silver_black_hard_surfaces",
+            "trait": "silver and black hard-surface language",
+            "classification": "stable",
+            "description": "Silver metal and black iron or iron-like surfaces recur in character armor, fortress fixtures, and existing UI art.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.9,
+            "evidence_summary": "The material evidence spans character, environment, and UI reference kinds."
+          }
+        ],
+        "secondary": [
+          {
+            "trait_id": "material_heavy_matte_bases",
+            "trait": "heavy matte base surfaces",
+            "classification": "secondary",
+            "description": "Heavy matte black iron and dark stone recur across the character and environment references.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.78
+          }
+        ],
+        "local": [],
+        "conflicting": [],
+        "uncertain": []
+      },
+      "shape_profile": {
+        "stable": [
+          {
+            "trait_id": "shape_sharp_elongated",
+            "trait": "sharp elongated silhouettes",
+            "classification": "stable",
+            "description": "Pointed armor plates, tall fortress forms, and narrow angular UI borders repeat across diverse references.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.94,
+            "evidence_summary": "Independent character, environment, and UI evidence supports the same contour tendency."
+          }
+        ],
+        "secondary": [],
+        "local": [],
+        "conflicting": [],
+        "uncertain": []
+      },
+      "rendering_profile": {
+        "stable": [],
+        "secondary": [],
+        "local": [],
+        "conflicting": [
+          {
+            "trait_id": "rendering_approach_conflict",
+            "trait": "semi-realistic versus stylized cel-shaded rendering",
+            "classification": "conflicting",
+            "description": "Character and environment art use semi-realistic digital painting, while the existing UI art uses flatter cel-shaded value grouping.",
+            "alternatives": [
+              {
+                "trait": "semi-realistic digital painting",
+                "supporting_references": [
+                  "knight_character_01",
+                  "castle_environment_01"
+                ],
+                "confidence": 0.9
+              },
+              {
+                "trait": "stylized cel-shaded interface rendering",
+                "supporting_references": [
+                  "existing_ui_panel_01"
+                ],
+                "confidence": 0.9
+              }
+            ],
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.92,
+            "evidence_summary": "The difference is explicit in the B1 rendering fields and cannot be reduced to wording variance."
+          }
+        ],
+        "uncertain": []
+      },
+      "lighting_profile": {
+        "stable": [
+          {
+            "trait_id": "lighting_blue_white_local",
+            "trait": "localized blue-white light accents",
+            "classification": "stable",
+            "description": "Small blue-white luminous regions recur against low-key dark fields in all reference kinds.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.91,
+            "evidence_summary": "Weapon edges, fortress windows or markers, and UI indicators provide diverse support."
+          }
+        ],
+        "secondary": [],
+        "local": [],
+        "conflicting": [],
+        "uncertain": []
+      },
+      "decoration_profile": {
+        "stable": [],
+        "secondary": [
+          {
+            "trait_id": "decoration_restrained_gothic",
+            "trait": "restrained gothic ornament",
+            "classification": "secondary",
+            "description": "Engraving, arches, finials, pointed corner caps, and sparse crystals recur, but expression and confidence vary by reference kind.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.82,
+            "evidence_summary": "The motif family recurs across all sources but is less uniform than color, shape, or lighting."
+          }
+        ],
+        "local": [],
+        "conflicting": [],
+        "uncertain": []
+      },
+      "world_visual_profile": {
+        "stable": [
+          {
+            "trait_id": "world_dark_fantasy",
+            "trait": "dark-fantasy visual context",
+            "classification": "stable",
+            "description": "Knight armor, fortress architecture, gothic motifs, and blue-white magical cues provide diverse dark-fantasy support.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.86
+          }
+        ],
+        "secondary": [],
+        "local": [],
+        "conflicting": [],
+        "uncertain": [
+          {
+            "trait_id": "world_magic_technology_balance",
+            "trait": "balance between magical and technological cues",
+            "classification": "uncertain",
+            "description": "Blue-white indicators appear across sources, but the B1 evidence does not establish whether they are uniformly magical or partly technological.",
+            "supporting_references": [
+              "knight_character_01",
+              "castle_environment_01",
+              "existing_ui_panel_01"
+            ],
+            "contradicting_references": [],
+            "confidence": 0.48,
+            "evidence_summary": "The visible cues are consistent in color but ambiguous in world meaning."
+          }
+        ]
+      }
+    },
+    "cross_dimension_summary": "Cool low-saturation color, silver-black hard surfaces, sharp elongated forms, restrained gothic motifs, and localized blue-white light combine into a cold, heavy dark-fantasy expression. Rendering remains split between semi-realistic source art and flatter stylized UI art.",
+    "unresolved_conflicts": [
+      {
+        "conflict_id": "conflict_rendering_01",
+        "dimension": "rendering",
+        "description": "The current evidence does not establish one stable rendering treatment across source art and existing UI art.",
+        "conflicting_traits": [
+          "semi-realistic digital painting",
+          "stylized cel-shaded interface rendering"
+        ],
+        "supporting_references": [
+          "knight_character_01",
+          "castle_environment_01",
+          "existing_ui_panel_01"
+        ],
+        "status": "unresolved",
+        "confidence": 0.92
+      }
+    ],
+    "uncertainties": [
+      {
+        "uncertainty_id": "uncertainty_magic_technology_01",
+        "topic": "meaning of blue-white indicators",
+        "description": "The shared blue-white light is visually stable, but its world-level interpretation remains ambiguous.",
+        "related_references": [
+          "knight_character_01",
+          "castle_environment_01",
+          "existing_ui_panel_01"
+        ],
+        "confidence": 0.48
+      }
+    ],
+    "overall_confidence": 0.84,
+    "notes": [
+      "Classification considers reference-kind diversity, source confidence, content specificity, consistency, and unresolved conflict rather than frequency alone."
+    ]
+  }
 }
