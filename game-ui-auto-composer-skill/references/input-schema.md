@@ -1,75 +1,42 @@
-# UI Compose Input v2
+# UI Compose Input v2.1
 
-## Authoritative contract
+## Contract
 
-Accept only a JSON object conforming to `schemas/ui-compose-input.schema.json`.
+Accept only `schemas/ui-compose-input.schema.json`:
 
 ```text
-schema_version
+schema_version: 2.1
 request
 layout_reference_analysis
 style_profile
 ```
 
-`schema_version` is fixed to `2.0`. This is a breaking change; do not silently accept v1.
+`request.user_requirement` is required and is the highest authority for business/page semantics, content, counts, grids, information, positions, actions, layout changes, and visual changes. Optional project, game, page, orientation, resolution, constraints, and visual preferences provide context only.
 
-## Request
+## Immutable A and B
 
-Require only a non-whitespace `request.user_requirement`. This ordinary-language field is the highest authority for the target business goal, content, counts, interactions, explicit layout changes, and explicit visual changes.
+`layout_reference_analysis` is the complete authoritative A final object. `style_profile` is the complete authoritative B2 object. Their schemas are referenced directly from the adjacent Skills.
 
-Allow optional:
+Composer must not summarize, normalize, repair, mutate, or reinterpret embedded upstream values or confidence. With original files available, use JSON deep equality:
 
-- `project_name`
-- `game_context`
-- `page_context`
-- `orientation`
-- `target_resolution`
-- `constraints`
-- `visual_preferences`
-
-Do not require users to provide a professional UI decomposition before Composer can work.
-
-## A layout reference
-
-`layout_reference_analysis` contains the complete A final object and resolves directly to the upstream `$id`:
-
-```text
-https://example.com/schemas/layout-reference-analysis.schema.json
+```powershell
+python scripts/validate_input.py <input.json> `
+  --layout-source <original-a.json> `
+  --style-source <original-b2.json>
 ```
 
-The local authority is `../game-ui-layout-reference-analyzer/schemas/layout-reference-analysis.schema.json`. Use A only for portable structure: regions, hierarchy, relationships, relative proportions, alignment, grouping, repetition, and layout-related focal relationships. Do not treat its business content as a target requirement.
-
-## B2 style profile
-
-`style_profile` contains the complete B2 object and resolves directly to:
-
-```text
-https://example.com/schemas/style-profile.schema.json
-```
-
-The local authority is `../game-ui-style-reference-analyzer/schemas/style-profile.schema.json`. Use B only for classified visual-language evidence. Do not treat it as layout authority or target content.
+The validator reports leaf JSON paths with `UPSTREAM_INTEGRITY_MISMATCH`. JSON numeric equivalents compare equal.
 
 ## Strict rejection
 
-Reject with JSON-path errors and stop when:
+Reject and stop when:
 
-- Composer `schema_version` is not `2.0`;
-- `user_requirement` is absent or whitespace-only;
-- A or B fails its authoritative schema;
+- Composer version is not 2.1;
+- the user requirement is missing or blank;
+- A or B fails its real schema;
+- embedded A/B differs from supplied originals;
 - `pics` occurs anywhere;
 - legacy top-level `assets` occurs;
-- a strict object contains unexpected fields.
+- a strict object has unexpected fields.
 
-Do not partially compose, automatically repair A/B, inspect source images, or fall back to the v1 asset workflow.
-
-## Validation
-
-```powershell
-python scripts/validate_input.py references/examples/example-ui-compose-input.json
-```
-
-The validator resolves both upstream schemas from their adjacent Skill directories. When the third-party `jsonschema` package is unavailable, it reports that fact and uses the bundled keyword-limited validator over all three real contracts; it never substitutes private A/B summaries.
-
-## Legacy
-
-`asset-analysis.schema.json`, `asset-analysis.example.json`, `assets/samples`, `pics`, `assets[].asset_analysis`, `source_ref` propagation, and `request_notes` are not Composer v2 input semantics.
+Do not partially compose or fall back to the legacy asset workflow.

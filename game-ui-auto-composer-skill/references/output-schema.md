@@ -1,62 +1,43 @@
-# UI Compose Plan v2
+# UI Compose Plan v2.1
 
-## Authoritative contract
+## Contract
 
-Return one JSON object conventionally named `ui-compose-plan.json` and conforming to `schemas/ui-compose-plan.schema.json`. `schema_version` is fixed to `2.0`.
+Return one `ui-compose-plan.json` conforming to `schemas/ui-compose-plan.schema.json`. The existing v2 top-level structure remains:
 
-## Required top-level fields
+- `schema_version`
+- `project_context`
+- `design_summary`
+- `reference_application`
+- `visual_direction`
+- `pages`
+- `component_tree`
+- `layout_rules`
+- `interactions`
+- `navigation`
+- `generation_constraints`
+- `assumptions`
+- `warnings`
 
-- `schema_version` — contract version.
-- `project_context` — normalized user target, scope, resolution, and constraints.
-- `design_summary` — what is being designed and the main synthesis decisions.
-- `reference_application` — traceable A and B decisions.
-- `visual_direction` — target-page interpretation of selected B traits plus user overrides.
-- `pages` — only pages justified by the user requirement.
-- `component_tree` — the new target UI hierarchy.
-- `layout_rules` — normalized, relational, content-adaptive layout intent.
-- `interactions` — necessary engine-neutral triggers and state changes.
-- `navigation` — only justified page-to-page flow; may be empty for one page.
-- `generation_constraints` — structured requirements for later visual generation.
-- `assumptions` — low-risk decisions required to complete the design.
-- `warnings` — conflicts, uncertainty, risky trait use, or major adaptation.
+## V2.1 additions
 
-`asset_usages` and `missing_assets` are not v2 fields. A and B are evidence, not a final target asset library.
+`project_context.hard_requirements` records machine-checkable user facts with verbatim evidence: page semantic, explicit counts, grid requirements, required elements, and include/exclude rules.
 
-## Reference application
+Grid repeats add `columns` and `rows`. `generation_constraints.grid_specs` repeats the final grid facts for downstream consistency.
 
-For A decisions, retain stable source IDs and record source kind, source meaning, `adopted`/`adapted`/`ignored`/`rejected`, target application, and rationale.
+B decisions add `promoted_by_user_requirement` and `promotion_evidence`. A local trait is ignored or kept on one matching component unless exact user evidence authorizes wider promotion.
 
-For B decisions, retain `trait_id`, dimension, classification, disposition, target scope, target application, and rationale. Do not copy the complete A or B object into the plan.
+## Traceability and preservation
 
-## Visual direction
+Every A `source_id` must exist in the matching A entity kind. Every B `trait_id`, dimension, and classification must match B2. Visual directives may cite only adopted decisions and must respect local scope.
 
-Emit target-specific directives for supported dimensions such as color, material, shape, rendering, lighting, decoration, world visual cues, and surface treatment. Link directives to B `trait_id` values. An empty source list is allowed only for an explicit user override.
+The plan page semantic, counts, grid, required positions, and actions must match the hard ledger. Cross-check `component_tree`, `layout_rules`, `interactions`, and `generation_constraints`.
 
-Do not invent unsupported visual facts. Do not turn local, conflicting, or uncertain evidence into global rules.
-
-## New component and layout intent
-
-Build `component_tree` from the user business requirement, applicable A structure, and conservative design completion. Use target IDs and target semantics; do not rename A IDs mechanically.
-
-Use `layout_rules` for semantic anchors, normalized positions, relative dimensions, stack order, safe-area policy, spatial relationships, spacing, and content-dependent adaptation. Do not emit engine implementation fields.
+```powershell
+python scripts/validate_plan.py <plan.json> --input <input.json>
+```
 
 ## Generation constraints
 
-Structure:
+They may contain only facts derived from explicit user requirements, the final component tree, final layout rules, and approved A/B decisions. They are not a prompt and cannot invent a new design requirement.
 
-- must include / must not include;
-- exact counts;
-- key content zones;
-- focal hierarchy;
-- component separability;
-- overlap restrictions;
-- readability requirements;
-- clean boundaries;
-- cutout-friendly requirements;
-- reference-fidelity boundaries.
-
-This section is not a GPT Image prompt. Prompt compilation belongs to a later adapter.
-
-## Successful response
-
-Return only the valid JSON object. Do not append Markdown, prompts, implementation mappings, source code, or secondary artifacts.
+V1 `asset_usages` and `missing_assets` remain forbidden.

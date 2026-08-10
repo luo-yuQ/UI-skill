@@ -1,87 +1,51 @@
-# Game UI Auto Composer v2
+# Game UI Auto Composer v2.1
 
-Composer v2 把三个权威来源合成为一个新的、引擎无关的 UI 设计意图：
-
-```text
-A final layout-reference analysis
-+ B2 style profile
-+ ordinary user requirement
-→ ui-compose-plan v2
-```
-
-它不是 A/B 拼接器，也不再负责“已有素材应该放在哪里”。用户决定本次要设计什么，A 提供可复用的布局证据，B2 提供分级的视觉风格证据；Composer 可以继承、调整、删除、新增和重组，最后形成新的页面、组件树、布局意图与视觉方向。
-
-## 输入
-
-```json
-{
-  "schema_version": "2.0",
-  "request": {
-    "user_requirement": "设计一个公会委托页面……"
-  },
-  "layout_reference_analysis": {},
-  "style_profile": {}
-}
-```
-
-- `request.user_requirement`：目标业务、内容、数量、交互和显式变化的最高权威。
-- `layout_reference_analysis`：直接接收 A 的完整 final，负责结构证据。
-- `style_profile`：直接接收 B2 完整 profile，负责视觉语言证据。
-
-输入 schema 直接引用相邻 A/B Skill 的权威 schema，不维护 Composer 私有副本。
-
-## 输出
-
-`ui-compose-plan.json` 使用 `schema_version: 2.0`，包含：
+Composer 把三类权威输入合成为新的、引擎无关的 UI 设计意图：
 
 ```text
-project_context
-design_summary
-reference_application
-visual_direction
-pages
-component_tree
-layout_rules
-interactions
-navigation
-generation_constraints
-assumptions
-warnings
+显式用户需求（最高优先级）
++ immutable A final layout analysis
++ immutable B2 style profile
+→ ui-compose-plan v2.1
 ```
 
-`reference_application` 记录 A 的结构如何 adopted/adapted/ignored/rejected，以及 B2 trait 如何采用、限域、忽略或因冲突拒绝。`generation_constraints` 为后续生图阶段提供结构化约束，但不是 GPT Image prompt。
+A 只提供布局证据，B2 只提供分级风格证据；Composer 不重新识图，不复制参考业务语义，也不把示例当目标内容。
 
-v2 不再输出 `asset_usages` 和 `missing_assets`。
+## V2.1 严格规则
 
-## 权威与冲突
+- 优先级：显式用户要求 > 派生用户意图 > A > B > Composer 假设。
+- `project_context.hard_requirements` 保存页面语义、数量、网格、位置和动作，并引用用户原文片段。
+- 所有 A `source_ids` 与 B `trait_id` 都对真实输入做存在性与类型校验。
+- 内嵌 A/B 可与原文件做 JSON deep equality；任何差异按路径报错。
+- B local trait 默认忽略；采用时仅限一个匹配组件，除非用户原文明确授权提升。
+- `generation_constraints` 只能从最终设计派生，不得二次创作。
+- 输出各 section 必须在数量、网格、页面语义、位置和动作上相互一致。
 
-- 用户要求决定目标页面、业务内容、数量、交互和显式变化。
-- A 只负责布局组织，不负责目标业务内容。
-- B2 只负责视觉语言，不覆盖 A 的正式布局关系。
-- 用户显式要求覆盖 A/B，并记录适配或 style deviation。
-- B2 `stable` 优先；`secondary` 按语境；`local` 仅限语义匹配组件；`conflicting` 不静默选边；`uncertain` 不变成事实。
-- 参考图中的城堡、战斗、角色、奖励、文案等语义不是用户需求，不得自动泄漏到目标页面。
+## 输入与输出
 
-## 验证
+输入 schema 是 `schemas/ui-compose-input.schema.json` v2.1，输出 schema 是 `schemas/ui-compose-plan.schema.json` v2.1。v2 主要顶层结构保持不变，仅增加硬需求账本、网格字段和 local promotion 记录。
 
-在 `game-ui-auto-composer-skill` 目录运行：
-
-```powershell
-python scripts/validate_input.py references/examples/example-ui-compose-input.json
-python scripts/validate_plan.py references/examples/example-ui-compose-plan.json
-python -m unittest discover -s tests -p "test_*.py"
-```
-
-真实 v2 示例：
+真实回归 fixture：
 
 - `references/examples/example-ui-compose-input.json`
 - `references/examples/example-ui-compose-plan.json`
 
-## 边界
+示例只展示 schema shape，绝不提供其他运行的数量、语义、组件、CTA 或文案。
 
-Composer core 不接收原图，不重新视觉识别，不生成图片、GPT Image prompt、HTML/CSS、FairyGUI XML 或 Laya/Unity/Cocos/FairyGUI 实现字段。
+## 验证
 
-`asset-analysis.schema.json`、旧 samples、asset taxonomy、templates、engine compatibility、prototype helpers、GPT Image/ToAPIs preview adapter 等仍保留为 legacy 或下游资源，但不属于 v2 core。现有 adapter 尚未迁移到 v2 plan，后续应独立处理。
+```powershell
+python scripts/validate_input.py references/examples/example-ui-compose-input.json `
+  --layout-source ../game-ui-layout-analysis-verifier/examples/example-final-analysis.json `
+  --style-source ../game-ui-style-reference-analyzer/examples/b2-style-profile.json
+
+python scripts/validate_plan.py references/examples/example-ui-compose-plan.json `
+  --input references/examples/example-ui-compose-input.json
+
+python -m unittest discover -s tests -p "test_composer_v2.py"
+```
+
+Composer core 不接收原图，不生成图片、GPT Image prompt、HTML/CSS、FairyGUI XML 或引擎实现字段。Preview Adapter 与 GPT Image 逻辑不属于本次 V2.1 core 修正。
 
 ## License
 

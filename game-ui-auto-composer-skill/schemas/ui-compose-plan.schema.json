@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/ui-compose-plan.schema.json",
-  "title": "UI Compose Plan v2",
-  "description": "A new engine-neutral UI design intent synthesized from a user requirement, A layout evidence, and B2 visual-style evidence.",
+  "title": "UI Compose Plan v2.1",
+  "description": "A strict requirement-preserving engine-neutral UI design intent synthesized from a user requirement, A layout evidence, and B2 visual-style evidence.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -21,7 +21,7 @@
     "warnings"
   ],
   "properties": {
-    "schema_version": {"type": "string", "const": "2.0"},
+    "schema_version": {"type": "string", "const": "2.1"},
     "project_context": {"$ref": "#/$defs/project_context"},
     "design_summary": {"$ref": "#/$defs/design_summary"},
     "reference_application": {"$ref": "#/$defs/reference_application"},
@@ -59,7 +59,7 @@
     "project_context": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["project_name", "user_requirement", "game_context", "orientation", "target_resolution", "page_scope", "constraints"],
+      "required": ["project_name", "user_requirement", "game_context", "orientation", "target_resolution", "page_scope", "constraints", "hard_requirements"],
       "properties": {
         "project_name": {"type": ["string", "null"], "minLength": 1},
         "user_requirement": {"$ref": "#/$defs/text"},
@@ -67,7 +67,71 @@
         "orientation": {"type": ["string", "null"], "enum": ["portrait", "landscape", "square", null]},
         "target_resolution": {"anyOf": [{"$ref": "#/$defs/target_resolution"}, {"type": "null"}]},
         "page_scope": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
-        "constraints": {"$ref": "#/$defs/text_array"}
+        "constraints": {"$ref": "#/$defs/text_array"},
+        "hard_requirements": {"$ref": "#/$defs/hard_requirements"}
+      }
+    },
+    "requirement_evidence": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Exact substring copied from project_context.user_requirement."
+    },
+    "semantic_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "value", "evidence"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/identifier"},
+        "value": {"$ref": "#/$defs/identifier"},
+        "evidence": {"$ref": "#/$defs/requirement_evidence"}
+      }
+    },
+    "count_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "target_component_id", "count", "evidence"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/identifier"},
+        "target_component_id": {"$ref": "#/$defs/identifier"},
+        "count": {"type": "integer", "minimum": 0},
+        "evidence": {"$ref": "#/$defs/requirement_evidence"}
+      }
+    },
+    "grid_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "target_component_id", "columns", "rows", "evidence"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/identifier"},
+        "target_component_id": {"$ref": "#/$defs/identifier"},
+        "columns": {"type": "integer", "minimum": 1},
+        "rows": {"type": "integer", "minimum": 1},
+        "evidence": {"$ref": "#/$defs/requirement_evidence"}
+      }
+    },
+    "element_requirement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fact_id", "target_component_id", "semantic", "position", "evidence"],
+      "properties": {
+        "fact_id": {"$ref": "#/$defs/identifier"},
+        "target_component_id": {"$ref": "#/$defs/identifier"},
+        "semantic": {"$ref": "#/$defs/identifier"},
+        "position": {"type": ["string", "null"], "enum": ["top", "left", "right", "bottom", "center", null]},
+        "evidence": {"$ref": "#/$defs/requirement_evidence"}
+      }
+    },
+    "hard_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["page_semantic", "explicit_counts", "grid_requirements", "required_elements", "must_include", "must_not_include"],
+      "properties": {
+        "page_semantic": {"$ref": "#/$defs/semantic_requirement"},
+        "explicit_counts": {"type": "array", "items": {"$ref": "#/$defs/count_requirement"}},
+        "grid_requirements": {"type": "array", "items": {"$ref": "#/$defs/grid_requirement"}},
+        "required_elements": {"type": "array", "items": {"$ref": "#/$defs/element_requirement"}},
+        "must_include": {"$ref": "#/$defs/text_array"},
+        "must_not_include": {"$ref": "#/$defs/text_array"}
       }
     },
     "design_summary": {
@@ -97,7 +161,7 @@
     "style_reference_decision": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["decision_id", "trait_id", "dimension", "classification", "disposition", "target_scope", "target_application", "rationale"],
+      "required": ["decision_id", "trait_id", "dimension", "classification", "disposition", "target_scope", "target_application", "promoted_by_user_requirement", "promotion_evidence", "rationale"],
       "properties": {
         "decision_id": {"$ref": "#/$defs/identifier"},
         "trait_id": {"$ref": "#/$defs/identifier"},
@@ -106,6 +170,8 @@
         "disposition": {"type": "string", "enum": ["adopted", "conditionally_adopted", "ignored", "rejected_due_to_conflict", "overridden_by_user"]},
         "target_scope": {"$ref": "#/$defs/identifier_array"},
         "target_application": {"type": ["string", "null"], "minLength": 1},
+        "promoted_by_user_requirement": {"type": "boolean"},
+        "promotion_evidence": {"type": ["string", "null"], "minLength": 1},
         "rationale": {"$ref": "#/$defs/text"}
       }
     },
@@ -182,10 +248,12 @@
     "repeat_spec": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["count", "arrangement", "content_variation"],
+      "required": ["count", "arrangement", "columns", "rows", "content_variation"],
       "properties": {
         "count": {"type": "integer", "minimum": 1},
         "arrangement": {"type": "string", "enum": ["row", "column", "grid", "list", "carousel", "custom"]},
+        "columns": {"type": ["integer", "null"], "minimum": 1},
+        "rows": {"type": ["integer", "null"], "minimum": 1},
         "content_variation": {"$ref": "#/$defs/text"}
       }
     },
@@ -317,14 +385,26 @@
         "requirement": {"$ref": "#/$defs/text"}
       }
     },
+    "grid_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["component_id", "columns", "rows", "requirement"],
+      "properties": {
+        "component_id": {"$ref": "#/$defs/identifier"},
+        "columns": {"type": "integer", "minimum": 1},
+        "rows": {"type": "integer", "minimum": 1},
+        "requirement": {"$ref": "#/$defs/text"}
+      }
+    },
     "generation_constraints": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["must_include", "must_not_include", "exact_counts", "key_content_zones", "focal_hierarchy", "component_separability", "overlap_restrictions", "readability_requirements", "clean_boundary_requirements", "cutout_friendly_requirements", "reference_fidelity_boundaries"],
+      "required": ["must_include", "must_not_include", "exact_counts", "grid_specs", "key_content_zones", "focal_hierarchy", "component_separability", "overlap_restrictions", "readability_requirements", "clean_boundary_requirements", "cutout_friendly_requirements", "reference_fidelity_boundaries"],
       "properties": {
         "must_include": {"$ref": "#/$defs/text_array"},
         "must_not_include": {"$ref": "#/$defs/text_array"},
         "exact_counts": {"type": "array", "items": {"$ref": "#/$defs/exact_count"}},
+        "grid_specs": {"type": "array", "items": {"$ref": "#/$defs/grid_spec"}},
         "key_content_zones": {"type": "array", "items": {"$ref": "#/$defs/content_zone"}},
         "focal_hierarchy": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/identifier"}, "uniqueItems": true},
         "component_separability": {"$ref": "#/$defs/text_array"},

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
-"""Validate a Composer v2 ui-compose-plan JSON document."""
+"""Validate a Composer v2.1 plan, including requirement and A/B traceability."""
 
 from __future__ import annotations
 
+import argparse
 import json
-import sys
+import re
 from pathlib import Path
 from typing import Any
 
@@ -13,6 +14,7 @@ from validate_input import LimitedLocalValidator, issue, json_path, load_json
 
 ROOT = Path(__file__).resolve().parents[1]
 SCHEMA_PATH = ROOT / "schemas" / "ui-compose-plan.schema.json"
+DRIFT_TERMS = ("commission", "quest", "mission", "accept commission", "accept quest", "accept mission")
 
 
 def schema_errors(data: Any, schema: dict[str, Any]) -> tuple[list[dict[str, str]], str, bool, str | None]:
@@ -24,7 +26,6 @@ def schema_errors(data: Any, schema: dict[str, Any]) -> tuple[list[dict[str, str
             "keyword-limited validator; it is not a general Draft 2020-12 implementation."
         )
         return LimitedLocalValidator(schema, {}).validate(data), "limited_local", False, notice
-
     try:
         Draft202012Validator.check_schema(schema)
         validator = Draft202012Validator(schema)
@@ -33,7 +34,7 @@ def schema_errors(data: Any, schema: dict[str, Any]) -> tuple[list[dict[str, str
             for error in sorted(validator.iter_errors(data), key=lambda item: json_path(item.absolute_path))
         ]
         return errors, "jsonschema_draft_2020_12", True, None
-    except Exception as exc:  # pragma: no cover - package-version dependent
+    except Exception as exc:  # pragma: no cover
         return [issue("$", f"Unable to initialize output validation: {exc}", "VALIDATOR_SETUP_ERROR")], "jsonschema_draft_2020_12", False, None
 
 
@@ -45,16 +46,55 @@ def duplicate_errors(items: Any, field: str, path: str) -> list[dict[str, str]]:
     return [issue(path, f"Duplicate {field}: {value}", "DUPLICATE_IDENTIFIER") for value in duplicates]
 
 
-def semantic_errors(data: Any) -> list[dict[str, str]]:
-    if not isinstance(data, dict):
-        return []
+def collect_a_ids(layout: dict[str, Any]) -> dict[str, set[str]]:
+    hierarchy_ids: set[str] = set()
+
+    def visit_hierarchy(value: Any) -> None:
+        if isinstance(value, dict):
+            entity_id = value.get("entity_id")
+            if isinstance(entity_id, str):
+                hierarchy_ids.add(entity_id)
+            for child in value.values():
+                visit_hierarchy(child)
+        elif isinstance(value, list):
+            for child in value:
+                visit_hierarchy(child)
+
+    visit_hierarchy(layout.get("visual_hierarchy", {}))
+    return {
+        "region": {item.get("region_id") for item in layout.get("regions", []) if isinstance(item, dict)},
+        "region_relationship": {item.get("relationship_id") for item in layout.get("region_relationships", []) if isinstance(item, dict)},
+        "component_group": {item.get("group_id") for item in layout.get("component_groups", []) if isinstance(item, dict)},
+        "visual_hierarchy": hierarchy_ids,
+        "layout_rule": {item.get("rule_id") for item in layout.get("layout_rules", []) if isinstance(item, dict)},
+        "excluded_content": {item.get("category") for item in layout.get("excluded_content", []) if isinstance(item, dict)},
+        "uncertainty": {item.get("uncertainty_id") for item in layout.get("uncertainties", []) if isinstance(item, dict)},
+    }
+
+
+def collect_b_traits(style: dict[str, Any]) -> dict[str, tuple[str, str]]:
+    result: dict[str, tuple[str, str]] = {}
+    profiles = style.get("visual_profiles", {})
+    if not isinstance(profiles, dict):
+        return result
+    for profile_name, profile in profiles.items():
+        if not isinstance(profile, dict):
+            continue
+        dimension = profile_name.removesuffix("_profile")
+        for classification in ("stable", "secondary", "local", "conflicting", "uncertain"):
+            for trait in profile.get(classification, []):
+                if isinstance(trait, dict) and isinstance(trait.get("trait_id"), str):
+                    result[trait["trait_id"]] = (dimension, classification)
+    return result
+
+
+def base_semantic_errors(data: dict[str, Any]) -> list[dict[str, str]]:
     errors: list[dict[str, str]] = []
     pages = data.get("pages", [])
     components = data.get("component_tree", [])
     layouts = data.get("layout_rules", [])
     interactions = data.get("interactions", [])
     navigation = data.get("navigation", [])
-
     for items, field, path in (
         (pages, "page_id", "$.pages"),
         (components, "component_id", "$.component_tree"),
@@ -69,15 +109,12 @@ def semantic_errors(data: Any) -> list[dict[str, str]]:
     interaction_map = {item.get("interaction_id"): item for item in interactions if isinstance(item, dict)}
     navigation_map = {item.get("navigation_id"): item for item in navigation if isinstance(item, dict)}
 
-    scope = data.get("project_context", {}).get("page_scope", []) if isinstance(data.get("project_context"), dict) else []
+    scope = data.get("project_context", {}).get("page_scope", [])
     if isinstance(scope, list) and set(scope) != set(page_map):
         errors.append(issue("$.project_context.page_scope", "page_scope must match pages[].page_id", "PAGE_SCOPE_MISMATCH"))
 
     for index, page in enumerate(pages if isinstance(pages, list) else []):
-        if not isinstance(page, dict):
-            continue
-        root_id = page.get("root_component_id")
-        root = component_map.get(root_id)
+        root = component_map.get(page.get("root_component_id")) if isinstance(page, dict) else None
         if root is None:
             errors.append(issue(f"$.pages[{index}].root_component_id", "Unknown root component", "UNKNOWN_COMPONENT"))
         elif root.get("parent_id") is not None or root.get("page_id") != page.get("page_id"):
@@ -96,6 +133,16 @@ def semantic_errors(data: Any) -> list[dict[str, str]]:
                 errors.append(issue(f"$.component_tree[{index}].parent_id", "Unknown parent component", "UNKNOWN_COMPONENT"))
             elif parent.get("page_id") != page_id:
                 errors.append(issue(f"$.component_tree[{index}].parent_id", "Parent component belongs to another page", "CROSS_PAGE_PARENT"))
+        repeat = component.get("repeat")
+        if isinstance(repeat, dict):
+            columns, rows = repeat.get("columns"), repeat.get("rows")
+            if repeat.get("arrangement") == "grid":
+                if not isinstance(columns, int) or not isinstance(rows, int):
+                    errors.append(issue(f"$.component_tree[{index}].repeat", "Grid repeat requires integer columns and rows", "GRID_DIMENSIONS_MISSING"))
+                elif columns * rows != repeat.get("count"):
+                    errors.append(issue(f"$.component_tree[{index}].repeat.count", "Grid count must equal columns * rows", "GRID_COUNT_MISMATCH"))
+            elif columns is not None or rows is not None:
+                errors.append(issue(f"$.component_tree[{index}].repeat", "Non-grid repeat must use null columns and rows", "GRID_DIMENSIONS_UNEXPECTED"))
 
     for index, rule in enumerate(layouts if isinstance(layouts, list) else []):
         if not isinstance(rule, dict):
@@ -117,8 +164,7 @@ def semantic_errors(data: Any) -> list[dict[str, str]]:
             errors.append(issue(f"$.interactions[{index}].trigger_component_id", "Unknown trigger component", "UNKNOWN_COMPONENT"))
         elif component.get("page_id") != interaction.get("page_id"):
             errors.append(issue(f"$.interactions[{index}].page_id", "Interaction page does not match trigger component", "PAGE_COMPONENT_MISMATCH"))
-        nav_id = interaction.get("navigation_id")
-        if nav_id is not None and nav_id not in navigation_map:
+        if interaction.get("navigation_id") is not None and interaction.get("navigation_id") not in navigation_map:
             errors.append(issue(f"$.interactions[{index}].navigation_id", "Unknown navigation_id", "UNKNOWN_NAVIGATION"))
 
     for index, nav in enumerate(navigation if isinstance(navigation, list) else []):
@@ -131,36 +177,179 @@ def semantic_errors(data: Any) -> list[dict[str, str]]:
         if nav.get("trigger_interaction_id") not in interaction_map:
             errors.append(issue(f"$.navigation[{index}].trigger_interaction_id", "Unknown trigger interaction", "UNKNOWN_INTERACTION"))
 
+    constraints = data.get("generation_constraints", {})
+    if isinstance(constraints, dict):
+        for index, zone in enumerate(constraints.get("key_content_zones", [])):
+            if isinstance(zone, dict) and zone.get("component_id") not in component_map:
+                errors.append(issue(f"$.generation_constraints.key_content_zones[{index}].component_id", "Unknown component_id", "UNKNOWN_COMPONENT"))
+        for index, component_id in enumerate(constraints.get("focal_hierarchy", [])):
+            if component_id not in component_map:
+                errors.append(issue(f"$.generation_constraints.focal_hierarchy[{index}]", "Unknown focal component", "UNKNOWN_COMPONENT"))
+    return errors
+
+
+def requirement_errors(data: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    context = data.get("project_context", {})
+    requirement = context.get("user_requirement", "") if isinstance(context, dict) else ""
+    hard = context.get("hard_requirements", {}) if isinstance(context, dict) else {}
+    pages = data.get("pages", [])
+    component_map = {item.get("component_id"): item for item in data.get("component_tree", []) if isinstance(item, dict)}
+    layout_map = {item.get("component_id"): item for item in data.get("layout_rules", []) if isinstance(item, dict)}
+    interactions = data.get("interactions", [])
+    constraints = data.get("generation_constraints", {})
+    exact_map = {item.get("component_id"): item for item in constraints.get("exact_counts", []) if isinstance(item, dict)}
+    grid_map = {item.get("component_id"): item for item in constraints.get("grid_specs", []) if isinstance(item, dict)}
+
+    evidence_items: list[tuple[str, Any]] = []
+    if isinstance(hard, dict):
+        evidence_items.append(("$.project_context.hard_requirements.page_semantic.evidence", hard.get("page_semantic", {}).get("evidence")))
+        for collection in ("explicit_counts", "grid_requirements", "required_elements"):
+            for index, item in enumerate(hard.get(collection, [])):
+                if isinstance(item, dict):
+                    evidence_items.append((f"$.project_context.hard_requirements.{collection}[{index}].evidence", item.get("evidence")))
+    for path, evidence in evidence_items:
+        if not isinstance(evidence, str) or evidence not in requirement:
+            errors.append(issue(path, "Evidence must be an exact substring of user_requirement", "REQUIREMENT_EVIDENCE_MISMATCH"))
+
+    semantic = hard.get("page_semantic", {}).get("value") if isinstance(hard, dict) else None
+    for index, page in enumerate(pages if isinstance(pages, list) else []):
+        if isinstance(page, dict) and page.get("page_type") != semantic:
+            errors.append(issue(f"$.pages[{index}].page_type", f"Page semantic must remain {semantic!r}", "SEMANTIC_DRIFT"))
+
+    for index, fact in enumerate(hard.get("explicit_counts", []) if isinstance(hard, dict) else []):
+        if not isinstance(fact, dict):
+            continue
+        component_id, count = fact.get("target_component_id"), fact.get("count")
+        component = component_map.get(component_id)
+        if component is None:
+            errors.append(issue(f"$.project_context.hard_requirements.explicit_counts[{index}].target_component_id", "Unknown component", "UNKNOWN_COMPONENT"))
+            continue
+        actual = component.get("repeat", {}).get("count", 1) if isinstance(component.get("repeat"), dict) else 1
+        if count != actual:
+            errors.append(issue(f"$.component_tree[{data.get('component_tree', []).index(component)}].repeat.count", f"Hard requirement count is {count}, got {actual}", "REQUIREMENT_COUNT_MISMATCH"))
+        if exact_map.get(component_id, {}).get("count") != count:
+            errors.append(issue("$.generation_constraints.exact_counts", f"Missing or inconsistent exact count for {component_id}", "CROSS_SECTION_COUNT_MISMATCH"))
+
+    for index, fact in enumerate(hard.get("grid_requirements", []) if isinstance(hard, dict) else []):
+        if not isinstance(fact, dict):
+            continue
+        component_id = fact.get("target_component_id")
+        component = component_map.get(component_id)
+        repeat = component.get("repeat", {}) if isinstance(component, dict) else {}
+        expected = (fact.get("columns"), fact.get("rows"))
+        if (repeat.get("columns"), repeat.get("rows")) != expected:
+            errors.append(issue(f"$.project_context.hard_requirements.grid_requirements[{index}]", f"Component grid does not match {expected[0]}x{expected[1]}", "REQUIREMENT_GRID_MISMATCH"))
+        spec = grid_map.get(component_id, {})
+        if (spec.get("columns"), spec.get("rows")) != expected:
+            errors.append(issue("$.generation_constraints.grid_specs", f"Missing or inconsistent grid spec for {component_id}", "CROSS_SECTION_GRID_MISMATCH"))
+
+    for index, fact in enumerate(hard.get("required_elements", []) if isinstance(hard, dict) else []):
+        if not isinstance(fact, dict):
+            continue
+        component_id = fact.get("target_component_id")
+        if component_id not in component_map:
+            errors.append(issue(f"$.project_context.hard_requirements.required_elements[{index}].target_component_id", "Unknown component", "UNKNOWN_COMPONENT"))
+            continue
+        position = fact.get("position")
+        if position:
+            anchor = layout_map.get(component_id, {}).get("anchor", "")
+            if position not in anchor:
+                errors.append(issue(f"$.layout_rules", f"{component_id} must be positioned at {position}", "REQUIREMENT_POSITION_MISMATCH"))
+        semantic_name = fact.get("semantic", "")
+        if "refresh" in semantic_name and not any(
+            isinstance(item, dict)
+            and item.get("trigger_component_id") == component_id
+            and "refresh" in item.get("action", "")
+            for item in interactions
+        ):
+            errors.append(issue("$.interactions", f"{component_id} lacks its required refresh interaction", "REQUIREMENT_INTERACTION_MISMATCH"))
+
+    for value in hard.get("must_include", []) if isinstance(hard, dict) else []:
+        if value not in constraints.get("must_include", []):
+            errors.append(issue("$.generation_constraints.must_include", f"Missing derived hard requirement: {value}", "CROSS_SECTION_REQUIREMENT_MISMATCH"))
+    for value in hard.get("must_not_include", []) if isinstance(hard, dict) else []:
+        if value not in constraints.get("must_not_include", []):
+            errors.append(issue("$.generation_constraints.must_not_include", f"Missing derived prohibition: {value}", "CROSS_SECTION_REQUIREMENT_MISMATCH"))
+
+    target = json.dumps({
+        "design_summary": data.get("design_summary"),
+        "pages": data.get("pages"),
+        "component_tree": data.get("component_tree"),
+        "interactions": data.get("interactions"),
+        "generation_constraints": data.get("generation_constraints"),
+    }, ensure_ascii=False).lower()
+    user_lower = requirement.lower()
+    for term in DRIFT_TERMS:
+        pattern = rf"(?<![a-z]){re.escape(term)}(?![a-z])"
+        if re.search(pattern, user_lower) is None and re.search(pattern, target) is not None:
+            errors.append(issue("$", f"Target content introduced absent business semantic: {term}", "SEMANTIC_DRIFT"))
+    return errors
+
+
+def traceability_errors(data: dict[str, Any], input_data: dict[str, Any]) -> list[dict[str, str]]:
+    errors: list[dict[str, str]] = []
+    layout = input_data.get("layout_reference_analysis", {})
+    style = input_data.get("style_profile", {})
     reference = data.get("reference_application", {})
-    style_decisions = reference.get("style", []) if isinstance(reference, dict) else []
-    known_traits = {item.get("trait_id") for item in style_decisions if isinstance(item, dict)}
-    visual = data.get("visual_direction", {})
-    for index, directive in enumerate(visual.get("directives", []) if isinstance(visual, dict) else []):
+    requirement = input_data.get("request", {}).get("user_requirement", "")
+    components = {item.get("component_id") for item in data.get("component_tree", []) if isinstance(item, dict)}
+    if reference.get("layout_analysis_id") != layout.get("analysis_id"):
+        errors.append(issue("$.reference_application.layout_analysis_id", "Does not match input A analysis_id", "LAYOUT_ANALYSIS_ID_MISMATCH"))
+    if reference.get("style_profile_id") != style.get("profile_id"):
+        errors.append(issue("$.reference_application.style_profile_id", "Does not match input B profile_id", "STYLE_PROFILE_ID_MISMATCH"))
+
+    a_ids = collect_a_ids(layout)
+    for index, decision in enumerate(reference.get("layout", [])):
+        if not isinstance(decision, dict):
+            continue
+        allowed = a_ids.get(decision.get("source_kind"), set())
+        for source_id in decision.get("source_ids", []):
+            if source_id not in allowed:
+                errors.append(issue(f"$.reference_application.layout[{index}].source_ids", f"Unknown A source_id for {decision.get('source_kind')}: {source_id}", "UNKNOWN_A_SOURCE_ID"))
+
+    b_traits = collect_b_traits(style)
+    decisions: dict[str, dict[str, Any]] = {}
+    for index, decision in enumerate(reference.get("style", [])):
+        if not isinstance(decision, dict):
+            continue
+        trait_id = decision.get("trait_id")
+        decisions[trait_id] = decision
+        actual = b_traits.get(trait_id)
+        if actual is None:
+            errors.append(issue(f"$.reference_application.style[{index}].trait_id", f"Unknown B trait_id: {trait_id}", "UNKNOWN_B_TRAIT_ID"))
+            continue
+        if (decision.get("dimension"), decision.get("classification")) != actual:
+            errors.append(issue(f"$.reference_application.style[{index}].classification", f"B declares {trait_id} as {actual[0]}/{actual[1]}", "B_TRAIT_CLASSIFICATION_MISMATCH"))
+        promoted = decision.get("promoted_by_user_requirement")
+        promotion_evidence = decision.get("promotion_evidence")
+        if promoted:
+            if not isinstance(promotion_evidence, str) or promotion_evidence not in requirement:
+                errors.append(issue(f"$.reference_application.style[{index}].promotion_evidence", "Promotion evidence must be an exact user_requirement substring", "INVALID_LOCAL_PROMOTION"))
+        elif promotion_evidence is not None:
+            errors.append(issue(f"$.reference_application.style[{index}].promotion_evidence", "Non-promoted traits must use null promotion_evidence", "INVALID_LOCAL_PROMOTION"))
+        if actual[1] == "local" and decision.get("disposition") in ("adopted", "conditionally_adopted", "overridden_by_user"):
+            scope = decision.get("target_scope", [])
+            if not promoted and (len(scope) != 1 or scope[0] not in components):
+                errors.append(issue(f"$.reference_application.style[{index}].target_scope", "Adopted local trait must stay on exactly one existing component unless explicitly promoted by the user", "LOCAL_TRAIT_SCOPE_VIOLATION"))
+
+    for index, directive in enumerate(data.get("visual_direction", {}).get("directives", [])):
         if not isinstance(directive, dict):
             continue
         sources = directive.get("source_trait_ids", [])
         if not directive.get("user_override") and not sources:
-            errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", "Non-user directive must cite at least one B2 trait", "MISSING_STYLE_TRACE"))
-        for trait_id in sources if isinstance(sources, list) else []:
-            if trait_id not in known_traits:
-                errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", f"Unknown style trait: {trait_id}", "UNKNOWN_STYLE_TRAIT"))
-
-    constraints = data.get("generation_constraints", {})
-    if isinstance(constraints, dict):
-        for index, exact in enumerate(constraints.get("exact_counts", [])):
-            if not isinstance(exact, dict):
+            errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", "Non-user directive must cite at least one B trait", "MISSING_STYLE_TRACE"))
+        for trait_id in sources:
+            decision = decisions.get(trait_id)
+            if decision is None:
+                errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", f"Unknown style decision: {trait_id}", "UNKNOWN_STYLE_TRAIT"))
                 continue
-            component = component_map.get(exact.get("component_id"))
-            if component is None:
-                errors.append(issue(f"$.generation_constraints.exact_counts[{index}].component_id", "Unknown component_id", "UNKNOWN_COMPONENT"))
-                continue
-            actual = component.get("repeat", {}).get("count", 1) if isinstance(component.get("repeat"), dict) else 1
-            if exact.get("count") != actual:
-                errors.append(issue(f"$.generation_constraints.exact_counts[{index}].count", f"Count does not match component repeat count {actual}", "COUNT_MISMATCH"))
-        for index, component_id in enumerate(constraints.get("focal_hierarchy", [])):
-            if component_id not in component_map:
-                errors.append(issue(f"$.generation_constraints.focal_hierarchy[{index}]", "Unknown focal component", "UNKNOWN_COMPONENT"))
-
+            if decision.get("disposition") in ("ignored", "rejected_due_to_conflict"):
+                errors.append(issue(f"$.visual_direction.directives[{index}].source_trait_ids", f"Directive uses non-adopted trait: {trait_id}", "NON_ADOPTED_STYLE_TRAIT"))
+            actual = b_traits.get(trait_id)
+            if actual and actual[1] == "local" and not decision.get("promoted_by_user_requirement"):
+                if not set(directive.get("target_scope", [])).issubset(set(decision.get("target_scope", []))):
+                    errors.append(issue(f"$.visual_direction.directives[{index}].target_scope", f"Directive globalizes local trait: {trait_id}", "LOCAL_TRAIT_SCOPE_VIOLATION"))
     return errors
 
 
@@ -175,26 +364,37 @@ def deduplicate(items: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
-def validate_document(data: Any) -> tuple[list[dict[str, str]], str, bool, str | None]:
+def validate_document(data: Any, input_data: Any | None = None) -> tuple[list[dict[str, str]], str, bool, str | None]:
     schema = load_json(SCHEMA_PATH)
     contract_errors, mode, full, notice = schema_errors(data, schema)
-    return deduplicate([*contract_errors, *semantic_errors(data)]), mode, full, notice
+    if not isinstance(data, dict):
+        return deduplicate(contract_errors), mode, full, notice
+    errors = [*contract_errors, *base_semantic_errors(data), *requirement_errors(data)]
+    if isinstance(input_data, dict):
+        errors.extend(traceability_errors(data, input_data))
+        plan_requirement = data.get("project_context", {}).get("user_requirement")
+        input_requirement = input_data.get("request", {}).get("user_requirement")
+        if plan_requirement != input_requirement:
+            errors.append(issue("$.project_context.user_requirement", "Plan must copy input request.user_requirement exactly", "USER_REQUIREMENT_MISMATCH"))
+    return deduplicate(errors), mode, full, notice
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
-        print(json.dumps({"status": "error", "errors": [issue("$", "Usage: python scripts/validate_plan.py <plan.json>", "USAGE_ERROR")]}, indent=2))
-        return 1
-    path = Path(sys.argv[1])
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("plan", type=Path)
+    parser.add_argument("--input", type=Path, help="Composer input for strict A/B and requirement cross-validation")
+    args = parser.parse_args()
     try:
-        data = load_json(path)
-        errors, mode, full, notice = validate_document(data)
+        data = load_json(args.plan)
+        input_data = load_json(args.input) if args.input else None
+        errors, mode, full, notice = validate_document(data, input_data)
     except (OSError, json.JSONDecodeError) as exc:
         print(json.dumps({"status": "error", "errors": [issue("$", str(exc), "JSON_READ_ERROR")]}, ensure_ascii=False, indent=2))
         return 2
     validator: dict[str, Any] = {"mode": mode, "full_draft_2020_12": full}
     if notice:
         validator["notice"] = notice
+    codes = {item["code"] for item in errors}
     result = {
         "status": "valid" if not errors else "error",
         "validator": validator,
@@ -203,6 +403,11 @@ def main() -> int:
             "schema_version": data.get("schema_version") if isinstance(data, dict) else None,
             "page_count": len(data.get("pages", [])) if isinstance(data, dict) and isinstance(data.get("pages"), list) else 0,
             "component_count": len(data.get("component_tree", [])) if isinstance(data, dict) and isinstance(data.get("component_tree"), list) else 0,
+            "input_cross_validation": input_data is not None,
+            "traceability_passed": input_data is not None and not codes.intersection({"UNKNOWN_A_SOURCE_ID", "UNKNOWN_B_TRAIT_ID", "B_TRAIT_CLASSIFICATION_MISMATCH"}),
+            "requirement_preservation_passed": not any(code.startswith("REQUIREMENT_") or code in {"SEMANTIC_DRIFT", "USER_REQUIREMENT_MISMATCH"} for code in codes),
+            "cross_section_consistency_passed": not any(code.startswith("CROSS_SECTION_") or code == "GRID_COUNT_MISMATCH" for code in codes),
+            "local_scope_passed": "LOCAL_TRAIT_SCOPE_VIOLATION" not in codes,
         },
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))

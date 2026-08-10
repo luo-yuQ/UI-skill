@@ -1,10 +1,10 @@
 {
-  "schema_version": "2.0",
+  "schema_version": "2.1",
   "request": {
-    "user_requirement": "Design a single-page guild commission board. Put exactly three commission categories on the left, show exactly eight commission cards in a two-row grid in the center, keep selected commission details and an Accept Commission primary action on the right, and add a Refresh button. Do not reuse the reference shop copy, products, prices, characters, or castle/battle narrative.",
-    "project_name": "Guild Ledger",
-    "game_context": "A cooperative dark-fantasy RPG where guild members review and accept timed commissions.",
-    "page_context": "guild commission board",
+    "user_requirement": "我想做一个暗黑幻想风格的公会商店页面。\n左侧有三个分类：\n普通、公会限定、每周兑换。\n\n右侧显示 6 个商品，\n按 2 列 3 行排列。\n\n顶部显示金币和公会币。\n\n底部有一个刷新按钮。\n\n整体信息层级要清楚，\n主要面板和按钮边界尽量独立，\n方便后续切图。",
+    "project_name": "Dark Fantasy Guild Shop",
+    "game_context": "A dark-fantasy game with a guild shop using gold and guild currency.",
+    "page_context": "guild shop",
     "orientation": "landscape",
     "target_resolution": {
       "width": 1920,
@@ -12,13 +12,13 @@
       "unit": "px"
     },
     "constraints": [
-      "Keep all functional text readable at 1920x1080.",
-      "Do not add pages or navigation not requested.",
-      "Use reference evidence as structure and style guidance, not as target content."
+      "Do not add pages, business flows, or navigation not requested.",
+      "Keep major panel and button boundaries independently separable for later cutout.",
+      "Use A as layout evidence and B as style evidence without mutating either source."
     ],
     "visual_preferences": [
       "Use the reliable cold dark-fantasy language from B2.",
-      "Keep the Accept Commission action visually isolated from Refresh."
+      "Keep information hierarchy clear."
     ]
   },
   "layout_reference_analysis": {

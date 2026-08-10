@@ -1,136 +1,207 @@
 ---
 name: game-ui-auto-composer-skill
-description: Synthesize one new engine-neutral game UI design intent from an authoritative A layout-reference final analysis, an authoritative B2 style profile, and an ordinary-language user requirement. Use when the caller supplies a JSON object conforming to schemas/ui-compose-input.schema.json and needs a traceable ui-compose-plan v2 covering reference application, target visual direction, new page/component hierarchy, layout intent, interactions, navigation, generation constraints, assumptions, and warnings.
+description: Synthesize one new engine-neutral game UI design intent from an immutable authoritative A layout-reference final analysis, an immutable authoritative B2 style profile, and an ordinary-language user requirement. Use when the caller supplies schemas/ui-compose-input.schema.json v2.1 and needs a strictly requirement-preserving, traceable ui-compose-plan v2.1.
 ---
 
-# Game UI Auto Composer v2
+# Game UI Auto Composer v2.1
 
-Consume layout structure as reference, visual style as evidence, and the user's target requirement as authority. Design a new UI instead of reconstructing either reference.
+Create a new UI design intent. The user defines the target; A is layout evidence; B is classified style evidence. Composer does not reconstruct a reference and does not make examples into requirements.
 
 ## Required resources
 
 Treat these files as authoritative:
 
-- `schemas/ui-compose-input.schema.json` — Composer v2 input contract; directly references the upstream A and B schemas.
-- `schemas/ui-compose-plan.schema.json` — Composer v2 output contract.
-- `references/input-schema.md` — authority and input usage rules.
+- `schemas/ui-compose-input.schema.json` — v2.1 input contract referencing the real A/B schemas.
+- `schemas/ui-compose-plan.schema.json` — v2.1 output contract.
+- `references/input-schema.md` — input authority and immutability.
 - `references/output-schema.md` — output responsibilities.
-- `references/workflow.md` — ordered synthesis workflow and stop conditions.
-- `references/examples/example-ui-compose-input.json` — complete valid input using real A final and B2 examples.
-- `references/examples/example-ui-compose-plan.json` — complete valid new-design output.
+- `references/workflow.md` — the strict 18-step workflow.
+- `references/examples/example-ui-compose-input.json` — complete fixture with unchanged A/B.
+- `references/examples/example-ui-compose-plan.json` — schema-shape and regression fixture only.
+
+Examples demonstrate schema shape only. Never inherit their numbers, page semantics, component IDs, hierarchy, actions, or copy into another run.
 
 ## Hard boundary
 
-Do not:
+Do not inspect raw images, reopen A/B source art, redo multimodal analysis, generate images or prompts, implement engine code, cut assets, or run Preview Adapter/GPT Image behavior as part of Composer core.
 
-- accept or inspect raw images;
-- reopen or reinterpret A's screenshot or B's source art;
-- use multimodal analysis to override A or B;
-- generate images, GPT Image prompts, HTML/CSS, FairyGUI XML, implementation code, or engine-specific fields;
-- cut assets or verify that source images exist;
-- copy reference business content, text, characters, rewards, events, or page theme into the target by default;
-- treat A or B as a target asset library.
+Never:
 
-Do:
+- change an explicit user count;
+- replace or rename the requested page or business type;
+- invent an A `source_id` or B `trait_id`;
+- mutate, normalize, summarize in place, or reinterpret upstream A/B JSON or confidence;
+- promote a local B trait to global scope without an explicit matching user requirement;
+- let `generation_constraints` introduce a new requirement;
+- treat examples as target content;
+- rename user business semantics merely to make a design feel more complete.
 
-- interpret the user's target page and business goal;
-- select, adapt, ignore, or reject A layout principles;
-- select B2 traits according to their classification and target relevance;
-- design a new page hierarchy, component tree, layout intent, visual direction, interaction intent, and navigation intent;
-- emit structured constraints for a future image-generation stage without compiling a prompt;
-- trace which decisions came from the user, A, or B and record adaptations, assumptions, conflicts, and risks.
-
-## Input contract
+## Input contract and immutability
 
 Accept exactly one JSON object conforming to `schemas/ui-compose-input.schema.json`:
 
 ```text
-schema_version: 2.0
+schema_version: 2.1
 request
 layout_reference_analysis
 style_profile
 ```
 
-Require non-whitespace `request.user_requirement`. Allow optional project, game, page, orientation, resolution, constraint, and visual-preference context without requiring the user to write a professional UI specification.
+Require non-whitespace `request.user_requirement` plus the complete A final object and complete B2 object. Reject legacy `pics`, top-level `assets`, invalid schemas, and unexpected fields.
 
-Require the complete A final object and complete B2 object. Resolve their `$ref` contracts to the adjacent upstream Skills; never replace either with a private summary schema.
+A and B are immutable evidence. When original upstream files are available, validate JSON deep equality before composing:
 
-Reject and stop on:
+```powershell
+python scripts/validate_input.py <input.json> `
+  --layout-source <original-a.json> `
+  --style-source <original-b2.json>
+```
 
-- invalid Composer, A, or B schema;
-- missing or empty `user_requirement`;
-- legacy `pics` anywhere;
-- legacy top-level `assets`;
-- unexpected fields under strict objects.
+JSON numeric equivalents such as `0` and `0.0` compare equal. Every mismatch reports its exact JSON path and stops composition. Never edit A/B to make validation pass.
 
-Use `python scripts/validate_input.py <input.json>`. Do not partially compose or automatically repair invalid A/B objects.
+## Authority and conflict priority
 
-## Authority model
+Apply this priority without exception:
 
-### User authority
+```text
+Explicit User Requirement
+> Derived User Intent
+> A Layout Reference
+> B Style Evidence
+> Composer Assumptions
+```
 
-Treat the user requirement as authoritative for what to design: business purpose, target page type, required content and text semantics, component counts, specified interactions, requested layout changes, requested visual changes, orientation, and resolution.
+Explicit user authority includes page/business semantics, content, names, counts, grid dimensions, required information, element positions, actions, layout changes, and visual changes. Derived intent may fill only low-risk gaps and may not override an explicit fact.
 
-### A authority
+A governs only portable layout evidence: regions, hierarchy, adjacency, containment, proportions, grouping, repetition, alignment, and layout focal order. B governs only classified visual evidence. Assumptions are last and cannot alter user facts.
 
-Treat `layout_reference_analysis` as evidence for how the reference UI is organized: regions, hierarchy, spatial relationships, proportions, alignment, grouping, repetition, and layout-related focal structure. It is not target business content.
+## Hard-requirement ledger
 
-Prefer portable relations such as left of, below, inside, centered within, aligned with, dominant region, repeated horizontally, or repeated as a grid. Recalculate them for target content, count, orientation, resolution, and page meaning. Do not copy reference pixels.
+Before designing, extract explicit facts into `project_context.hard_requirements`:
 
-Record every material A decision in `reference_application.layout` as `adopted`, `adapted`, `ignored`, or `rejected`, retaining stable source IDs.
+- `page_semantic`
+- `explicit_counts`
+- `grid_requirements`
+- `required_elements`
+- `must_include`
+- `must_not_include`
 
-### B authority
+Every evidence field must be an exact substring of `user_requirement`. Counts and grid dimensions must use target component IDs that later exist. This ledger is the preservation baseline, not a summary that may be reinterpreted.
 
-Treat `style_profile` as evidence for the target visual language: color, material, shape, rendering, lighting, decoration, surface treatment, and world visual cues. It is not layout authority or target content.
+Maintain an internal facts ledger as well:
 
-Record every material B decision in `reference_application.style`, retaining `trait_id`, dimension, classification, disposition, scope, application, and rationale.
+```text
+USER_FACTS
+LAYOUT_FACTS
+STYLE_FACTS
+DERIVED_DECISIONS
+```
 
-## Conflict priority
+Never allow A, B, or an example to overwrite `USER_FACTS`.
 
-Apply these rules in order:
+## A traceability
 
-1. Let explicit user requirements override A counts, content, page semantics, and layout changes. Preserve useful A organization only after adapting it.
-2. Let explicit user visual requirements override B and record the deviation.
-3. Use reliable B evidence when the user has not overridden it.
-4. Let A govern formal layout relationships. Treat composition-like B traits only as weak visual tendencies that cannot override A.
-5. Never use assumptions to override the user.
+Record every material A decision in `reference_application.layout` as adopted, adapted, ignored, or rejected.
 
-Inherit structure, not literal content or count.
+For every `source_ids[]` entry:
 
-## B2 classification handling
+1. select the allowed ID set by `source_kind`;
+2. verify the ID exists in the input A object;
+3. fail output validation with `UNKNOWN_A_SOURCE_ID` if it does not.
 
-- `stable`: adopt by default when relevant and not contradicted by the user.
-- `secondary`: adopt only when relevant to the target page; never promote automatically to a global rule.
-- `local`: adopt only for a semantically matching target component or scope; never globalize it.
-- `conflicting`: do not silently choose a side. Ignore it or expose the unresolved choice in warnings/assumptions when material.
-- `uncertain`: do not convert it into a hard fact or target narrative. Ignore it or record a low-confidence assumption/warning.
+Do not accept plausible-looking IDs. Do not use a source ID from the wrong A entity kind.
 
-## Prevent reference semantic leakage
+## B classification and scope
 
-Reference visual semantics are not user requirements.
+Record each material B decision with the original `trait_id`, dimension, classification, disposition, target scope, application, promotion flag/evidence, and rationale. The declared dimension/classification must match B exactly.
 
-Do not add a castle, battle, reward, character, original title, original copy, currency shape, or reference-specific red panel merely because it occurs in A or B. Transfer only the applicable layout or visual-language abstraction. Respect A `excluded_content` and B provenance/classification.
+- `stable`: adopt when relevant and unopposed.
+- `secondary`: adopt only when relevant and scoped; never auto-promote.
+- `local`: ignore unless semantically useful. If adopted without explicit promotion, scope it to exactly one matching existing component.
+- `conflicting`: reject or leave unresolved; never silently choose.
+- `uncertain`: ignore or warn; never turn it into a hard fact.
+- `promoted_by_user_requirement: true`: allowed only when `promotion_evidence` is an exact user-requirement substring.
 
-## Design synthesis workflow
+Every visual directive trait must exist in B, have a recorded adopted decision, and respect the decision scope.
 
-1. Validate the complete v2 input and stop on failure.
-2. Interpret the user's target before selecting reference material.
-3. Extract applicable layout principles from A.
-4. Select applicable visual traits from B by classification and semantic scope.
-5. Resolve user/A/B conflicts and prevent semantic leakage.
-6. Design a new page scope and component hierarchy from the target requirement.
-7. Adapt A relationships to target content, counts, orientation, and resolution.
-8. Derive a target-specific visual direction from selected B traits plus explicit user visual choices.
-9. Define only necessary engine-neutral interactions and navigation.
-10. Define structured generation constraints for downstream visual production.
-11. Record reference application, assumptions, and warnings.
-12. Validate and return exactly one `ui-compose-plan` v2 JSON object.
+## Semantic preservation
 
-Do not start by copying A and filling it with user content.
+The final `pages[].page_type` must equal the hard ledger page semantic. Business vocabulary and actions absent from the user requirement must not appear as target content. A source semantics, examples, and “design completion” cannot replace a shop with another business flow or invent an unrequested primary action.
+
+A semantic drift check covers `design_summary`, `pages`, `component_tree`, `interactions`, and `generation_constraints`. On drift, fail instead of returning a polished but different page.
+
+## Component, layout, and interaction rules
+
+Build a new target component tree; do not mechanically rename A. Preserve explicit counts in `component_tree.repeat.count`. For grids, record `columns` and `rows`, and require:
+
+```text
+count == columns * rows
+```
+
+Use normalized engine-neutral layout rules. Required position facts must resolve to compatible anchors. Required actions must have a matching trigger component and interaction action. Add only necessary behavior and allow empty navigation for a single page.
+
+## Generation constraints
+
+`generation_constraints` is derived only from:
+
+```text
+explicit user requirements
++ final component_tree
++ final layout_rules
++ approved A/B decisions
+```
+
+It is a constraint summary, not a second design stage and not a GPT Image prompt. It must never introduce a new component, count, semantic, action, style fact, or prohibition.
+
+Record exact counts, grid specs, key zones, focal hierarchy, separability, overlap, readability, clean boundaries, cutout suitability, and reference-fidelity limits.
+
+## Strict 18-step workflow
+
+1. Validate immutable A/B inputs.
+2. Parse explicit user requirements.
+3. Build the hard-requirement ledger.
+4. Identify user target semantics.
+5. Read A as layout evidence.
+6. Read B as style evidence.
+7. Select applicable A references.
+8. Select B traits according to classification and scope.
+9. Create the new component tree.
+10. Adapt layout.
+11. Derive target visual direction.
+12. Create only required interactions.
+13. Derive generation constraints.
+14. Run requirement preservation checks.
+15. Run semantic drift checks.
+16. Run A/B traceability validation.
+17. Run cross-section consistency checks.
+18. Return exactly one valid JSON object.
+
+## Cross-section consistency
+
+These sections must agree:
+
+```text
+design_summary
+component_tree
+layout_rules
+interactions
+generation_constraints
+reference_application
+```
+
+Check at least product/item count, category count, grid rows/columns, page semantic, required positions, and bottom action. A fact cannot be 6 in one section and 8 in another. A refresh action cannot become a different business action.
+
+Run strict cross-validation:
+
+```powershell
+python scripts/validate_plan.py <plan.json> --input <input.json>
+```
+
+Stop on any schema, requirement, semantic, traceability, local-scope, or consistency error.
 
 ## Output contract
 
-Return exactly one object conforming to `schemas/ui-compose-plan.schema.json` with these fields:
+Return exactly one `schemas/ui-compose-plan.schema.json` v2.1 object with the existing v2 top-level structure:
 
 - `schema_version`
 - `project_context`
@@ -146,39 +217,8 @@ Return exactly one object conforming to `schemas/ui-compose-plan.schema.json` wi
 - `assumptions`
 - `warnings`
 
-Do not emit v1 `asset_usages` or `missing_assets`. A and B are reference evidence, not final target assets.
-
-Build `component_tree` for the new target UI. Do not merely rename A IDs. Keep layout rules normalized, relational, safe-area-aware, content-adaptive, and engine-neutral.
-
-Use `python scripts/validate_plan.py <plan.json>` when local execution is available.
-
-Use `generation_constraints` to state must-include and must-not-include rules, exact counts, content zones, focal hierarchy, separability, overlap, readability, clean-boundary, cutout-friendly, and reference-fidelity constraints. Do not write a full image-generation prompt.
-
-When only one page is requested, allow empty `navigation` and include only necessary interactions. Never add default home, result, gameplay, or other template pages without user justification.
-
-## Validation failure
-
-Return only a structured error and stop:
-
-```json
-{
-  "status": "error",
-  "error_code": "INPUT_VALIDATION_FAILED",
-  "errors": [
-    {
-      "path": "$.style_profile.schema_version",
-      "message": "Expected constant value '0.1'",
-      "code": "CONST_MISMATCH"
-    }
-  ],
-  "warnings": []
-}
-```
-
-## Legacy resources
-
-Treat `asset-analysis.schema.json`, `asset-analysis.example.json`, `assets/samples`, asset classifiers, old templates, engine-compatibility notes, and preview/prototype adapters as legacy or downstream material. They are not part of the Composer v2 core contract and must not override it.
+Do not emit v1 `asset_usages` or `missing_assets`. Do not emit downstream adapter output.
 
 ## Final rule
 
-Consume structure as reference, consume style as evidence, obey the user's target intent, and design a new UI rather than reconstructing either reference.
+Obey the user first, preserve explicit facts exactly, use only real A/B evidence, and fail validation rather than silently designing a different UI.

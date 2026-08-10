@@ -1,9 +1,10 @@
 #!/usr/bin/env python3
-"""Validate Composer v2 input against its contract and authoritative A/B schemas."""
+"""Validate Composer v2.1 input and prove embedded A/B payload immutability."""
 
 from __future__ import annotations
 
 import json
+import argparse
 import re
 import sys
 from pathlib import Path
@@ -40,6 +41,7 @@ def emit(
     warnings: list[dict[str, str]],
     data: Any = None,
     notice: str | None = None,
+    upstream_integrity_checked: bool = False,
 ) -> None:
     validator_info: dict[str, Any] = {
         "mode": mode,
@@ -59,6 +61,10 @@ def emit(
             "composer_schema_version": data.get("schema_version") if isinstance(data, dict) else None,
             "layout_analysis_id": layout.get("analysis_id") if isinstance(layout, dict) else None,
             "style_profile_id": style.get("profile_id") if isinstance(style, dict) else None,
+            "upstream_integrity_checked": upstream_integrity_checked,
+            "upstream_integrity_passed": upstream_integrity_checked and not any(
+                item.get("code") == "UPSTREAM_INTEGRITY_MISMATCH" for item in errors
+            ),
         },
     }
     print(json.dumps(result, ensure_ascii=False, indent=2))
@@ -309,6 +315,67 @@ def semantic_checks(data: Any) -> list[dict[str, str]]:
     return errors
 
 
+def json_value_equal(left: Any, right: Any) -> bool:
+    """JSON value equality: booleans stay distinct, numeric 0 and 0.0 are equal."""
+
+    if isinstance(left, bool) or isinstance(right, bool):
+        return type(left) is type(right) and left == right
+    if isinstance(left, (int, float)) and isinstance(right, (int, float)):
+        return left == right
+    return type(left) is type(right) and left == right
+
+
+def deep_diff(actual: Any, expected: Any, path: str) -> list[dict[str, str]]:
+    """Return deterministic leaf-level JSON path diffs."""
+
+    errors: list[dict[str, str]] = []
+    if isinstance(actual, dict) and isinstance(expected, dict):
+        for key in sorted(set(actual) | set(expected)):
+            child_path = f"{path}.{key}"
+            if key not in actual:
+                errors.append(issue(child_path, "Embedded upstream value is missing", "UPSTREAM_INTEGRITY_MISMATCH"))
+            elif key not in expected:
+                errors.append(issue(child_path, "Embedded upstream value was added", "UPSTREAM_INTEGRITY_MISMATCH"))
+            else:
+                errors.extend(deep_diff(actual[key], expected[key], child_path))
+        return errors
+    if isinstance(actual, list) and isinstance(expected, list):
+        limit = max(len(actual), len(expected))
+        for index in range(limit):
+            child_path = f"{path}[{index}]"
+            if index >= len(actual):
+                errors.append(issue(child_path, "Embedded upstream array item is missing", "UPSTREAM_INTEGRITY_MISMATCH"))
+            elif index >= len(expected):
+                errors.append(issue(child_path, "Embedded upstream array item was added", "UPSTREAM_INTEGRITY_MISMATCH"))
+            else:
+                errors.extend(deep_diff(actual[index], expected[index], child_path))
+        return errors
+    if not json_value_equal(actual, expected):
+        errors.append(
+            issue(
+                path,
+                f"Embedded upstream value changed: expected {expected!r}, got {actual!r}",
+                "UPSTREAM_INTEGRITY_MISMATCH",
+            )
+        )
+    return errors
+
+
+def upstream_integrity_errors(
+    data: Any,
+    layout_source: Any | None,
+    style_source: Any | None,
+) -> list[dict[str, str]]:
+    if not isinstance(data, dict):
+        return []
+    errors: list[dict[str, str]] = []
+    if layout_source is not None:
+        errors.extend(deep_diff(data.get("layout_reference_analysis"), layout_source, "$.layout_reference_analysis"))
+    if style_source is not None:
+        errors.extend(deep_diff(data.get("style_profile"), style_source, "$.style_profile"))
+    return errors
+
+
 def recommendation_warnings(data: Any) -> list[dict[str, str]]:
     warnings: list[dict[str, str]] = []
     request = data.get("request") if isinstance(data, dict) else None
@@ -331,7 +398,11 @@ def deduplicate(items: list[dict[str, str]]) -> list[dict[str, str]]:
     return result
 
 
-def validate_document(data: Any) -> tuple[list[dict[str, str]], list[dict[str, str]], str, bool, str | None]:
+def validate_document(
+    data: Any,
+    layout_source: Any | None = None,
+    style_source: Any | None = None,
+) -> tuple[list[dict[str, str]], list[dict[str, str]], str, bool, str | None]:
     input_schema, upstream = load_contracts()
     available, schema_errors, setup_error = validate_with_jsonschema(data, input_schema, upstream)
     if setup_error:
@@ -349,22 +420,30 @@ def validate_document(data: Any) -> tuple[list[dict[str, str]], list[dict[str, s
             "it is not a general-purpose Draft 2020-12 implementation."
         )
         schema_errors = LimitedLocalValidator(input_schema, upstream).validate(data)
-    errors = deduplicate([*schema_errors, *legacy_errors(data), *semantic_checks(data)])
+    errors = deduplicate([
+        *schema_errors,
+        *legacy_errors(data),
+        *semantic_checks(data),
+        *upstream_integrity_errors(data, layout_source, style_source),
+    ])
     return errors, recommendation_warnings(data), mode, full, notice
 
 
 def main() -> int:
-    if len(sys.argv) != 2:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("input", type=Path)
+    parser.add_argument("--layout-source", type=Path)
+    parser.add_argument("--style-source", type=Path)
+    args = parser.parse_args()
+    if (args.layout_source is None) != (args.style_source is None):
         emit(
-            status="error",
-            mode="not_started",
-            full_draft_validation=False,
-            errors=[issue("$", "Usage: python scripts/validate_input.py <input.json>", "USAGE_ERROR")],
+            status="error", mode="not_started", full_draft_validation=False,
+            errors=[issue("$", "--layout-source and --style-source must be supplied together", "USAGE_ERROR")],
             warnings=[],
         )
         return 1
 
-    input_path = Path(sys.argv[1])
+    input_path = args.input
     if not input_path.is_file():
         emit(
             status="error",
@@ -377,7 +456,9 @@ def main() -> int:
 
     try:
         data = load_json(input_path)
-        errors, warnings, mode, full, notice = validate_document(data)
+        layout_source = load_json(args.layout_source) if args.layout_source else None
+        style_source = load_json(args.style_source) if args.style_source else None
+        errors, warnings, mode, full, notice = validate_document(data, layout_source, style_source)
     except (OSError, json.JSONDecodeError, KeyError) as exc:
         emit(
             status="error",
@@ -396,6 +477,7 @@ def main() -> int:
         warnings=warnings,
         data=data,
         notice=notice,
+        upstream_integrity_checked=args.layout_source is not None,
     )
     return 0 if not errors else 2
 

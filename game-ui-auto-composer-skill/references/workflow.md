@@ -1,88 +1,98 @@
-# Composer v2 Workflow
+# Composer v2.1 Strict Workflow
 
 ## Contract boundary
 
-Input:
+Input is one valid `ui-compose-input` v2.1 object containing an ordinary-language user requirement plus immutable complete A final and B2 objects. Output is one valid `ui-compose-plan` v2.1 object. Raw images, legacy asset placement, previews, and implementation are outside Composer core.
 
-- one valid `ui-compose-input` v2 object;
-- one ordinary-language user requirement;
-- one complete authoritative A final analysis;
-- one complete authoritative B2 style profile.
-
-Output:
-
-- one valid `ui-compose-plan` v2 object expressing a new UI design intent.
-
-No raw-image, legacy asset-placement, or alternate successful core mode exists.
-
-## Step 1: Validate v2 input
-
-Resolve and validate the Composer, A, and B schemas. Reject `pics`, top-level `assets`, empty user requirements, and unexpected fields. Stop on any error; never partially compose or repair upstream evidence.
-
-## Step 2: Interpret the user target
-
-Establish what is being designed: target business goal, page scope, content semantics, exact counts, requested interactions, requested changes, orientation, resolution, constraints, and explicit visual preferences.
-
-Create the target model before selecting reference material.
-
-## Step 3: Extract applicable A principles
-
-Review A regions, relationships, groups, hierarchy, rules, excluded content, and uncertainty. Select portable organization such as grouping, adjacency, containment, alignment, proportions, repetition, focal order, and action placement.
-
-Do not copy reference text, theme, item identity, character identity, event meaning, exact pixel coordinates, or irrelevant components.
-
-## Step 4: Select applicable B traits
-
-Index B traits by dimension and classification. Prefer relevant `stable`; condition relevant `secondary`; scope `local` narrowly; do not silently choose `conflicting`; do not turn `uncertain` into fact.
-
-## Step 5: Resolve authority and scope
-
-Apply the priority:
+## Authority
 
 ```text
-explicit user target > A for target content/count/change
-explicit user visual request > B
-A > B for formal layout
-reliable unoverridden B > unsupported style invention
+Explicit User Requirement
+> Derived User Intent
+> A Layout Reference
+> B Style Evidence
+> Composer Assumptions
 ```
 
-Prevent A/B reference semantics from leaking into target content.
+No lower source may alter a higher-source fact.
 
-## Step 6: Design new pages and components
+## Step 1: Validate immutable A/B inputs
 
-Create only user-justified pages. Build a new target component hierarchy that satisfies target content and interactions. Add low-risk structural components only when required for completeness and record the assumption.
+Validate all three schemas. Reject legacy fields and compare embedded A/B with their original JSON values when source paths are available. Stop on any path mismatch.
 
-## Step 7: Adapt layout
+## Step 2: Parse explicit user requirements
 
-Map useful A relations onto the new tree. Recalculate for target counts, semantics, orientation, resolution, and safe area. Prefer normalized and relational intent over copied coordinates.
+Extract the requested business/page type, named content, counts, grid dimensions, information, positions, actions, layout changes, and visual changes.
 
-## Step 8: Derive target visual direction
+## Step 3: Build the hard-requirement ledger
 
-Convert selected B evidence and explicit user visual changes into page-specific directives. Preserve trait traceability. Do not copy the B profile wholesale or invent unsupported treatment.
+Write `project_context.hard_requirements`. Each evidence string must occur verbatim in `user_requirement`.
 
-## Step 9: Define behavior
+## Step 4: Identify user target semantics
 
-Add only necessary interactions, state changes, feedback, and page navigation. Allow empty navigation for a single-page requirement. Keep behavior engine-neutral.
+Set the page semantic before consulting A, B, or examples. Never rename it for design completeness.
 
-## Step 10: Define generation constraints
+## Step 5: Read A as layout evidence
 
-Record exact counts, required and forbidden content, content zones, focal order, separability, overlap, readability, clean boundaries, cutout suitability, and reference-fidelity limits. Do not compile a prompt.
+Read only A's regions, relationships, groups, hierarchy, layout rules, excluded content, and uncertainty. Do not import its business content.
 
-## Step 11: Record decisions and risk
+## Step 6: Read B as style evidence
 
-Complete `reference_application` for adopted, adapted, ignored, and rejected A principles and for material B trait decisions. Record low-risk gaps as assumptions and material conflicts or uncertainty as warnings.
+Index traits by real `trait_id`, dimension, and classification. Preserve every confidence and classification without reinterpretation.
 
-## Step 12: Validate and return
+## Step 7: Select applicable A references
 
-Validate the completed object against `schemas/ui-compose-plan.schema.json`. Return exactly one JSON object with no surrounding prose or downstream adapter output.
+Adopt, adapt, ignore, or reject. Every cited source ID must exist in the matching A entity collection.
 
-## Review gates
+## Step 8: Select B traits by classification and scope
 
-- User counts and explicit requirements win over reference counts.
-- Component IDs and semantics describe the target, not renamed A objects.
-- Every adopted style directive is traceable to B or an explicit user override.
-- Local traits are not globalized.
-- Conflicting and uncertain traits are not hard requirements.
-- Reference-specific narrative and business content do not appear without user authorization.
-- Generation constraints express structure, not a full prompt.
-- No v1 `asset_usages`, `missing_assets`, or engine-specific fields remain.
+Use relevant stable traits; scope secondary traits; keep local traits on one matching component unless explicitly promoted; do not resolve conflicting or uncertain evidence by assumption.
+
+## Step 9: Create the new component tree
+
+Build target-semantic components. Copy every explicit count into repeat specifications. Grid count must equal columns multiplied by rows.
+
+## Step 10: Adapt layout
+
+Map only selected A relationships. Make required left/right/top/bottom facts machine-checkable through target layout anchors.
+
+## Step 11: Derive visual direction
+
+Use adopted B decisions and explicit user visual choices only. Directive trait IDs must exist, be adopted, and stay within scope.
+
+## Step 12: Create interactions
+
+Add only required or strictly necessary engine-neutral behavior. A requested refresh remains refresh; do not invent another business action.
+
+## Step 13: Derive generation constraints
+
+Derive them from user facts, the final tree/rules, and approved A/B decisions. They are not a new design stage or prompt.
+
+## Step 14: Requirement preservation check
+
+Check page semantic, every explicit count, grid, required element, position, information item, and action against the hard ledger.
+
+## Step 15: Semantic drift check
+
+Check target summary, pages, components, interactions, and constraints for business semantics absent from the user requirement.
+
+## Step 16: Traceability validation
+
+Verify all A `source_ids`, all B `trait_id` values, B classifications, decision scopes, and directive sources against the actual input objects.
+
+## Step 17: Cross-section consistency check
+
+Reconcile important facts across `design_summary`, `component_tree`, `layout_rules`, `interactions`, `generation_constraints`, and `reference_application`.
+
+## Step 18: Return JSON
+
+Return exactly one v2.1 plan and no adapter output.
+
+## Commands
+
+```powershell
+python scripts/validate_input.py <input.json> --layout-source <a.json> --style-source <b2.json>
+python scripts/validate_plan.py <plan.json> --input <input.json>
+```
+
+Examples show schema shape only and never supply target requirements.
