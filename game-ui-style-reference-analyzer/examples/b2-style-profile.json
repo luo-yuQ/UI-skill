@@ -73,8 +73,8 @@
           "trait_id": "material_heavy_matte_bases",
           "trait": "heavy matte base surfaces",
           "classification": "secondary",
-          "description": "Matte black iron, dark stone, and dark panel fields recur, but their physical identity varies by reference kind.",
-          "supporting_references": ["knight_character_01", "castle_environment_01", "existing_ui_panel_01"],
+          "description": "Heavy matte black iron and dark stone recur across the character and environment references.",
+          "supporting_references": ["knight_character_01", "castle_environment_01"],
           "contradicting_references": [],
           "confidence": 0.78
         }

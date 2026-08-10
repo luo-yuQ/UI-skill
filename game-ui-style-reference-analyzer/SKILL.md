@@ -37,11 +37,14 @@ Consume two to six valid B1 v0.2 JSON results. Do not open the source images, re
 
 1. Validate all B1 inputs and require unique `asset_id` values.
 2. Aggregate evidence by color, material, shape, rendering, lighting, decoration, and world/theme.
-3. Normalize wording variants conservatively without rewriting B1 meaning.
-4. Classify traits as `stable`, `secondary`, `local`, `conflicting`, or `uncertain` using frequency, reference diversity, source confidence, content specificity, consistency, conflict, and explicit user group context.
-5. Preserve `supporting_references`, counterevidence, conflicts, uncertainties, and source confidence.
-6. Build `overall_visual_identity`, `cross_dimension_summary`, and `overall_confidence` from traceable evidence.
-7. Emit one object conforming to `schemas/style-profile.schema.json` and validate it with `scripts/validate_style_profile.py`.
+3. Normalize wording variants conservatively without rewriting B1 meaning or hiding differences behind broader wording.
+4. Keep traits atomic. Require every cited B1 to support the full trait, then classify with the strict thresholds in `references/b2-style-profile-synthesis.md`.
+5. Reserve `stable` for consistent multi-reference evidence with no equal or stronger counterevidence; prefer reference-kind diversity. Require two supporting references for `secondary` by default. Treat single-reference or content-specific traits as `local` or `uncertain` unless explicit user group context documents the narrow representativeness exception.
+6. Preserve counterevidence, conflicts, uncertainties, and source confidence. Keep incompatible evidence conflicting instead of inventing a broad unifying trait.
+7. Allow any dimension's `stable` array to remain empty. Keep material and shape traits within their visual-dimension boundaries.
+8. Build `overall_visual_identity`, `cross_dimension_summary`, and `overall_confidence` from traceable stable and secondary evidence, not specific source-image content.
+9. Ask "Does every supporting reference support the full trait?" for every trait. Remove a reference, split the trait, or downgrade it when the answer is no.
+10. Emit one object conforming to `schemas/style-profile.schema.json` and validate it with `scripts/validate_style_profile.py`.
 
 Read `references/b2-style-profile-synthesis.md` and `references/quality/cross-reference-conflicts.md` before producing B2 output.
 
