@@ -155,6 +155,93 @@ class ComposerV211RegressionTests(unittest.TestCase):
         bad["project_context"]["hard_requirements"]["explicit_counts"][0]["evidence"] = "invented evidence"
         self.assertIn("REQUIREMENT_EVIDENCE_MISMATCH", {item["code"] for item in self.plan_errors(bad)})
 
+    def test_a_driven_layout_uses_major_skeleton_when_positions_are_not_locked(self):
+        hard = self.plan["project_context"]["hard_requirements"]
+        self.assertTrue(all(item["position"] is None for item in hard["required_elements"]))
+
+        major_region_ids = {
+            "page_background",
+            "top_status",
+            "category_navigation",
+            "product_list",
+            "product_detail",
+            "purchase_action",
+        }
+        region_decisions = {
+            source_id: decision
+            for decision in self.plan["reference_application"]["layout"]
+            if decision["origin"] == "layout_reference" and decision["source_kind"] == "region"
+            for source_id in decision["source_ids"]
+        }
+        self.assertTrue(major_region_ids.issubset(region_decisions))
+        for source_id in major_region_ids:
+            self.assertIn(region_decisions[source_id]["disposition"], {"adopted", "adapted"})
+
+        components = {item["component_id"]: item for item in self.plan["component_tree"]}
+        self.assertEqual("content_area", components["category_navigation"]["parent_id"])
+        self.assertEqual("content_area", components["product_grid"]["parent_id"])
+        self.assertEqual("content_area", components["auxiliary_shop_rail"]["parent_id"])
+        self.assertEqual("auxiliary_shop_rail", components["refresh_button"]["parent_id"])
+        self.assertIn("dominant central", components["product_grid"]["design_intent"].lower())
+
+        layouts = {item["component_id"]: item for item in self.plan["layout_rules"]}
+        self.assertEqual("center_left", layouts["category_navigation"]["anchor"])
+        self.assertEqual("center", layouts["product_grid"]["anchor"])
+        self.assertEqual("center_right", layouts["auxiliary_shop_rail"]["anchor"])
+        self.assertEqual("top_center", layouts["top_currency_bar"]["anchor"])
+        self.assertEqual("parent", layouts["refresh_button"]["relative_to"])
+        self.assertEqual("bottom_center", layouts["refresh_button"]["anchor"])
+        self.assertGreater(layouts["product_grid"]["dimensions"]["width"], layouts["category_navigation"]["dimensions"]["width"])
+
+        categories = components["category_tab_template"]["repeat"]
+        products = components["product_card_template"]["repeat"]
+        self.assertEqual((3, "column", None, None), (categories["count"], categories["arrangement"], categories["columns"], categories["rows"]))
+        self.assertEqual((6, "grid", 2, 3), (products["count"], products["arrangement"], products["columns"], products["rows"]))
+        self.assertEqual([], self.plan_errors(self.plan))
+
+    def test_explicit_locked_positions_override_a_layout(self):
+        locked_input = copy.deepcopy(self.input)
+        locked_plan = copy.deepcopy(self.plan)
+        requirement = (
+            "做一个公会商店。必须在左侧放 3 个分类，商品必须在右侧保持 2 x 3，共 6 个商品。"
+            "显示金币和公会币。一个刷新按钮必须固定在底部。"
+        )
+        locked_input["request"]["user_requirement"] = requirement
+        locked_plan["project_context"]["user_requirement"] = requirement
+        hard = locked_plan["project_context"]["hard_requirements"]
+        hard["page_semantic"]["evidence"] = "公会商店"
+        hard["explicit_counts"][0]["evidence"] = "3 个分类"
+        hard["explicit_counts"][1]["evidence"] = "6 个商品"
+        hard["explicit_counts"][2]["evidence"] = "一个刷新按钮"
+        hard["grid_requirements"][0]["evidence"] = "2 x 3"
+        requirements = {item["target_component_id"]: item for item in hard["required_elements"]}
+        requirements["category_navigation"].update(position="left", evidence="必须在左侧")
+        requirements["product_grid"].update(position="right", evidence="必须在右侧")
+        requirements["gold_status"].update(position=None, evidence="显示金币和公会币")
+        requirements["guild_currency_status"].update(position=None, evidence="显示金币和公会币")
+        requirements["refresh_button"].update(position="bottom", evidence="必须固定在底部")
+
+        layouts = {item["component_id"]: item for item in locked_plan["layout_rules"]}
+        layouts["category_navigation"]["anchor"] = "center_left"
+        layouts["product_grid"]["anchor"] = "center_right"
+        layouts["refresh_button"]["anchor"] = "bottom_center"
+        product_region = next(
+            item for item in locked_plan["reference_application"]["layout"]
+            if item["decision_id"] == "a_product_region"
+        )
+        product_region.update(
+            disposition="ignored",
+            target_application=None,
+            rationale="The user's explicit locked-right product position conflicts with A's central product region.",
+        )
+
+        errors = validate_plan.validate_document(locked_plan, locked_input)[0]
+        self.assertEqual([], errors)
+        self.assertEqual("right", requirements["product_grid"]["position"])
+        self.assertIn("right", layouts["product_grid"]["anchor"])
+        self.assertEqual("ignored", product_region["disposition"])
+        self.assertIn("explicit locked-right", product_region["rationale"])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,28 +5,28 @@ description: Synthesize one new engine-neutral game UI candidate from an immutab
 
 # Game UI Auto Composer v2.1.1
 
-Design one new UI candidate. The user defines the target; A supplies optional layout evidence; B supplies optional classified style evidence. Deterministic Python code decides whether cited evidence and the resulting contract are valid.
+Design one new UI candidate. The user defines business semantics and invariants; A supplies the transferable layout skeleton; B supplies optional classified style evidence. Deterministic Python code decides whether cited evidence and the resulting contract are valid.
 
 ```text
 validated input
-→ design synthesis
-→ candidate ui-compose-plan
-→ END
+-> design synthesis
+-> candidate ui-compose-plan
+-> END
 ```
 
 Do not self-loop, retry, repair, or repeatedly rewrite the candidate. Validation and future repair are separate stages.
 
 ## Required resources
 
-- `schemas/ui-compose-input.schema.json` — v2.1.1 input.
-- `schemas/ui-compose-plan.schema.json` — v2.1.1 candidate plan.
-- `scripts/build_compose_input.py` — deterministic UTF-8 input construction and source-integrity checks.
-- `scripts/evidence_registry.py` — immutable Pydantic A/B registry.
-- `scripts/validate_input.py` — schema and upstream-integrity validation.
-- `scripts/validate_plan.py` — schema, requirements, origin, registry membership, and consistency validation.
-- `references/input-schema.md` and `references/output-schema.md` — contract details.
-- `references/workflow.md` — one-pass workflow and validation handoff.
-- `references/examples/example-ui-compose-input.json` and `example-ui-compose-plan.json` — regression fixtures and schema shape only.
+- `schemas/ui-compose-input.schema.json` - v2.1.1 input.
+- `schemas/ui-compose-plan.schema.json` - v2.1.1 candidate plan.
+- `scripts/build_compose_input.py` - deterministic UTF-8 input construction and source-integrity checks.
+- `scripts/evidence_registry.py` - immutable Pydantic A/B registry.
+- `scripts/validate_input.py` - schema and upstream-integrity validation.
+- `scripts/validate_plan.py` - schema, requirements, origin, registry membership, and consistency validation.
+- `references/input-schema.md` and `references/output-schema.md` - contract details.
+- `references/workflow.md` - one-pass workflow and validation handoff.
+- `references/examples/example-ui-compose-input.json` and `example-ui-compose-plan.json` - regression fixtures and schema shape only.
 
 Never inherit example counts, page semantics, IDs, hierarchy, actions, or copy into another run.
 
@@ -50,7 +50,7 @@ Composer core does not inspect raw images, reopen A/B source art, generate previ
 
 Never:
 
-- change explicit user counts, page type, business semantics, content, position, or action;
+- change explicit user counts, page type, business semantics, content, explicitly locked position, or action;
 - mutate or normalize upstream A/B JSON or confidence;
 - invent an A source ID or B trait ID;
 - force every design decision to cite A or B;
@@ -61,46 +61,90 @@ Never:
 
 ## Authority and hard requirements
 
-Apply:
+Apply layout authority in this order:
 
 ```text
-Explicit User Requirement
-> Derived User Intent
-> A Layout Reference
-> B Style Evidence
-> Composer Assumptions
+Explicit business semantics and required actions
+> Explicit counts and grid dimensions
+> Explicitly immutable user positions
+> A layout skeleton
+> Ordinary user position preferences
+> Low-risk Composer completion
 ```
+
+B remains style evidence and does not compete for layout authority.
 
 Extract explicit facts into `project_context.hard_requirements` before designing:
 
 - page semantic;
 - exact counts;
 - grid rows and columns;
-- required elements and positions;
+- required elements, with positions only when the user explicitly locks them;
 - required information and actions;
 - must-include and must-not-include constraints.
 
 Evidence strings must be exact user-requirement substrings. Preserve these facts through pages, components, layout, interactions, and generation constraints.
 
+## Split requirement authority
+
+Split each user phrase before building the hard-requirement ledger:
+
+- Record page/business semantics, component existence, exact counts, grids, required information, and required actions as hard facts.
+- Record a position as hard only when the user marks it immutable with wording such as `must`, `fixed`, `strictly remain`, `cannot move`, or equivalent explicit lock language in another language.
+- Treat ordinary wording such as "categories on the left", "products on the right", or "refresh at the bottom" as a soft position preference. Keep the required element, but set its hard-requirement `position` to `null`.
+- Let an explicit locked position override conflicting A geometry. Let applicable A geometry override an ordinary position preference.
+
+Do not infer immutability merely because an evidence substring contains a direction word.
+
+## Build from the A layout skeleton
+
+When A exists, synthesize in this order:
+
+```text
+A major regions + relationships + hierarchy + proportions
+-> transferable layout skeleton
+-> requested business components
+-> semantic region mapping
+-> final component tree and layout rules
+```
+
+Do not finish a generic business template first and then cite only the A regions that happen to match it.
+
+Extract and preserve, where supported by A:
+
+- major regions and their approximate proportions;
+- dominant central content and primary/secondary focal hierarchy;
+- left and right edge rails;
+- top and bottom horizontal bands;
+- primary action bands and parent-child placement;
+- adjacency, control, above/below, and containment relationships;
+- repeated-region direction.
+
+Map requested semantics into these spaces without copying A's characters, labels, icons, business functions, or brand assets. A central character showcase may become a primary product surface; a shortcut rail may become secondary information or preserved non-interactive layout space. If the user forbids additional business content, preserve the spatial relationship with restrained empty, decorative, or non-interactive support rather than inventing a function.
+
+For every high-confidence A major region, write an explicit `reference_application.layout` decision with `adopted`, `adapted`, or `ignored`. Prefer `adapted` when only source content conflicts but its spatial role transfers. Use `ignored` only for a genuine conflict with a higher authority, and state that conflict precisely. "Source business content was not requested" is not by itself sufficient reason to discard the region's spatial structure.
+
+Preserve transferable A relationships even when source and target business names differ. Cite the real region, relationship, hierarchy, group, or layout-rule IDs that justify each skeleton decision.
+
 ## Decision origins
 
 Every layout decision has one origin:
 
-- `layout_reference` — directly cites applicable A evidence. Set a real `source_kind`, at least one `source_id`, and `source_meaning`.
-- `user_requirement` — comes from the user. Set `source_kind: null`, `source_ids: []`, and `source_meaning: null`.
-- `composer_derived` — low-risk UI completion such as padding, spacing, containers, internal card zones, or simple selected state. Use the same empty A fields.
+- `layout_reference` - directly cites applicable A evidence. Set a real `source_kind`, at least one `source_id`, and `source_meaning`.
+- `user_requirement` - comes from the user. Set `source_kind: null`, `source_ids: []`, and `source_meaning: null`.
+- `composer_derived` - low-risk UI completion such as padding, spacing, containers, internal card zones, or simple selected state. Use the same empty A fields.
 
 Every style decision has one origin:
 
-- `style_reference` — cites one real B `trait_id` and copies its dimension and classification.
-- `user_requirement` — explicit user visual direction; use `trait_id: null` and `classification: null`.
-- `composer_derived` — low-risk visual completion not asserted as B evidence; use null trait/classification.
+- `style_reference` - cites one real B `trait_id` and copies its dimension and classification.
+- `user_requirement` - explicit user visual direction; use `trait_id: null` and `classification: null`.
+- `composer_derived` - low-risk visual completion not asserted as B evidence; use null trait/classification.
 
 Composer-derived decisions may not invent business systems or alter user semantics. Do not attach an A/B citation merely to make traceability look complete.
 
 ## A and B usage
 
-Select useful A layout organization only when relevant. A is not target business content. For `origin=layout_reference`, copy the exact ID and kind visible in the validated input. Python later performs definitive membership validation.
+Use A as the starting layout skeleton when relevant, not as optional decoration after layout completion. A is not target business content. For `origin=layout_reference`, copy the exact ID and kind visible in the validated input. Python later performs definitive membership validation.
 
 Use B classification exactly as provided:
 
@@ -112,19 +156,22 @@ Use B classification exactly as provided:
 
 For `origin=style_reference`, copy the exact B trait, dimension, and classification. Python later performs definitive membership and classification validation.
 
-The behavioral rule “do not invent IDs” remains, but factual truth is not delegated to the model.
+The behavioral rule "do not invent IDs" remains, but factual truth is not delegated to the model.
 
 ## One-pass synthesis workflow
 
 1. Consume one builder-created, already validated v2.1.1 input.
 2. Parse the explicit user requirement.
-3. Build the hard-requirement ledger and target page semantic.
-4. Select only relevant A evidence.
-5. Select only relevant B traits under their original classifications.
-6. Label every material layout and style decision with its true origin.
-7. Build the target component tree, layout, interactions, and visual direction.
-8. Derive generation constraints from user facts, the final design, and approved evidence.
-9. Emit one candidate `ui-compose-plan` and end.
+3. Split semantic/count facts, explicit locked positions, and soft position preferences.
+4. Build the hard-requirement ledger and target page semantic.
+5. Extract A's major-region skeleton, relationships, hierarchy, proportions, and repeat directions.
+6. Map requested business components into that skeleton, applying locked user positions first and soft positions after A.
+7. Record every A major-region disposition and every material layout/style origin honestly.
+8. Select only relevant B traits under their original classifications.
+9. Build the target component tree, layout, interactions, and visual direction.
+10. Check repeat direction and layout intent consistency.
+11. Derive generation constraints from user facts, the final design, and approved evidence.
+12. Emit one candidate `ui-compose-plan` and end.
 
 Do not run a generate/check/rewrite cycle inside this Skill.
 
@@ -153,6 +200,13 @@ For every `repeat`, emit all five required fields: `count`, `arrangement`, `colu
 - `list`, `carousel`, or `custom`: these are also non-grid arrangements, so set both `columns` and `rows` to `null`.
 
 Never infer numeric grid dimensions from a non-grid repeat count. A single-page request may have empty navigation. Add only necessary actions.
+
+Keep repeat metadata consistent with spatial intent:
+
+- a vertical stack uses `arrangement: column` with null grid dimensions;
+- a horizontal band uses `arrangement: row` with null grid dimensions;
+- a true grid uses `arrangement: grid` with positive columns/rows and matching count;
+- design intent, component notes, A repeat direction, and layout relationships must not contradict the repeat arrangement.
 
 `generation_constraints` is a derived summary, not a new design stage or image prompt.
 

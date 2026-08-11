@@ -11,15 +11,18 @@ validated A/B + user requirement
 
 1. Consume one validated immutable input.
 2. Parse explicit user requirements.
-3. Build the hard-requirement ledger and target semantic.
-4. Read A as optional layout evidence.
-5. Read B as optional classified style evidence.
-6. Select relevant evidence without forcing citations.
-7. Label layout origins as `layout_reference`, `user_requirement`, or `composer_derived`.
-8. Label style origins as `style_reference`, `user_requirement`, or `composer_derived`.
-9. Build the target tree, layout, visual direction, and required interactions.
-10. Derive generation constraints.
-11. Emit one candidate and stop.
+3. Split business/count facts, explicitly locked positions, and soft position preferences.
+4. Build the hard-requirement ledger and target semantic; leave soft positions null.
+5. Extract A major regions, relationships, hierarchy, approximate proportions, and repeat directions into a layout skeleton.
+6. Map requested business components into that skeleton. Locked user positions override A; A overrides soft positions.
+7. Record adopted/adapted/ignored disposition for every high-confidence A major region.
+8. Read B as optional classified style evidence.
+9. Label layout origins as `layout_reference`, `user_requirement`, or `composer_derived`.
+10. Label style origins as `style_reference`, `user_requirement`, or `composer_derived`.
+11. Build the target tree, layout, visual direction, and required interactions.
+12. Check vertical/row/grid repeat consistency against design intent and A direction.
+13. Derive generation constraints.
+14. Emit one candidate and stop.
 
 Composer does not self-validate by repeatedly rewriting its output.
 

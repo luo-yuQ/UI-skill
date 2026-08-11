@@ -18,6 +18,12 @@ Style decisions:
 
 Not every new design decision needs A/B evidence. The origin must describe where it actually came from.
 
+## A-first layout synthesis
+
+Build the target layout from A major regions, relationships, hierarchy, repeat directions, and approximate proportions before mapping target business components. Record one explicit disposition for every high-confidence A major region. Prefer `adapted` when the source business content is irrelevant but the spatial role transfers. Use `ignored` only for a precise conflict with user semantics, counts, grids, or an explicitly locked position.
+
+In `hard_requirements.required_elements`, use a non-null `position` only for an explicitly immutable user position. Use `position: null` for a required element whose directional wording is merely a soft preference. The final layout may still occupy that direction because A supports it; its origin remains `layout_reference`, not a fabricated user hard lock.
+
 ## Repeat contract
 
 Every `component_tree[].repeat` contains `count`, `arrangement`, `columns`, `rows`, and `content_variation`.
@@ -26,6 +32,8 @@ Every `component_tree[].repeat` contains `count`, `arrangement`, `columns`, `row
 - For `grid`, use positive integer `columns` and `rows`, and make `count` equal `columns * rows`.
 
 Do not encode a row as `columns=count, rows=1` or a column as `columns=1, rows=count`; those are non-grid arrangements and must keep both grid dimensions null.
+
+Also keep prose and geometry consistent: vertical stacks use `column`, horizontal bands use `row`, and grid language uses `grid`. The component `design_intent`, A repeat direction, and layout relationships must agree with the repeat contract.
 
 ## Evidence Registry validation
 

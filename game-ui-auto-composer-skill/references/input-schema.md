@@ -9,7 +9,9 @@ layout_reference_analysis
 style_profile
 ```
 
-`request.user_requirement` is the highest authority for page/business semantics, content, counts, grids, positions, information, actions, and explicit visual changes.
+`request.user_requirement` is the highest authority for page/business semantics, content, counts, grids, information, actions, explicitly locked positions, and explicit visual changes. Ordinary position wording is a soft preference: preserve component existence and counts, but do not promote the position to immutable authority unless the user uses explicit lock language such as `must`, `fixed`, `cannot move`, `必须`, `固定`, `严格保持`, or `不允许移动`.
+
+When a soft user position differs from applicable A geometry, A supplies the final layout skeleton. When a user explicitly locks the position, the user position overrides A.
 
 A and B are complete immutable upstream artifacts. Composer must not summarize, normalize, repair, mutate, or reinterpret their values or confidence.
 

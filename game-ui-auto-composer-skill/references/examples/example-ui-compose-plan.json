@@ -2,7 +2,7 @@
   "schema_version": "2.1.1",
   "project_context": {
     "project_name": "Dark Fantasy Guild Shop",
-    "user_requirement": "我想做一个暗黑幻想风格的公会商店页面。\n左侧有三个分类：\n普通、公会限定、每周兑换。\n\n右侧显示 6 个商品，\n按 2 列 3 行排列。\n\n顶部显示金币和公会币。\n\n底部有一个刷新按钮。\n\n整体信息层级要清楚，\n主要面板和按钮边界尽量独立，\n方便后续切图。",
+    "user_requirement": "做一个公会商店。\n包含 3 个分类、6 个商品，商品按 2 x 3 排列。\n显示金币和公会币。\n有一个刷新按钮。\n参考提供的布局结构。\n主要区域边界清晰，方便后续切图。",
     "game_context": "A dark-fantasy guild shop.",
     "orientation": "landscape",
     "target_resolution": {
@@ -21,26 +21,26 @@
       "page_semantic": {
         "fact_id": "page_guild_shop",
         "value": "guild_shop",
-        "evidence": "公会商店页面"
+        "evidence": "公会商店"
       },
       "explicit_counts": [
         {
           "fact_id": "count_categories",
           "target_component_id": "category_tab_template",
           "count": 3,
-          "evidence": "左侧有三个分类"
+          "evidence": "3 个分类"
         },
         {
           "fact_id": "count_products",
           "target_component_id": "product_card_template",
           "count": 6,
-          "evidence": "右侧显示 6 个商品"
+          "evidence": "6 个商品"
         },
         {
           "fact_id": "count_refresh",
           "target_component_id": "refresh_button",
           "count": 1,
-          "evidence": "底部有一个刷新按钮"
+          "evidence": "一个刷新按钮"
         }
       ],
       "grid_requirements": [
@@ -49,44 +49,44 @@
           "target_component_id": "product_card_template",
           "columns": 2,
           "rows": 3,
-          "evidence": "按 2 列 3 行排列"
+          "evidence": "2 x 3"
         }
       ],
       "required_elements": [
         {
-          "fact_id": "left_categories",
+          "fact_id": "categories_required",
           "target_component_id": "category_navigation",
           "semantic": "category_navigation",
-          "position": "left",
-          "evidence": "左侧有三个分类"
+          "position": null,
+          "evidence": "3 个分类"
         },
         {
-          "fact_id": "right_products",
+          "fact_id": "products_required",
           "target_component_id": "product_grid",
           "semantic": "product_grid",
-          "position": "right",
-          "evidence": "右侧显示 6 个商品"
+          "position": null,
+          "evidence": "6 个商品"
         },
         {
-          "fact_id": "top_gold",
+          "fact_id": "gold_required",
           "target_component_id": "gold_status",
           "semantic": "gold_currency",
-          "position": "top",
-          "evidence": "顶部显示金币和公会币"
+          "position": null,
+          "evidence": "显示金币和公会币"
         },
         {
-          "fact_id": "top_guild_currency",
+          "fact_id": "guild_currency_required",
           "target_component_id": "guild_currency_status",
           "semantic": "guild_currency",
-          "position": "top",
-          "evidence": "顶部显示金币和公会币"
+          "position": null,
+          "evidence": "显示金币和公会币"
         },
         {
-          "fact_id": "bottom_refresh",
+          "fact_id": "refresh_required",
           "target_component_id": "refresh_button",
           "semantic": "refresh_button",
-          "position": "bottom",
-          "evidence": "底部有一个刷新按钮"
+          "position": null,
+          "evidence": "一个刷新按钮"
         }
       ],
       "must_include": [
@@ -102,17 +102,29 @@
   },
   "design_summary": {
     "target_experience": "A clear dark-fantasy guild shop.",
-    "synthesis_summary": "User semantics and counts lead; A supplies layout evidence; B supplies classified style evidence.",
+    "synthesis_summary": "User business semantics, counts, and the 2 x 3 grid are fixed; A supplies the page skeleton with a top status band, left category rail, dominant central product surface, adjacent right auxiliary rail, and a contained lower action area; B supplies classified style evidence.",
     "key_design_decisions": [
-      "Three named categories on the left.",
-      "Six products in a 2 by 3 grid on the right.",
-      "Two currencies at the top and one refresh button at the bottom."
+      "Map three categories to A's narrow category rail without adopting A's source count.",
+      "Keep six products in the required 2 by 3 grid as the dominant central content.",
+      "Adapt A's right detail rail into non-interactive auxiliary shop space and its contained action area into the requested refresh action."
     ]
   },
   "reference_application": {
     "layout_analysis_id": "sky-vanguard-shop-final-001",
     "style_profile_id": "dark_fantasy_reference_profile_01",
     "layout": [
+      {
+        "decision_id": "a_background_region",
+        "source_kind": "region",
+        "source_ids": [
+          "page_background"
+        ],
+        "source_meaning": "Full-page low-contrast background region.",
+        "disposition": "adopted",
+        "target_application": "Full-bleed background surface behind the shop skeleton.",
+        "rationale": "The background region transfers without copying source content.",
+        "origin": "layout_reference"
+      },
       {
         "decision_id": "a_top",
         "source_kind": "region",
@@ -122,7 +134,7 @@
         "source_meaning": "Top status band.",
         "disposition": "adopted",
         "target_application": "Top currency bar.",
-        "rationale": "Matches the explicit top placement.",
+        "rationale": "A's top horizontal band is the strongest applicable placement for the required currencies.",
         "origin": "layout_reference"
       },
       {
@@ -138,6 +150,18 @@
         "origin": "layout_reference"
       },
       {
+        "decision_id": "a_category_region",
+        "source_kind": "region",
+        "source_ids": [
+          "category_navigation"
+        ],
+        "source_meaning": "Narrow left navigation rail.",
+        "disposition": "adopted",
+        "target_application": "Left category rail within the final shop skeleton.",
+        "rationale": "The rail's spatial role directly fits category navigation; the user count controls its contents.",
+        "origin": "layout_reference"
+      },
+      {
         "decision_id": "a_categories",
         "source_kind": "component_group",
         "source_ids": [
@@ -147,6 +171,18 @@
         "disposition": "adapted",
         "target_application": "Three named categories.",
         "rationale": "The user count overrides five visible source tabs.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_product_region",
+        "source_kind": "region",
+        "source_ids": [
+          "product_list"
+        ],
+        "source_meaning": "Dominant central object-list region.",
+        "disposition": "adopted",
+        "target_application": "Dominant central product grid containing the required six products.",
+        "rationale": "A's primary browsing surface transfers directly while the user fixes the 2 x 3 grid.",
         "origin": "layout_reference"
       },
       {
@@ -174,16 +210,75 @@
         "origin": "layout_reference"
       },
       {
-        "decision_id": "a_detail_rejected",
+        "decision_id": "a_detail_region",
         "source_kind": "region",
         "source_ids": [
-          "product_detail",
+          "product_detail"
+        ],
+        "source_meaning": "Right-side secondary detail rail adjacent to the central list.",
+        "disposition": "adapted",
+        "target_application": "Right auxiliary shop rail kept primarily as non-interactive supporting space.",
+        "rationale": "The source product-detail business content is not copied, but its edge-rail proportion and adjacency remain transferable.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_action_region",
+        "source_kind": "region",
+        "source_ids": [
           "purchase_action"
         ],
-        "source_meaning": "Source detail and action regions.",
-        "disposition": "rejected",
-        "target_application": null,
-        "rationale": "They are not requested.",
+        "source_meaning": "Lower action area contained by the right detail region.",
+        "disposition": "adapted",
+        "target_application": "Lower refresh action area contained within the right auxiliary rail.",
+        "rationale": "The source purchase function is discarded while its contained action-band geometry is reused for the requested refresh action.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_list_detail_adjacency",
+        "source_kind": "region_relationship",
+        "source_ids": [
+          "rel_list_adjacent_detail"
+        ],
+        "source_meaning": "The central list is adjacent to the right detail rail.",
+        "disposition": "adopted",
+        "target_application": "Keep the central product grid directly left of the auxiliary shop rail.",
+        "rationale": "The adjacency is a transferable spatial relationship independent of source business content.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_detail_action_containment",
+        "source_kind": "region_relationship",
+        "source_ids": [
+          "rel_detail_contains_action"
+        ],
+        "source_meaning": "The right detail rail contains its lower action area.",
+        "disposition": "adapted",
+        "target_application": "The auxiliary shop rail contains the refresh button in its lower action area.",
+        "rationale": "Containment transfers while the target action follows the user's requested refresh semantics.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_progressive_skeleton",
+        "source_kind": "layout_rule",
+        "source_ids": [
+          "rule_progressive_browse_to_detail"
+        ],
+        "source_meaning": "Left-to-right category, main list, and secondary-detail progression.",
+        "disposition": "adapted",
+        "target_application": "Left category rail, dominant central product grid, and restrained right auxiliary rail.",
+        "rationale": "The sequence is kept as hierarchy and geometry without inheriting source detail functions.",
+        "origin": "layout_reference"
+      },
+      {
+        "decision_id": "a_status_action_separation",
+        "source_kind": "layout_rule",
+        "source_ids": [
+          "rule_action_with_currency_icon"
+        ],
+        "source_meaning": "Separate global resource status from the contained current-object action.",
+        "disposition": "adapted",
+        "target_application": "Keep currencies in the global top band and refresh in the lower auxiliary action area.",
+        "rationale": "The global-versus-local action separation transfers to the requested business components.",
         "origin": "layout_reference"
       },
       {
@@ -199,14 +294,14 @@
         "origin": "layout_reference"
       },
       {
-        "decision_id": "user_bottom_refresh",
+        "decision_id": "user_refresh_semantics",
         "origin": "user_requirement",
         "source_kind": null,
         "source_ids": [],
         "source_meaning": null,
         "disposition": "adopted",
-        "target_application": "Place one refresh button at the bottom.",
-        "rationale": "This is an explicit user requirement and does not need an A citation."
+        "target_application": "Provide exactly one refresh action.",
+        "rationale": "The refresh action is explicit; its final placement is supplied by A's contained action area rather than a user position lock."
       },
       {
         "decision_id": "derived_panel_spacing",
@@ -215,7 +310,7 @@
         "source_ids": [],
         "source_meaning": null,
         "disposition": "adopted",
-        "target_application": "Use consistent internal padding and gaps within the two main panels.",
+        "target_application": "Use consistent internal padding and gaps within the left rail, central surface, and right auxiliary rail.",
         "rationale": "Low-risk spacing is required to complete the UI but does not come directly from A."
       }
     ],
@@ -257,6 +352,7 @@
         "target_scope": [
           "category_navigation",
           "product_grid",
+          "auxiliary_shop_rail",
           "refresh_button"
         ],
         "target_application": "Silver-black boundaries.",
@@ -338,6 +434,7 @@
         "target_scope": [
           "category_navigation",
           "product_grid",
+          "auxiliary_shop_rail",
           "refresh_button"
         ],
         "target_application": "Restrained gothic borders.",
@@ -358,7 +455,7 @@
         "target_application": "Dark-fantasy context.",
         "promoted_by_user_requirement": false,
         "promotion_evidence": null,
-        "rationale": "Matches explicit user style.",
+        "rationale": "Stable B evidence remains relevant to the supplied project context.",
         "origin": "style_reference"
       },
       {
@@ -498,9 +595,10 @@
       }
     ],
     "hierarchy_emphasis": [
-      "Currencies first establish status.",
-      "The six-card grid is the main focus.",
-      "Refresh remains separate at the bottom."
+      "The top currency band establishes global status.",
+      "The central six-card grid is the dominant focus.",
+      "The left category rail and right auxiliary rail frame the central content.",
+      "Refresh remains contained in the lower part of the auxiliary rail."
     ],
     "page_specific_notes": [
       "Do not globalize local red.",
@@ -541,6 +639,19 @@
       "notes": []
     },
     {
+      "component_id": "background_surface",
+      "page_id": "guild_shop",
+      "parent_id": "guild_shop_root",
+      "name": "Background Surface",
+      "semantic_type": "decoration",
+      "order": 0,
+      "state_ids": [
+        "ready"
+      ],
+      "design_intent": "Preserve A's full-page low-contrast background region without copying source content.",
+      "notes": []
+    },
+    {
       "component_id": "top_currency_bar",
       "page_id": "guild_shop",
       "parent_id": "guild_shop_root",
@@ -550,7 +661,7 @@
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Group top currencies.",
+      "design_intent": "Map the required currencies into A's full-width top status band.",
       "notes": []
     },
     {
@@ -595,13 +706,13 @@
       "component_id": "content_area",
       "page_id": "guild_shop",
       "parent_id": "guild_shop_root",
-      "name": "Content Area",
+      "name": "A-Derived Main Layout Skeleton",
       "semantic_type": "container",
       "order": 2,
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Separate left and right areas.",
+      "design_intent": "Preserve A's narrow left rail, dominant central surface, and adjacent right auxiliary rail.",
       "notes": []
     },
     {
@@ -614,7 +725,7 @@
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Hold left categories.",
+      "design_intent": "Use A's narrow left rail as a vertical stack of three requested categories.",
       "notes": []
     },
     {
@@ -633,7 +744,7 @@
         "arrangement": "column",
         "columns": null,
         "rows": null,
-        "content_variation": "普通、公会限定、每周兑换"
+        "content_variation": "Three runtime category records."
       },
       "content": {
         "text": null,
@@ -653,7 +764,7 @@
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Hold right products.",
+      "design_intent": "Use A's dominant central content region for the required 2 x 3 product grid.",
       "notes": []
     },
     {
@@ -683,29 +794,31 @@
       "notes": []
     },
     {
-      "component_id": "bottom_action_bar",
+      "component_id": "auxiliary_shop_rail",
       "page_id": "guild_shop",
-      "parent_id": "guild_shop_root",
-      "name": "Bottom Action Bar",
-      "semantic_type": "container",
-      "order": 3,
+      "parent_id": "content_area",
+      "name": "Auxiliary Shop Rail",
+      "semantic_type": "panel",
+      "order": 2,
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Hold the bottom action.",
-      "notes": []
+      "design_intent": "Adapt A's right detail region into restrained non-interactive shop-support space while preserving its rail proportion.",
+      "notes": [
+        "Do not invent purchase, detail, shortcut, or navigation functions."
+      ]
     },
     {
       "component_id": "refresh_button",
       "page_id": "guild_shop",
-      "parent_id": "bottom_action_bar",
+      "parent_id": "auxiliary_shop_rail",
       "name": "Refresh Button",
       "semantic_type": "button",
       "order": 0,
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Refresh the offering.",
+      "design_intent": "Map the requested refresh action into A's lower contained action region without copying purchase semantics.",
       "content": {
         "text": "刷新",
         "text_role": "action_label",
@@ -742,22 +855,115 @@
       "notes": []
     },
     {
-      "rule_id": "l_gold",
+      "rule_id": "l_background",
       "page_id": "guild_shop",
-      "component_id": "gold_status",
-      "relative_to": "safe_area",
-      "anchor": "top_left",
+      "component_id": "background_surface",
+      "relative_to": "canvas",
+      "anchor": "stretch",
       "pivot": {
         "x": 0.5,
         "y": 0.5
       },
       "position": {
-        "x": 0.35,
-        "y": 0.06
+        "x": 0.5,
+        "y": 0.5
       },
       "dimensions": {
-        "width": 0.18,
-        "height": 0.07,
+        "width": 1,
+        "height": 1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 0,
+      "safe_area_policy": "full_bleed",
+      "relationships": [],
+      "content_adaptation": [
+        "Keep this region non-interactive and do not copy source imagery."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "l_top_currency_band",
+      "page_id": "guild_shop",
+      "component_id": "top_currency_bar",
+      "relative_to": "safe_area",
+      "anchor": "top_center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.05
+      },
+      "dimensions": {
+        "width": 1,
+        "height": 0.1,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 2,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "above",
+          "target_component_id": "content_area",
+          "description": "The global currency band remains above the three-region main skeleton."
+        }
+      ],
+      "content_adaptation": [
+        "Adapt A's repeated resource summary to exactly gold and guild currency."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "l_main_skeleton",
+      "page_id": "guild_shop",
+      "component_id": "content_area",
+      "relative_to": "safe_area",
+      "anchor": "center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.5,
+        "y": 0.54
+      },
+      "dimensions": {
+        "width": 0.96,
+        "height": 0.82,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 1,
+      "safe_area_policy": "inside",
+      "relationships": [
+        {
+          "relationship_type": "below",
+          "target_component_id": "top_currency_bar",
+          "description": "The main skeleton begins below A's top status band."
+        }
+      ],
+      "content_adaptation": [
+        "Preserve the narrow-left, dominant-center, supporting-right proportion."
+      ],
+      "notes": []
+    },
+    {
+      "rule_id": "l_gold",
+      "page_id": "guild_shop",
+      "component_id": "gold_status",
+      "relative_to": "parent",
+      "anchor": "center_left",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.25,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.35,
+        "height": 0.7,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
@@ -770,19 +976,19 @@
       "rule_id": "l_guild_currency",
       "page_id": "guild_shop",
       "component_id": "guild_currency_status",
-      "relative_to": "safe_area",
-      "anchor": "top_right",
+      "relative_to": "parent",
+      "anchor": "center_right",
       "pivot": {
         "x": 0.5,
         "y": 0.5
       },
       "position": {
-        "x": 0.65,
-        "y": 0.06
+        "x": 0.75,
+        "y": 0.5
       },
       "dimensions": {
-        "width": 0.18,
-        "height": 0.07,
+        "width": 0.35,
+        "height": 0.7,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
@@ -795,24 +1001,30 @@
       "rule_id": "l_categories",
       "page_id": "guild_shop",
       "component_id": "category_navigation",
-      "relative_to": "safe_area",
+      "relative_to": "parent",
       "anchor": "center_left",
       "pivot": {
         "x": 0.5,
         "y": 0.5
       },
       "position": {
-        "x": 0.13,
+        "x": 0.1,
         "y": 0.5
       },
       "dimensions": {
-        "width": 0.2,
-        "height": 0.72,
+        "width": 0.16,
+        "height": 0.75,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
       "safe_area_policy": "not_applicable",
-      "relationships": [],
+      "relationships": [
+        {
+          "relationship_type": "left_of",
+          "target_component_id": "product_grid",
+          "description": "The narrow category rail remains left of the dominant product surface."
+        }
+      ],
       "content_adaptation": [],
       "notes": []
     },
@@ -820,32 +1032,81 @@
       "rule_id": "l_products",
       "page_id": "guild_shop",
       "component_id": "product_grid",
-      "relative_to": "safe_area",
+      "relative_to": "parent",
+      "anchor": "center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.43,
+        "y": 0.5
+      },
+      "dimensions": {
+        "width": 0.46,
+        "height": 0.75,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 1,
+      "safe_area_policy": "not_applicable",
+      "relationships": [
+        {
+          "relationship_type": "right_of",
+          "target_component_id": "category_navigation",
+          "description": "The dominant product surface follows the category rail."
+        },
+        {
+          "relationship_type": "left_of",
+          "target_component_id": "auxiliary_shop_rail",
+          "description": "The dominant product surface remains adjacent to and left of the auxiliary rail."
+        }
+      ],
+      "content_adaptation": [],
+      "notes": []
+    },
+    {
+      "rule_id": "l_auxiliary_shop_rail",
+      "page_id": "guild_shop",
+      "component_id": "auxiliary_shop_rail",
+      "relative_to": "parent",
       "anchor": "center_right",
       "pivot": {
         "x": 0.5,
         "y": 0.5
       },
       "position": {
-        "x": 0.62,
+        "x": 0.83,
         "y": 0.5
       },
       "dimensions": {
-        "width": 0.68,
-        "height": 0.72,
+        "width": 0.3,
+        "height": 0.82,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
       "safe_area_policy": "not_applicable",
-      "relationships": [],
-      "content_adaptation": [],
+      "relationships": [
+        {
+          "relationship_type": "right_of",
+          "target_component_id": "product_grid",
+          "description": "The auxiliary rail remains adjacent to the dominant central product surface."
+        },
+        {
+          "relationship_type": "inside",
+          "target_component_id": "content_area",
+          "description": "The auxiliary rail remains inside the main A-derived skeleton."
+        }
+      ],
+      "content_adaptation": [
+        "Preserve supporting space without introducing unrequested product-detail or purchase functions."
+      ],
       "notes": []
     },
     {
       "rule_id": "l_refresh",
       "page_id": "guild_shop",
       "component_id": "refresh_button",
-      "relative_to": "safe_area",
+      "relative_to": "parent",
       "anchor": "bottom_center",
       "pivot": {
         "x": 0.5,
@@ -853,17 +1114,25 @@
       },
       "position": {
         "x": 0.5,
-        "y": 0.94
+        "y": 0.86
       },
       "dimensions": {
-        "width": 0.24,
-        "height": 0.08,
+        "width": 0.75,
+        "height": 0.13,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
       "safe_area_policy": "not_applicable",
-      "relationships": [],
-      "content_adaptation": [],
+      "relationships": [
+        {
+          "relationship_type": "inside",
+          "target_component_id": "auxiliary_shop_rail",
+          "description": "The refresh action occupies A's lower contained action area."
+        }
+      ],
+      "content_adaptation": [
+        "Replace source purchase semantics with the single requested refresh action."
+      ],
       "notes": []
     }
   ],
@@ -888,10 +1157,10 @@
       "Clear information hierarchy.",
       "Independent major panel and button boundaries.",
       "Cutout-friendly component edges.",
-      "Three categories on the left.",
-      "Six products on the right.",
-      "Gold and guild currency at the top.",
-      "One refresh button at the bottom."
+      "Three categories in the A-derived narrow left rail.",
+      "Six products in the dominant central 2 x 3 grid.",
+      "Gold and guild currency in the top status band.",
+      "One refresh button in the lower contained area of the right auxiliary rail."
     ],
     "must_not_include": [
       "Any business workflow or primary transaction action not requested by the user.",
@@ -943,22 +1212,23 @@
       {
         "component_id": "category_navigation",
         "content_role": "shop_categories",
-        "requirement": "Three categories stay left."
+        "requirement": "Three categories occupy the A-derived narrow rail."
       },
       {
         "component_id": "product_grid",
         "content_role": "shop_products",
-        "requirement": "Six products stay right."
+        "requirement": "Six products occupy the dominant central 2 x 3 grid."
       },
       {
-        "component_id": "bottom_action_bar",
+        "component_id": "auxiliary_shop_rail",
         "content_role": "refresh_action",
-        "requirement": "Refresh stays at the bottom."
+        "requirement": "The right auxiliary rail preserves A's contained lower action relationship for refresh."
       }
     ],
     "focal_hierarchy": [
       "product_grid",
       "category_navigation",
+      "auxiliary_shop_rail",
       "top_currency_bar",
       "refresh_button"
     ],
@@ -981,21 +1251,13 @@
       "Use only cited A evidence and classified B traits."
     ]
   },
-  "assumptions": [
-    {
-      "assumption_id": "initial_category",
-      "statement": "普通 is initially active.",
-      "basis": "design_completion",
-      "impact": "Defines only initial highlight.",
-      "confidence": 0.72
-    }
-  ],
+  "assumptions": [],
   "warnings": [
     {
-      "warning_id": "source_detail_omitted",
+      "warning_id": "source_business_content_not_copied",
       "severity": "info",
       "category": "reference_scope",
-      "message": "Source detail and action regions not requested by the user are omitted.",
+      "message": "Source product-detail and purchase semantics are not copied; their spatial regions are adapted to auxiliary space and refresh.",
       "related_ids": [
         "product_detail",
         "purchase_action"
