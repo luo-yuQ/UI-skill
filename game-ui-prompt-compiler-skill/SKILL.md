@@ -30,11 +30,14 @@ Apply these rules in order:
 
 1. Preserve Composer page semantics, component hierarchy, exact counts, grid dimensions, required positions, and visible content zones.
 2. Translate structural fields into natural UI language; never expose JSON paths, IDs, confidence values, provenance, or debug metadata.
-3. Use B2 `stable` traits first.
-4. Use `secondary` traits when Composer adopted them; if Composer has no style-disposition records, include supported secondary traits conservatively.
-5. Use a `local` trait only when Composer explicitly adopts it for the selected page or one of that page's components.
-6. Omit `conflicting` and `uncertain` traits instead of choosing a side or turning low-confidence evidence into a requirement.
-7. Add only restrained, general production constraints that improve readable, front-facing, separable game UI generation.
+3. Emit English only. Translate supported Chinese visual descriptions into natural English; use descriptive English trait IDs as a deterministic fallback, and never write untranslated CJK text.
+4. Remove internal provenance and agent instructions such as "Use A as layout evidence and B as style evidence" instead of presenting them to the image model.
+5. Convert engineering labels to visual-generation labels: remove suffixes such as `template`, `component`, `node`, `prefab`, and `prototype` before count and layout descriptions.
+6. Use B2 `stable` traits first.
+7. Use `secondary` traits when Composer adopted them; if Composer has no style-disposition records, include supported secondary traits conservatively.
+8. Use a `local` trait only when Composer explicitly adopts it for the selected page or one of that page's components.
+9. Omit `conflicting` and `uncertain` traits instead of choosing a side or turning low-confidence evidence into a requirement.
+10. Add only restrained, general production constraints that improve readable, front-facing, separable game UI generation.
 
 Do not redesign the page, add functions, change component counts, resolve `missing_assets`, inspect images, call GPT Image, build provider adapters, validate generated images, cut assets, or handle FairyGUI.
 

@@ -46,12 +46,87 @@ REJECTED_STYLE_DISPOSITIONS = {
     "not_applicable",
 }
 
+CJK_PATTERN = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+
+INTERNAL_INSTRUCTION_PATTERNS = (
+    re.compile(r"\bprovenance\b", re.IGNORECASE),
+    re.compile(r"\bagent\s+(?:instruction|prompt|workflow)\b", re.IGNORECASE),
+    re.compile(r"\b(?:component_id|trait_id|source_ref|source_trait_ids?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:layout|style)\s+evidence\b", re.IGNORECASE),
+    re.compile(r"\buse\s+a\s+as\s+layout\b.*\buse\s+b\s+as\s+style\b", re.IGNORECASE),
+    re.compile(r"\b(?:cited|classified)\s+[ab]\s+(?:evidence|traits?)\b", re.IGNORECASE),
+    re.compile(r"\b(?:composer|b2)\b.*\b(?:input|output|evidence|source)\b", re.IGNORECASE),
+)
+
+# Prompt Compiler v0.1 stays offline and deterministic. Translate recurring B2/UI
+# vocabulary here, then fall back to descriptive ASCII trait IDs when possible.
+ZH_TO_EN_PHRASES = {
+    "低饱和冷蓝灰配色": "a low-saturation cool blue-gray palette",
+    "冷蓝灰与近黑色配色": "a cool blue-gray and near-black palette",
+    "银黑色硬表面材质": "silver-black hard-surface materials",
+    "银色和黑色硬表面材质": "silver and black hard-surface materials",
+    "厚重的哑光基底": "heavy matte base surfaces",
+    "尖锐修长的轮廓": "sharp elongated silhouettes",
+    "局部蓝白色光效": "localized blue-white light accents",
+    "克制的哥特式装饰": "restrained gothic ornament",
+    "暗黑幻想视觉语境": "a dark-fantasy visual context",
+    "全局使用冷蓝灰与近黑色": "Use cool blue-gray and near-black globally",
+    "使用银黑色边框和哑光面板基底": "Use silver-black frames and matte panel bases",
+    "使用克制的尖锐装饰": "Use restrained sharp accents",
+    "使用局部蓝白色状态光效": "Use localized blue-white state accents",
+    "哥特式细节仅用于主要边界": "Restrict gothic detail to major boundaries",
+    "保持暗黑幻想视觉语境": "Keep a dark-fantasy visual context",
+    "保持信息层级清晰": "Keep the information hierarchy clear",
+    "主要面板和按钮边界独立": "Keep major panel and button boundaries independent",
+    "组件边缘便于后续切图": "Keep component edges suitable for later asset extraction",
+}
+
+ENGINEERING_LABEL_WORDS = {"template", "component", "node", "prefab", "prototype"}
+
 
 def _text(value: Any) -> str | None:
     if not isinstance(value, str):
         return None
     value = re.sub(r"\s+", " ", value).strip()
     return value or None
+
+
+def _contains_cjk(value: str) -> bool:
+    return bool(CJK_PATTERN.search(value))
+
+
+def _is_internal_instruction(value: str) -> bool:
+    return any(pattern.search(value) for pattern in INTERNAL_INSTRUCTION_PATTERNS)
+
+
+def _english_prompt_text(value: Any) -> str | None:
+    text = _text(value)
+    if not text or _is_internal_instruction(text):
+        return None
+    text = text.translate(
+        str.maketrans(
+            {
+                "，": ", ",
+                "。": ". ",
+                "；": "; ",
+                "：": ": ",
+                "、": ", ",
+                "“": '"',
+                "”": '"',
+                "‘": "'",
+                "’": "'",
+                "—": "-",
+                "–": "-",
+                "×": "x",
+            }
+        )
+    )
+    if not _contains_cjk(text):
+        return text
+    for source, translation in sorted(ZH_TO_EN_PHRASES.items(), key=lambda item: len(item[0]), reverse=True):
+        text = text.replace(source, translation)
+    text = re.sub(r"\s+", " ", text).strip()
+    return None if _contains_cjk(text) else text
 
 
 def _sentence(value: str) -> str:
@@ -66,9 +141,20 @@ def _lower_first(value: str) -> str:
 
 
 def _humanize(value: Any) -> str:
-    text = _text(value) or "UI element"
+    text = _text(value)
+    if not text or _contains_cjk(text):
+        return "UI Element"
     text = re.sub(r"[_\-]+", " ", text)
-    return re.sub(r"\s+", " ", text).strip().title()
+    words = [word for word in re.sub(r"\s+", " ", text).strip().split() if word.lower() not in ENGINEERING_LABEL_WORDS]
+    return " ".join(words).title() or "UI Element"
+
+
+def _component_label(component: dict[str, Any]) -> str:
+    for value in (component.get("name"), component.get("semantic_type"), component.get("component_id")):
+        text = _text(value)
+        if text and not _contains_cjk(text):
+            return _humanize(text)
+    return "UI Element"
 
 
 def _pluralize(label: str, count: int) -> str:
@@ -88,7 +174,10 @@ def _dedupe(lines: Iterable[str]) -> list[str]:
     result: list[str] = []
     seen: set[str] = set()
     for line in lines:
-        line = _sentence(re.sub(r"\s+", " ", line).strip())
+        safe_line = _english_prompt_text(line)
+        if not safe_line:
+            continue
+        line = _sentence(re.sub(r"\s+", " ", safe_line).strip())
         key = re.sub(r"[^a-z0-9]+", " ", line.lower()).strip()
         if line and key not in seen:
             seen.add(key)
@@ -144,8 +233,7 @@ def _component_labels(components: list[dict[str, Any]]) -> dict[str, str]:
         component_id = _text(component.get("component_id"))
         if not component_id:
             continue
-        label = _text(component.get("name")) or _humanize(component.get("semantic_type") or component_id)
-        labels[component_id] = label
+        labels[component_id] = _component_label(component)
     return labels
 
 
@@ -220,7 +308,7 @@ def _composition_lines(
         direct_children = children.get(parent_id, [])
         if len(direct_children) < 2:
             continue
-        child_names = [(_text(child.get("name")) or _humanize(child.get("semantic_type"))).lower() for child in direct_children]
+        child_names = [_component_label(child).lower() for child in direct_children]
         if len(child_names) == 2:
             joined = f"{child_names[0]} and {child_names[1]}"
         else:
@@ -229,7 +317,7 @@ def _composition_lines(
         if parent_type == "page_root":
             lines.append(f"Organize the page into {joined}")
         else:
-            parent_name = (_text(parent.get("name")) or _humanize(parent_id)).lower()
+            parent_name = _component_label(parent).lower()
             lines.append(f"Group {joined} within the {parent_name}")
 
     positioned: set[str] = set()
@@ -293,11 +381,42 @@ def _style_decisions(plan: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 def _neutral_style_summary(value: Any) -> str | None:
-    summary = _text(value)
+    summary = _english_prompt_text(value)
     if not summary:
         return None
     summary = re.split(r"\b(?:while|although|however|but)\b", summary, maxsplit=1, flags=re.IGNORECASE)[0]
     return _text(summary.rstrip(" ,;"))
+
+
+def _trait_id_phrase(trait_id: Any, dimension: Any) -> str | None:
+    text = _text(trait_id)
+    if not text:
+        return None
+    words = re.split(r"[_\-]+", text.lower())
+    dimension_words = set(re.split(r"[_\-]+", _text(dimension) or ""))
+    while words and words[0] in dimension_words | {"trait", "style", "visual", "profile", "world"}:
+        words.pop(0)
+    if not words or all(word.isdigit() for word in words):
+        return None
+    phrase = " ".join(words)
+    for source, replacement in (
+        ("low saturation", "low-saturation"),
+        ("blue gray", "blue-gray"),
+        ("blue white", "blue-white"),
+        ("silver black", "silver-black"),
+        ("dark fantasy", "dark-fantasy"),
+        ("hard surface", "hard-surface"),
+    ):
+        phrase = phrase.replace(source, replacement)
+    return phrase
+
+
+def _style_trait_phrase(trait: dict[str, Any]) -> str | None:
+    for value in (trait.get("trait"), trait.get("description")):
+        translated = _english_prompt_text(value)
+        if translated:
+            return translated
+    return _trait_id_phrase(trait.get("trait_id"), trait.get("_dimension"))
 
 
 def _visual_style_lines(
@@ -348,7 +467,7 @@ def _visual_style_lines(
     lines: list[str] = []
     covered: set[str] = set()
     for directive in _dict_list(visual.get("directives")):
-        direction = _text(directive.get("direction"))
+        direction = _english_prompt_text(directive.get("direction"))
         if not direction:
             continue
         source_ids = set(_string_list(directive.get("source_trait_ids")))
@@ -362,7 +481,7 @@ def _visual_style_lines(
     for trait_id, trait in accepted.items():
         if trait_id in covered:
             continue
-        trait_name = _text(trait.get("trait")) or _text(trait.get("description"))
+        trait_name = _style_trait_phrase(trait)
         if trait_name:
             lines.append(f"Use {_lower_first(trait_name)}")
 
@@ -496,7 +615,12 @@ def compile_prompt(plan: dict[str, Any], style: dict[str, Any]) -> str:
     chunks = []
     for heading, lines in sections:
         chunks.append(heading + "\n" + "\n".join(f"- {line}" for line in lines))
-    return "\n\n".join(chunks) + "\n"
+    prompt = "\n\n".join(chunks) + "\n"
+    if not prompt.isascii():
+        raise CompileError("The compiled prompt contains untranslated or non-English text")
+    if any(_is_internal_instruction(line) for line in prompt.splitlines()):
+        raise CompileError("The compiled prompt contains internal provenance or agent instructions")
+    return prompt
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

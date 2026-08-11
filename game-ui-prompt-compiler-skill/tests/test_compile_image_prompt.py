@@ -3,6 +3,7 @@ import sys
 import tempfile
 import unittest
 import json
+import re
 from pathlib import Path
 
 
@@ -62,6 +63,80 @@ class PromptCompilerTests(unittest.TestCase):
         self.assertNotIn("semi-realistic versus", prompt)
         for internal_name in ("component_id", "trait_id", "source_ref", "confidence"):
             self.assertNotIn(internal_name, prompt)
+
+    def test_translates_chinese_style_filters_internal_instructions_and_visualizes_labels(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        plan = json.loads(RUN_PLAN.read_text(encoding="utf-8"))
+        style = json.loads(STYLE.read_text(encoding="utf-8"))
+
+        plan["project_context"]["constraints"].append(
+            "Use A as layout evidence and B as style evidence without mutating either source."
+        )
+        plan["visual_direction"]["hierarchy_emphasis"].append(
+            "Agent instruction: preserve provenance and source_ref values."
+        )
+        plan["visual_direction"]["directives"] = []
+        for component in plan["component_tree"]:
+            if component.get("component_id") == "category_tab_template":
+                component["name"] = "Category Tab Template"
+            elif component.get("component_id") == "product_card_template":
+                component["name"] = "Product Card Template"
+
+        translations = {
+            "color_cool_blue_gray": "低饱和冷蓝灰配色",
+            "material_silver_black_hard_surfaces": "银黑色硬表面材质",
+            "material_heavy_matte_bases": "厚重的哑光基底",
+            "shape_sharp_elongated": "尖锐修长的轮廓",
+            "lighting_blue_white_local": "局部蓝白色光效",
+            "decoration_restrained_gothic": "克制的哥特式装饰",
+            "world_dark_fantasy": "暗黑幻想视觉语境",
+        }
+        for profile in style["visual_profiles"].values():
+            for classification in ("stable", "secondary", "local", "conflicting", "uncertain"):
+                for trait in profile[classification]:
+                    if trait.get("trait_id") in translations:
+                        trait["trait"] = translations[trait["trait_id"]]
+                        trait["description"] = translations[trait["trait_id"]]
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            plan_path = temp / "plan.json"
+            style_path = temp / "style.json"
+            output = temp / "image-prompt.txt"
+            plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+            style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+            result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPT),
+                    "--compose-plan",
+                    str(plan_path),
+                    "--style-profile",
+                    str(style_path),
+                    "--output",
+                    str(output),
+                ],
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            prompt = output.read_text(encoding="utf-8")
+
+        self.assertIsNone(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", prompt))
+        self.assertTrue(prompt.isascii())
+        self.assertIn("Use a low-saturation cool blue-gray palette.", prompt)
+        self.assertIn("Use silver-black hard-surface materials.", prompt)
+        self.assertIn("Exactly 3 category tabs.", prompt)
+        self.assertIn("Exactly 6 product cards.", prompt)
+        self.assertNotIn("category tab templates", prompt.lower())
+        self.assertNotIn("product card templates", prompt.lower())
+        self.assertNotIn("layout evidence", prompt.lower())
+        self.assertNotIn("style evidence", prompt.lower())
+        self.assertNotIn("provenance", prompt.lower())
+        self.assertNotIn("source_ref", prompt.lower())
 
     def test_invalid_json_fails_without_creating_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:
