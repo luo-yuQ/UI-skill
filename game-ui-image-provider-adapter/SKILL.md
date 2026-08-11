@@ -34,7 +34,7 @@ Infer a requested canvas only from text such as `Compose for a 1920 x 1080 px ca
 
 ## Verified ToAPIs protocol
 
-Submit `type: "text"` with `images: []` to `POST /v1/images/generations`. Read the task ID only from response field `id`. Poll `GET /v1/tasks/{id}/status` and read `task_status`; after completion fetch `GET /v1/tasks/{id}/result`. Prefer `items[0].url` and retain compatibility with `data.result.data[0].url`.
+Use system `curl.exe` on Windows, falling back only to a system `curl` executable name on other hosts. Never use Python `requests` as a transport fallback. Invoke curl with an argument array and `shell=False`. Submit `type: "text"` with `images: []` to `POST /v1/images/generations`, placing the UTF-8 JSON payload in a temporary file and sending it with `--data-binary @file`. Read the task ID only from response field `id`. Poll `GET /v1/tasks/{id}/status` and read `task_status`; after completion fetch `GET /v1/tasks/{id}/result`. Prefer `items[0].url` and retain compatibility with `data.result.data[0].url`. Remove every temporary request file after use.
 
 ## Boundaries
 

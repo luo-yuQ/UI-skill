@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate one pure-text game UI preview through the ToAPIs provider."""
+"""Generate one pure-text game UI preview through ToAPIs using system curl."""
 
 from __future__ import annotations
 
@@ -7,17 +7,14 @@ import argparse
 import json
 import os
 import re
+import shutil
+import subprocess
 import sys
 import tempfile
 import time
 from pathlib import Path
 from typing import Any, Callable
 from urllib.parse import urljoin, urlparse
-
-try:
-    import requests
-except ModuleNotFoundError:  # pragma: no cover - environment-specific
-    requests = None  # type: ignore[assignment]
 
 
 SCHEMA_VERSION = "0.1"
@@ -31,6 +28,8 @@ EXIT_CONFIG = 3
 EXIT_PROVIDER = 4
 EXIT_OUTPUT = 5
 
+HTTP_STATUS_MARKER = "__CODEX_HTTP_STATUS__:"
+CONTENT_TYPE_MARKER = "__CODEX_CONTENT_TYPE__:"
 CANVAS_PATTERN = re.compile(
     r"\bcompose\s+for\s+a\s+(\d+)\s*[x×]\s*(\d+)\s*px\s+canvas\b",
     re.IGNORECASE,
@@ -65,6 +64,18 @@ def provider_url(base_url: str, path: str) -> str:
     if is_http_url(path):
         return path
     return urljoin(base_url.rstrip("/") + "/", path.lstrip("/"))
+
+
+def find_curl() -> str:
+    for name in ("curl.exe", "curl"):
+        path = shutil.which(name)
+        if path:
+            return path
+    raise AdapterError(
+        "provider_dependency_missing",
+        "System curl was not found; install curl.exe or make curl available on PATH",
+        exit_code=EXIT_CONFIG,
+    )
 
 
 def read_prompt(path: Path) -> str:
@@ -114,38 +125,156 @@ def build_payload(prompt: str, *, model: str, size: str) -> dict[str, Any]:
     }
 
 
-def authorization(api_key: str) -> dict[str, str]:
-    return {"Authorization": f"Bearer {api_key}"}
+def sanitized_text(value: str, api_key: str | None, *, limit: int = 500) -> str:
+    text = value.replace(api_key, "[REDACTED]") if api_key else value
+    text = " ".join(text.replace("\x00", "").split())
+    return text[:limit]
 
 
-def response_json(response: Any, error_type: str) -> dict[str, Any]:
+def parse_curl_output(stdout: bytes, api_key: str) -> tuple[str, int | None, str | None]:
+    text = stdout.decode("utf-8", errors="replace")
+    marker = f"\n{HTTP_STATUS_MARKER}"
+    if marker not in text:
+        return text, None, None
+    body, metadata = text.rsplit(marker, 1)
+    lines = metadata.splitlines()
     try:
-        response.raise_for_status()
-    except Exception as exc:
-        status = getattr(response, "status_code", "unknown")
-        raise AdapterError(error_type, f"Provider HTTP request failed with status {status}", exit_code=EXIT_PROVIDER) from exc
+        status = int(lines[0].strip())
+    except (IndexError, ValueError):
+        status = None
+    content_type = None
+    for line in lines[1:]:
+        if line.startswith(CONTENT_TYPE_MARKER):
+            content_type = line[len(CONTENT_TYPE_MARKER) :].strip() or None
+    return body, status, content_type
+
+
+def curl_write_out() -> str:
+    return f"\n{HTTP_STATUS_MARKER}%{{http_code}}\n{CONTENT_TYPE_MARKER}%{{content_type}}"
+
+
+def run_curl(
+    arguments: list[str],
+    *,
+    timeout: float,
+    api_key: str,
+    runner: Callable[..., Any] = subprocess.run,
+) -> tuple[str, int | None, str | None]:
     try:
-        data = response.json()
-    except (ValueError, TypeError) as exc:
-        raise AdapterError("provider_response_invalid", "Provider response was not valid JSON", exit_code=EXIT_PROVIDER) from exc
-    if not isinstance(data, dict):
-        raise AdapterError("provider_response_invalid", "Provider response must be a JSON object", exit_code=EXIT_PROVIDER)
-    return data
+        completed = runner(
+            arguments,
+            capture_output=True,
+            check=False,
+            shell=False,
+            timeout=timeout,
+        )
+    except subprocess.TimeoutExpired as exc:
+        raise AdapterError("provider_timeout", f"curl exceeded {timeout:g} seconds", exit_code=EXIT_PROVIDER) from exc
+    except OSError as exc:
+        raise AdapterError("provider_dependency_missing", f"Unable to execute system curl: {exc}", exit_code=EXIT_CONFIG) from exc
+    body, status, content_type = parse_curl_output(completed.stdout or b"", api_key)
+    if completed.returncode != 0:
+        stderr = (completed.stderr or b"").decode("utf-8", errors="replace")
+        diagnostic = sanitized_text(stderr or body, api_key)
+        status_note = f", HTTP {status}" if status else ""
+        raise AdapterError(
+            "provider_request_failed",
+            f"curl failed with exit code {completed.returncode}{status_note}: {diagnostic or 'no diagnostic output'}",
+            exit_code=EXIT_PROVIDER,
+        )
+    if status is None:
+        raise AdapterError("provider_response_invalid", "curl response did not include an HTTP status", exit_code=EXIT_PROVIDER)
+    if status < 200 or status >= 300:
+        preview = sanitized_text(body, api_key)
+        raise AdapterError(
+            "provider_http_error",
+            f"Provider HTTP request failed with status {status}: {preview or 'empty response body'}",
+            exit_code=EXIT_PROVIDER,
+        )
+    return body, status, content_type
+
+
+def curl_json_request(
+    method: str,
+    url: str,
+    *,
+    curl_path: str,
+    api_key: str,
+    timeout: float,
+    payload: dict[str, Any] | None = None,
+    runner: Callable[..., Any] = subprocess.run,
+) -> dict[str, Any]:
+    request_file: Path | None = None
+    try:
+        arguments = [
+            curl_path,
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail-with-body",
+            "--max-time",
+            f"{timeout:g}",
+            "--request",
+            method,
+            "--header",
+            f"Authorization: Bearer {api_key}",
+            "--write-out",
+            curl_write_out(),
+        ]
+        if payload is not None:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, prefix="game-ui-provider-", suffix=".json") as file:
+                request_file = Path(file.name)
+                json.dump(payload, file, ensure_ascii=False, separators=(",", ":"))
+                file.flush()
+                os.fsync(file.fileno())
+            arguments.extend(
+                [
+                    "--header",
+                    "Content-Type: application/json",
+                    "--data-binary",
+                    f"@{request_file}",
+                ]
+            )
+        arguments.append(url)
+        body, status, _ = run_curl(arguments, timeout=timeout, api_key=api_key, runner=runner)
+        try:
+            data = json.loads(body)
+        except json.JSONDecodeError as exc:
+            preview = sanitized_text(body, api_key)
+            raise AdapterError(
+                "provider_response_invalid",
+                f"Provider returned invalid JSON (HTTP {status}): {preview or 'empty response body'}",
+                exit_code=EXIT_PROVIDER,
+            ) from exc
+        if not isinstance(data, dict):
+            raise AdapterError("provider_response_invalid", "Provider JSON response must be an object", exit_code=EXIT_PROVIDER)
+        return data
+    finally:
+        if request_file is not None:
+            try:
+                request_file.unlink(missing_ok=True)
+            except OSError:
+                pass
 
 
 def submit_generation(
-    payload: dict[str, Any], *, base_url: str, api_key: str, timeout: float, session: Any
+    payload: dict[str, Any],
+    *,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+    curl_path: str,
+    runner: Callable[..., Any] = subprocess.run,
 ) -> dict[str, Any]:
-    try:
-        response = session.post(
-            provider_url(base_url, "/v1/images/generations"),
-            headers={**authorization(api_key), "Content-Type": "application/json"},
-            json=payload,
-            timeout=timeout,
-        )
-    except Exception as exc:
-        raise AdapterError("provider_request_failed", f"Generation submission failed: {exc}", exit_code=EXIT_PROVIDER) from exc
-    data = response_json(response, "provider_http_error")
+    data = curl_json_request(
+        "POST",
+        provider_url(base_url, "/v1/images/generations"),
+        curl_path=curl_path,
+        api_key=api_key,
+        timeout=timeout,
+        payload=payload,
+        runner=runner,
+    )
     task_id = data.get("id")
     if data.get("success") is False or not isinstance(task_id, str) or not task_id.strip():
         raise AdapterError("provider_response_invalid", "Generation response did not contain an id", exit_code=EXIT_PROVIDER)
@@ -167,7 +296,8 @@ def poll_task(
     poll_interval: float,
     max_wait: float,
     timeout: float,
-    session: Any,
+    curl_path: str,
+    runner: Callable[..., Any] = subprocess.run,
     sleep_fn: Callable[[float], None] = time.sleep,
     monotonic_fn: Callable[[], float] = time.monotonic,
 ) -> None:
@@ -176,11 +306,14 @@ def poll_task(
     status_url = provider_url(base_url, f"/v1/tasks/{task_id}/status")
     started = monotonic_fn()
     while True:
-        try:
-            response = session.get(status_url, headers=authorization(api_key), timeout=timeout)
-        except Exception as exc:
-            raise AdapterError("provider_request_failed", f"Task status request failed: {exc}", exit_code=EXIT_PROVIDER) from exc
-        data = response_json(response, "provider_http_error")
+        data = curl_json_request(
+            "GET",
+            status_url,
+            curl_path=curl_path,
+            api_key=api_key,
+            timeout=timeout,
+            runner=runner,
+        )
         status = str(data.get("task_status") or data.get("status") or "").lower()
         if status in {"completed", "succeeded", "success", "finished"}:
             return
@@ -214,16 +347,24 @@ def extract_image_url(result: dict[str, Any]) -> str | None:
     return None
 
 
-def fetch_result(task_id: str, *, base_url: str, api_key: str, timeout: float, session: Any) -> str:
-    try:
-        response = session.get(
-            provider_url(base_url, f"/v1/tasks/{task_id}/result"),
-            headers=authorization(api_key),
-            timeout=timeout,
-        )
-    except Exception as exc:
-        raise AdapterError("provider_request_failed", f"Task result request failed: {exc}", exit_code=EXIT_PROVIDER) from exc
-    image_url = extract_image_url(response_json(response, "provider_http_error"))
+def fetch_result(
+    task_id: str,
+    *,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+    curl_path: str,
+    runner: Callable[..., Any] = subprocess.run,
+) -> str:
+    data = curl_json_request(
+        "GET",
+        provider_url(base_url, f"/v1/tasks/{task_id}/result"),
+        curl_path=curl_path,
+        api_key=api_key,
+        timeout=timeout,
+        runner=runner,
+    )
+    image_url = extract_image_url(data)
     if image_url is None:
         raise AdapterError("provider_response_invalid", "Completed task result did not contain an image URL", exit_code=EXIT_PROVIDER)
     return image_url
@@ -247,28 +388,38 @@ def image_extension(prefix: bytes, content_type: str, image_url: str) -> str | N
     return suffix if suffix in {".png", ".jpg", ".jpeg", ".webp"} else None
 
 
-def download_image(image_url: str, output_dir: Path, *, timeout: float, session: Any) -> Path:
+def download_image(
+    image_url: str,
+    output_dir: Path,
+    *,
+    timeout: float,
+    curl_path: str,
+    api_key: str,
+    runner: Callable[..., Any] = subprocess.run,
+) -> Path:
     output_dir.mkdir(parents=True, exist_ok=True)
     temporary: Path | None = None
-    prefix = bytearray()
-    total = 0
     try:
-        response = session.get(image_url, stream=True, timeout=timeout)
-        response.raise_for_status()
         with tempfile.NamedTemporaryFile(mode="wb", delete=False, dir=output_dir, prefix=".preview.", suffix=".part") as file:
             temporary = Path(file.name)
-            for chunk in response.iter_content(chunk_size=64 * 1024):
-                if not chunk:
-                    continue
-                if len(prefix) < 16:
-                    prefix.extend(chunk[: 16 - len(prefix)])
-                file.write(chunk)
-                total += len(chunk)
-            file.flush()
-            os.fsync(file.fileno())
-        headers = getattr(response, "headers", {}) or {}
-        extension = image_extension(bytes(prefix), str(headers.get("Content-Type", "")), image_url)
-        if total == 0 or extension is None:
+        arguments = [
+            curl_path,
+            "--silent",
+            "--show-error",
+            "--location",
+            "--fail-with-body",
+            "--max-time",
+            f"{timeout:g}",
+            "--output",
+            str(temporary),
+            "--write-out",
+            curl_write_out(),
+            image_url,
+        ]
+        _, _, content_type = run_curl(arguments, timeout=timeout, api_key=api_key, runner=runner)
+        prefix = temporary.read_bytes()[:16]
+        extension = image_extension(prefix, content_type or "", image_url)
+        if temporary.stat().st_size == 0 or extension is None:
             raise AdapterError("provider_response_invalid", "Provider image response was empty or not a supported image", exit_code=EXIT_PROVIDER)
         if extension == ".jpeg":
             extension = ".jpg"
@@ -278,8 +429,8 @@ def download_image(image_url: str, output_dir: Path, *, timeout: float, session:
         return output_path
     except AdapterError:
         raise
-    except Exception as exc:
-        raise AdapterError("image_save_failed", f"Unable to download or save provider image: {exc}", exit_code=EXIT_OUTPUT) from exc
+    except OSError as exc:
+        raise AdapterError("image_save_failed", f"Unable to save provider image: {exc}", exit_code=EXIT_OUTPUT) from exc
     finally:
         if temporary is not None:
             try:
@@ -327,7 +478,12 @@ def sanitized_message(message: str, api_key: str | None) -> str:
     return message.replace(api_key, "[REDACTED]") if api_key else message
 
 
-def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str, Any]]:
+def run(
+    args: argparse.Namespace,
+    *,
+    runner: Callable[..., Any] = subprocess.run,
+    curl_path: str | None = None,
+) -> tuple[int, dict[str, Any]]:
     prompt_path = Path(args.prompt)
     output_dir = Path(args.output_dir)
     result_path = output_dir / "result.json"
@@ -345,11 +501,16 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             raise AdapterError("provider_config_invalid", "TOAPIS_BASE_URL must be an HTTP(S) URL", exit_code=EXIT_CONFIG)
         if not api_key:
             raise AdapterError("provider_config_missing", "TOAPIS_API_KEY is required", exit_code=EXIT_CONFIG)
-        if requests is None and session is None:
-            raise AdapterError("provider_dependency_missing", "The requests package is required", exit_code=EXIT_CONFIG)
-        active_session = session if session is not None else requests.Session()
+        active_curl = curl_path or find_curl()
         payload = build_payload(prompt, model=args.model, size=provider_size)
-        submit_data = submit_generation(payload, base_url=base_url, api_key=api_key, timeout=args.request_timeout, session=active_session)
+        submit_data = submit_generation(
+            payload,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=args.request_timeout,
+            curl_path=active_curl,
+            runner=runner,
+        )
         task_id = str(submit_data["id"])
         poll_task(
             task_id,
@@ -359,10 +520,25 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             poll_interval=args.poll_interval,
             max_wait=args.max_wait,
             timeout=args.request_timeout,
-            session=active_session,
+            curl_path=active_curl,
+            runner=runner,
         )
-        image_url = fetch_result(task_id, base_url=base_url, api_key=api_key, timeout=args.request_timeout, session=active_session)
-        output_path = download_image(image_url, output_dir, timeout=args.download_timeout, session=active_session)
+        image_url = fetch_result(
+            task_id,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=args.request_timeout,
+            curl_path=active_curl,
+            runner=runner,
+        )
+        output_path = download_image(
+            image_url,
+            output_dir,
+            timeout=args.download_timeout,
+            curl_path=active_curl,
+            api_key=api_key,
+            runner=runner,
+        )
         result = {
             "schema_version": SCHEMA_VERSION,
             "status": "success",

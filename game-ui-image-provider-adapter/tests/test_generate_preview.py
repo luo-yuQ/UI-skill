@@ -1,6 +1,7 @@
 import argparse
 import json
 import os
+import subprocess
 import tempfile
 import unittest
 from importlib.util import module_from_spec, spec_from_file_location
@@ -15,6 +16,7 @@ adapter = module_from_spec(SPEC)
 SPEC.loader.exec_module(adapter)
 
 
+CURL = r"C:\Windows\System32\curl.exe"
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"test-image"
 
 SUBMIT_FIXTURE = {
@@ -53,40 +55,78 @@ RESULT_FIXTURE = {
 }
 
 
-class FakeResponse:
-    def __init__(self, body=None, *, status_code=200, chunks=None, headers=None):
+class CurlSpec:
+    def __init__(
+        self,
+        body=None,
+        *,
+        raw_body=None,
+        status=200,
+        content_type="application/json",
+        returncode=0,
+        stderr="",
+        download_bytes=None,
+    ):
         self.body = body
-        self.status_code = status_code
-        self.chunks = chunks or []
-        self.headers = headers or {}
-
-    def raise_for_status(self):
-        if self.status_code >= 400:
-            raise RuntimeError(f"HTTP {self.status_code}")
-
-    def json(self):
-        if isinstance(self.body, Exception):
-            raise self.body
-        return self.body
-
-    def iter_content(self, chunk_size=65536):
-        yield from self.chunks
+        self.raw_body = raw_body
+        self.status = status
+        self.content_type = content_type
+        self.returncode = returncode
+        self.stderr = stderr
+        self.download_bytes = download_bytes
 
 
-class FakeSession:
-    def __init__(self, *, posts=None, gets=None):
-        self.posts = list(posts or [])
-        self.gets = list(gets or [])
-        self.post_calls = []
-        self.get_calls = []
+class FakeCurlRunner:
+    def __init__(self, specs):
+        self.specs = list(specs)
+        self.calls = []
+        self.request_paths = []
+        self.request_bytes = []
 
-    def post(self, url, **kwargs):
-        self.post_calls.append((url, kwargs))
-        return self.posts.pop(0)
+    def __call__(self, arguments, **kwargs):
+        self.calls.append((arguments, kwargs))
+        self.assert_safe_invocation(arguments, kwargs)
+        spec = self.specs.pop(0)
+        if "--data-binary" in arguments:
+            value = arguments[arguments.index("--data-binary") + 1]
+            self.assertTrue(value.startswith("@"))
+            request_path = Path(value[1:])
+            self.assertTrue(request_path.is_file())
+            self.request_paths.append(request_path)
+            self.request_bytes.append(request_path.read_bytes())
+        if "--output" in arguments and spec.download_bytes is not None:
+            output_path = Path(arguments[arguments.index("--output") + 1])
+            output_path.write_bytes(spec.download_bytes)
+        if spec.download_bytes is not None:
+            body = ""
+        elif spec.raw_body is not None:
+            body = spec.raw_body
+        else:
+            body = json.dumps(spec.body, ensure_ascii=False)
+        stdout = (
+            body
+            + f"\n{adapter.HTTP_STATUS_MARKER}{spec.status}"
+            + f"\n{adapter.CONTENT_TYPE_MARKER}{spec.content_type}"
+        ).encode("utf-8")
+        return subprocess.CompletedProcess(
+            arguments,
+            spec.returncode,
+            stdout=stdout,
+            stderr=spec.stderr.encode("utf-8"),
+        )
 
-    def get(self, url, **kwargs):
-        self.get_calls.append((url, kwargs))
-        return self.gets.pop(0)
+    def assert_safe_invocation(self, arguments, kwargs):
+        if not isinstance(arguments, list):
+            raise AssertionError("curl must be invoked with an argument list")
+        if kwargs.get("shell") is not False:
+            raise AssertionError("curl must use shell=False")
+        if kwargs.get("check") is not False:
+            raise AssertionError("curl must use check=False")
+
+    @staticmethod
+    def assertTrue(value):
+        if not value:
+            raise AssertionError("expected true value")
 
 
 def args_for(prompt: Path, output_dir: Path, **overrides):
@@ -126,24 +166,36 @@ class PromptAndPayloadTests(unittest.TestCase):
         self.assertEqual([], payload["images"])
         self.assertNotIn("masterpiece", json.dumps(payload).lower())
 
-    def test_submit_uses_verified_endpoint_and_id_fixture(self):
-        session = FakeSession(posts=[FakeResponse(SUBMIT_FIXTURE)])
+
+class CurlTransportTests(unittest.TestCase):
+    def test_find_curl_prefers_curl_exe(self):
+        with patch.object(adapter.shutil, "which", side_effect=lambda name: CURL if name == "curl.exe" else None) as which:
+            self.assertEqual(CURL, adapter.find_curl())
+        which.assert_called_once_with("curl.exe")
+
+    def test_submit_uses_temp_utf8_json_data_binary_and_cleans_file(self):
+        secret = "secret"
+        runner = FakeCurlRunner([CurlSpec(SUBMIT_FIXTURE)])
+        payload = adapter.build_payload("Prompt", model="gpt-image-2", size="1536x1024")
         returned = adapter.submit_generation(
-            adapter.build_payload("Prompt", model="gpt-image-2", size="1536x1024"),
+            payload,
             base_url=adapter.DEFAULT_BASE_URL,
-            api_key="secret",
+            api_key=secret,
             timeout=20,
-            session=session,
+            curl_path=CURL,
+            runner=runner,
         )
         self.assertEqual(SUBMIT_FIXTURE, returned)
-        url, kwargs = session.post_calls[0]
-        self.assertEqual("https://ai-api.youchu.work/v1/images/generations", url)
-        self.assertEqual("text", kwargs["json"]["type"])
-        self.assertEqual("tsk_img_01KZQCGAHER4ZP0PZGTJFWGX7A", returned["id"])
-        self.assertNotIn("task_id", returned)
+        arguments = runner.calls[0][0]
+        self.assertIn("https://ai-api.youchu.work/v1/images/generations", arguments)
+        self.assertIn("--data-binary", arguments)
+        self.assertIn(f"Authorization: Bearer {secret}", arguments)
+        self.assertFalse(runner.request_bytes[0].startswith(b"\xef\xbb\xbf"))
+        self.assertEqual(payload, json.loads(runner.request_bytes[0].decode("utf-8")))
+        self.assertTrue(all(not path.exists() for path in runner.request_paths))
 
-    def test_status_fixture_uses_tasks_status_endpoint(self):
-        session = FakeSession(gets=[FakeResponse(STATUS_FIXTURE)])
+    def test_status_uses_curl_get_tasks_status_endpoint(self):
+        runner = FakeCurlRunner([CurlSpec(STATUS_FIXTURE)])
         adapter.poll_task(
             SUBMIT_FIXTURE["id"],
             SUBMIT_FIXTURE,
@@ -152,27 +204,59 @@ class PromptAndPayloadTests(unittest.TestCase):
             poll_interval=1,
             max_wait=10,
             timeout=20,
-            session=session,
+            curl_path=CURL,
+            runner=runner,
         )
-        self.assertEqual(
+        arguments = runner.calls[0][0]
+        self.assertEqual("GET", arguments[arguments.index("--request") + 1])
+        self.assertIn(
             "https://ai-api.youchu.work/v1/tasks/tsk_img_01KZQCGAHER4ZP0PZGTJFWGX7A/status",
-            session.get_calls[0][0],
+            arguments,
         )
 
-    def test_result_fixture_prefers_items_and_uses_tasks_result_endpoint(self):
-        session = FakeSession(gets=[FakeResponse(RESULT_FIXTURE)])
+    def test_result_uses_curl_get_and_prefers_items(self):
+        runner = FakeCurlRunner([CurlSpec(RESULT_FIXTURE)])
         url = adapter.fetch_result(
             SUBMIT_FIXTURE["id"],
             base_url=adapter.DEFAULT_BASE_URL,
             api_key="secret",
             timeout=20,
-            session=session,
+            curl_path=CURL,
+            runner=runner,
         )
         self.assertEqual("https://files.toapis.com/images/generated.png", url)
-        self.assertEqual(
+        self.assertIn(
             "https://ai-api.youchu.work/v1/tasks/tsk_img_01KZQCGAHER4ZP0PZGTJFWGX7A/result",
-            session.get_calls[0][0],
+            runner.calls[0][0],
         )
+
+    def test_curl_nonzero_exit_becomes_adapter_error(self):
+        runner = FakeCurlRunner([CurlSpec(raw_body="", status=0, returncode=7, stderr="connection failed")])
+        with self.assertRaises(adapter.AdapterError) as caught:
+            adapter.curl_json_request(
+                "GET",
+                "https://example.test/status",
+                curl_path=CURL,
+                api_key="secret",
+                timeout=20,
+                runner=runner,
+            )
+        self.assertEqual("provider_request_failed", caught.exception.error_type)
+        self.assertIn("exit code 7", caught.exception.message)
+
+    def test_invalid_json_has_safe_body_prefix(self):
+        runner = FakeCurlRunner([CurlSpec(raw_body="not-json-response", status=200)])
+        with self.assertRaises(adapter.AdapterError) as caught:
+            adapter.curl_json_request(
+                "GET",
+                "https://example.test/status",
+                curl_path=CURL,
+                api_key="secret",
+                timeout=20,
+                runner=runner,
+            )
+        self.assertEqual("provider_response_invalid", caught.exception.error_type)
+        self.assertIn("not-json-response", caught.exception.message)
 
 
 class RunTests(unittest.TestCase):
@@ -183,17 +267,17 @@ class RunTests(unittest.TestCase):
             prompt_text = "GOAL\n- Guild shop.\n\nCANVAS AND PAGE TYPE\n- Compose for a 1920 x 1080 px canvas."
             prompt.write_text(prompt_text, encoding="utf-8")
             output_dir = root / "preview"
-            session = FakeSession(
-                posts=[FakeResponse(SUBMIT_FIXTURE)],
-                gets=[
-                    FakeResponse(STATUS_FIXTURE),
-                    FakeResponse(RESULT_FIXTURE),
-                    FakeResponse(chunks=[PNG_BYTES], headers={"Content-Type": "image/png"}),
-                ],
+            runner = FakeCurlRunner(
+                [
+                    CurlSpec(SUBMIT_FIXTURE),
+                    CurlSpec(STATUS_FIXTURE),
+                    CurlSpec(RESULT_FIXTURE),
+                    CurlSpec(status=200, content_type="image/png", download_bytes=PNG_BYTES),
+                ]
             )
             secret = "unit-test-secret"
             with patch.dict(os.environ, {"TOAPIS_API_KEY": secret, "TOAPIS_BASE_URL": adapter.DEFAULT_BASE_URL}, clear=False):
-                code, result = adapter.run(args_for(prompt, output_dir), session=session)
+                code, result = adapter.run(args_for(prompt, output_dir), runner=runner, curl_path=CURL)
 
             self.assertEqual(0, code)
             self.assertEqual(PNG_BYTES, (output_dir / "preview.png").read_bytes())
@@ -206,28 +290,51 @@ class RunTests(unittest.TestCase):
             serialized = json.dumps(saved)
             self.assertNotIn(secret, serialized)
             self.assertNotIn("Authorization", serialized)
-            submitted = session.post_calls[0][1]["json"]
+            submitted = json.loads(runner.request_bytes[0].decode("utf-8"))
             self.assertEqual(prompt_text, submitted["prompt"])
             self.assertEqual("text", submitted["type"])
             self.assertEqual([], submitted["images"])
+            self.assertIn("--location", runner.calls[-1][0])
 
-    def test_missing_api_key_writes_error_result(self):
+    def test_missing_api_key_writes_error_result_without_curl(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             prompt = root / "image-prompt.txt"
             prompt.write_text("Landscape game UI.", encoding="utf-8")
             output_dir = root / "preview"
+            runner = FakeCurlRunner([])
             with patch.dict(os.environ, {}, clear=True):
-                code, result = adapter.run(args_for(prompt, output_dir), session=FakeSession())
+                code, result = adapter.run(args_for(prompt, output_dir), runner=runner)
             self.assertEqual(adapter.EXIT_CONFIG, code)
             self.assertEqual("provider_config_missing", result["error_type"])
+            self.assertEqual([], runner.calls)
             self.assertEqual(result, json.loads((output_dir / "result.json").read_text(encoding="utf-8")))
 
-    def test_jpeg_response_keeps_real_extension(self):
+    def test_missing_system_curl_reports_dependency_error(self):
         with tempfile.TemporaryDirectory() as raw:
-            output_dir = Path(raw)
-            session = FakeSession(gets=[FakeResponse(chunks=[b"\xff\xd8\xffjpeg"], headers={"Content-Type": "image/jpeg"})])
-            path = adapter.download_image("https://files.example/generated", output_dir, timeout=20, session=session)
+            root = Path(raw)
+            prompt = root / "image-prompt.txt"
+            prompt.write_text("Landscape game UI.", encoding="utf-8")
+            output_dir = root / "preview"
+            with patch.dict(os.environ, {"TOAPIS_API_KEY": "secret"}, clear=True):
+                with patch.object(adapter.shutil, "which", return_value=None):
+                    code, result = adapter.run(args_for(prompt, output_dir))
+            self.assertEqual(adapter.EXIT_CONFIG, code)
+            self.assertEqual("provider_dependency_missing", result["error_type"])
+
+    def test_jpeg_download_keeps_real_extension(self):
+        with tempfile.TemporaryDirectory() as raw:
+            runner = FakeCurlRunner(
+                [CurlSpec(status=200, content_type="image/jpeg", download_bytes=b"\xff\xd8\xffjpeg")]
+            )
+            path = adapter.download_image(
+                "https://files.example/generated",
+                Path(raw),
+                timeout=20,
+                curl_path=CURL,
+                api_key="secret",
+                runner=runner,
+            )
             self.assertEqual("preview.jpg", path.name)
 
 
