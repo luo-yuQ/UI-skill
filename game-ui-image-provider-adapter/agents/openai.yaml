@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Image Provider Adapter"
+  short_description: "Generate game UI previews from text prompts"
+  default_prompt: "Use $game-ui-image-provider-adapter to generate a preview image from image-prompt.txt."
