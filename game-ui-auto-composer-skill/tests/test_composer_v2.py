@@ -10,8 +10,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 WORKSPACE = ROOT.parent
-INPUT_EXAMPLE = ROOT / "references" / "examples" / "example-ui-compose-input.json"
-PLAN_EXAMPLE = ROOT / "references" / "examples" / "example-ui-compose-plan.json"
+FIXTURE_DIR = ROOT / "tests" / "fixtures"
+INPUT_EXAMPLE = FIXTURE_DIR / "example-ui-compose-input.json"
+PLAN_EXAMPLE = FIXTURE_DIR / "example-ui-compose-plan.json"
 A_SOURCE = WORKSPACE / "game-ui-layout-analysis-verifier" / "examples" / "example-final-analysis.json"
 B_SOURCE = WORKSPACE / "game-ui-style-reference-analyzer" / "examples" / "b2-style-profile.json"
 
@@ -66,6 +67,13 @@ class ComposerV211RegressionTests(unittest.TestCase):
         self.assertIn("`central_lower_action_band`", skill_text)
         self.assertIn("rather than inside the right auxiliary rail", skill_text)
         self.assertIn("bottom navigation region or bottom band may remain `ignored`", skill_text)
+
+    def test_runtime_skill_does_not_reference_complete_plan_fixture(self):
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertNotIn("example-ui-compose-plan.json", skill_text)
+        self.assertNotIn("references/examples", skill_text)
+        self.assertIn("schemas/ui-compose-plan.schema.json", skill_text)
+        self.assertIn("references/output-schema.md", skill_text)
 
     def test_1_user_product_count_and_grid(self):
         product = self.component("product_card_template")["repeat"]

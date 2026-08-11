@@ -26,9 +26,8 @@ Do not self-loop, retry, repair, or repeatedly rewrite the candidate. Validation
 - `scripts/validate_plan.py` - schema, requirements, origin, registry membership, and consistency validation.
 - `references/input-schema.md` and `references/output-schema.md` - contract details.
 - `references/workflow.md` - one-pass workflow and validation handoff.
-- `references/examples/example-ui-compose-input.json` and `example-ui-compose-plan.json` - regression fixtures and schema shape only.
 
-Never inherit example counts, page semantics, IDs, hierarchy, actions, or copy into another run.
+Treat `schemas/ui-compose-plan.schema.json` and `references/output-schema.md` as the runtime output-shape authorities. Do not inspect test fixtures or any complete example plan during normal composition.
 
 ## Deterministic input construction
 
@@ -178,6 +177,8 @@ The behavioral rule "do not invent IDs" remains, but factual truth is not delega
 Do not run a generate/check/rewrite cycle inside this Skill.
 
 ## Candidate output
+
+Use `schemas/ui-compose-plan.schema.json` for the machine contract and `references/output-schema.md` for the human-readable output contract. Do not use a complete prior plan as a runtime template.
 
 Keep the existing v2 top-level structure:
 

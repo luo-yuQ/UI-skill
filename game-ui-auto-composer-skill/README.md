@@ -38,12 +38,12 @@ Builder 使用 Python JSON API 和 UTF-8 读取全部输入，仅投影当前 sc
 ## 验证
 
 ```powershell
-python scripts/validate_input.py references/examples/example-ui-compose-input.json `
+python scripts/validate_input.py tests/fixtures/example-ui-compose-input.json `
   --layout-source ../game-ui-layout-analysis-verifier/examples/example-final-analysis.json `
   --style-source ../game-ui-style-reference-analyzer/examples/b2-style-profile.json
 
-python scripts/validate_plan.py references/examples/example-ui-compose-plan.json `
-  --input references/examples/example-ui-compose-input.json
+python scripts/validate_plan.py tests/fixtures/example-ui-compose-plan.json `
+  --input tests/fixtures/example-ui-compose-input.json
 
 python -m unittest discover -s tests -p "test_*.py"
 ```

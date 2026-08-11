@@ -9,8 +9,9 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PLAN_PATH = ROOT / "references" / "examples" / "example-ui-compose-plan.json"
-INPUT_PATH = ROOT / "references" / "examples" / "example-ui-compose-input.json"
+FIXTURE_DIR = ROOT / "tests" / "fixtures"
+PLAN_PATH = FIXTURE_DIR / "example-ui-compose-plan.json"
+INPUT_PATH = FIXTURE_DIR / "example-ui-compose-input.json"
 
 
 def load_module(name: str, path: Path):

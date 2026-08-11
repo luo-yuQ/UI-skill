@@ -19,9 +19,9 @@ Example:
 
 ```powershell
 python scripts/build_preview_request.py `
-  --input references\examples\example-ui-compose-input.json `
-  --plan references\examples\example-ui-compose-plan.json `
-  --page login `
+  --input tests\fixtures\example-ui-compose-input.json `
+  --plan tests\fixtures\example-ui-compose-plan.json `
+  --page guild_shop `
   --output preview-request.json
 ```
 
