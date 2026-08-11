@@ -207,18 +207,61 @@ Runner 不得将自己的 request contract 与 A、B、Composer schema 混合。
 
 ## 8. Execution Workflow
 
-### Stage 0 - Initialize Run
+## Run Selection
 
-Runner 首先：
+Before initializing a run, determine whether this invocation is:
 
-1. 创建唯一 `<run-id>`；
-2. 一次性创建完整 run directory；
-3. 将原始 A、B 图片复制到 `00-input/` 对应目录；
-4. 保存用户原始 requirement；
-5. 创建 UTF-8 `request.json`；
-6. 创建 `run-manifest.json`。
+### New Run
 
-Stage 0 完成并记为 `completed` 后，才能开始任何 Skill。
+If the user does NOT provide an existing run path or run-id:
+
+- create a new run
+- execute `runner/scripts/init-stage1.ps1`
+- use the returned run path for all following stages
+
+### Resume Existing Run
+
+If the user explicitly provides an existing path such as:
+
+`runs/<run-id>`
+
+or explicitly says to continue/resume an existing Stage1 run:
+
+- use that exact run
+- DO NOT execute `init-stage1.ps1`
+- DO NOT create another namespace
+- read the existing `run-manifest.json`
+- continue from the requested stage
+- all new outputs must remain inside that same run
+
+An existing run must never be replaced by a newly initialized run unless the user explicitly asks to start a new run.
+
+## Stage 0 — Initialize Run
+
+This stage runs ONLY for a New Run.
+
+If an existing run has been selected, skip Stage 0 completely.
+
+Run:
+
+`runner/scripts/init-stage1.ps1`
+
+Pass:
+
+- scenario
+- original user requirement
+
+The script is responsible for:
+
+- generating run-id
+- creating the run workspace
+- creating standard stage directories
+- writing `00-input/request.json`
+- writing `run-manifest.json`
+
+Agent must not manually recreate this initialization logic unless the script fails.
+
+After the script returns the run path, use that exact run namespace for all downstream stages.
 
 ---
 
