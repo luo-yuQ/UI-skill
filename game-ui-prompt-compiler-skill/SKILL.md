@@ -1,0 +1,63 @@
+---
+name: game-ui-prompt-compiler-skill
+description: Compile a Composer ui-compose-plan JSON and a B2 style-profile JSON into one English image-prompt.txt for a game UI image model. Use when a validated UI structure must be translated into a natural-language image-generation brief without redesigning the component tree, changing exact counts or layout rules, inspecting source images or source_ref paths, calling an image API, or modifying upstream A/B/Composer outputs.
+---
+
+# Game UI Prompt Compiler v0.1
+
+Compile one image prompt from two immutable structured inputs:
+
+```text
+ui-compose-plan.json + style-profile.json -> image-prompt.txt
+```
+
+## Run the compiler
+
+Use the bundled deterministic script:
+
+```powershell
+python game-ui-prompt-compiler-skill/scripts/compile_image_prompt.py `
+  --compose-plan <ui-compose-plan.json> `
+  --style-profile <style-profile.json> `
+  --output <image-prompt.txt>
+```
+
+Treat both inputs as UTF-8 JSON text. Read only the two paths supplied on the command line. Never open paths found inside either JSON, including `source_ref`, image paths, asset paths, or historical provenance fields.
+
+## Preserve authority
+
+Apply these rules in order:
+
+1. Preserve Composer page semantics, component hierarchy, exact counts, grid dimensions, required positions, and visible content zones.
+2. Translate structural fields into natural UI language; never expose JSON paths, IDs, confidence values, provenance, or debug metadata.
+3. Use B2 `stable` traits first.
+4. Use `secondary` traits when Composer adopted them; if Composer has no style-disposition records, include supported secondary traits conservatively.
+5. Use a `local` trait only when Composer explicitly adopts it for the selected page or one of that page's components.
+6. Omit `conflicting` and `uncertain` traits instead of choosing a side or turning low-confidence evidence into a requirement.
+7. Add only restrained, general production constraints that improve readable, front-facing, separable game UI generation.
+
+Do not redesign the page, add functions, change component counts, resolve `missing_assets`, inspect images, call GPT Image, build provider adapters, validate generated images, cut assets, or handle FairyGUI.
+
+## Output contract
+
+Emit English plain text with exactly these sections:
+
+```text
+GOAL
+
+CANVAS AND PAGE TYPE
+
+COMPOSITION
+
+VISUAL STYLE
+
+HARD REQUIREMENTS
+
+PRODUCTION CONSTRAINTS
+```
+
+Keep the result like a concise design brief, not a keyword pile. Reinforce exact counts and grids with `exactly`, `must`, and `do not add` language. Keep layout and visible hierarchy in `COMPOSITION`, evidence-backed appearance in `VISUAL STYLE`, and count/position invariants in `HARD REQUIREMENTS`.
+
+## Fail only when compilation is impossible
+
+Fail with a nonzero exit code when either JSON cannot be parsed, no valid page exists, no usable UI structure exists, or no usable style description exists. Do not fail only because `warnings`, `assumptions`, `missing_assets`, or low-confidence fields are present.

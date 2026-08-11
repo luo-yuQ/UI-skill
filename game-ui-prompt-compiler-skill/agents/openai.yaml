@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Prompt Compiler"
+  short_description: "Compile UI plans into image prompts"
+  default_prompt: "Use $game-ui-prompt-compiler-skill to compile a UI compose plan and style profile into image-prompt.txt."
