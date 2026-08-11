@@ -19,7 +19,7 @@ SPEC.loader.exec_module(adapter)
 CURL = r"C:\Windows\System32\curl.exe"
 PNG_BYTES = b"\x89PNG\r\n\x1a\n" + b"test-image"
 
-SUBMIT_FIXTURE = {
+SUBMIT_ID_FIXTURE = {
     "created_at": 1786417523,
     "id": "tsk_img_01KZQCGAHER4ZP0PZGTJFWGX7A",
     "metadata": {},
@@ -28,6 +28,28 @@ SUBMIT_FIXTURE = {
     "progress": 0,
     "status": "pending",
 }
+
+SUBMIT_TASK_ID_FIXTURE = {
+    "success": True,
+    "task_id": "tsk_img_task_id",
+    "task_status": "processing",
+}
+
+SUBMIT_DATA_ID_FIXTURE = {
+    "success": True,
+    "type": "image_text",
+    "is_async": True,
+    "task_status": "pending",
+    "task_status_url": "/v1/tasks/tsk_img_data_id/status",
+    "poll_interval": 3,
+    "max_wait": 300,
+    "data": {
+        "id": "tsk_img_data_id",
+        "status": "pending",
+    },
+}
+
+SUBMIT_FIXTURE = SUBMIT_ID_FIXTURE
 
 STATUS_FIXTURE = {
     "success": True,
@@ -193,6 +215,42 @@ class CurlTransportTests(unittest.TestCase):
         self.assertFalse(runner.request_bytes[0].startswith(b"\xef\xbb\xbf"))
         self.assertEqual(payload, json.loads(runner.request_bytes[0].decode("utf-8")))
         self.assertTrue(all(not path.exists() for path in runner.request_paths))
+
+    def test_submit_task_id_compatibility_and_priority(self):
+        cases = [
+            ({"id": "from_id", "task_id": "from_task_id", "data": {"id": "from_data"}}, "from_id"),
+            (SUBMIT_TASK_ID_FIXTURE, "tsk_img_task_id"),
+            (SUBMIT_DATA_ID_FIXTURE, "tsk_img_data_id"),
+        ]
+        for fixture, expected in cases:
+            with self.subTest(expected=expected):
+                runner = FakeCurlRunner([CurlSpec(fixture)])
+                returned = adapter.submit_generation(
+                    adapter.build_payload("Prompt", model="gpt-image-2", size="1536x1024"),
+                    base_url=adapter.DEFAULT_BASE_URL,
+                    api_key="secret",
+                    timeout=20,
+                    curl_path=CURL,
+                    runner=runner,
+                )
+                self.assertEqual(expected, returned["id"])
+
+    def test_unrecognized_submit_reports_structure_without_values(self):
+        fixture = {"success": True, "opaque": {"authorization": "sensitive-value"}, "items": []}
+        runner = FakeCurlRunner([CurlSpec(fixture)])
+        with self.assertRaises(adapter.AdapterError) as caught:
+            adapter.submit_generation(
+                adapter.build_payload("Prompt", model="gpt-image-2", size="1536x1024"),
+                base_url=adapter.DEFAULT_BASE_URL,
+                api_key="secret",
+                timeout=20,
+                curl_path=CURL,
+                runner=runner,
+            )
+        self.assertEqual("provider_response_invalid", caught.exception.error_type)
+        self.assertIn("Generation response did not contain a usable task id", caught.exception.message)
+        self.assertIn('"authorization":"string"', caught.exception.message)
+        self.assertNotIn("sensitive-value", caught.exception.message)
 
     def test_status_uses_curl_get_tasks_status_endpoint(self):
         runner = FakeCurlRunner([CurlSpec(STATUS_FIXTURE)])

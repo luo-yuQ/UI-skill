@@ -257,6 +257,37 @@ def curl_json_request(
                 pass
 
 
+def submit_task_id(data: dict[str, Any]) -> str | None:
+    nested_data = data.get("data")
+    candidates = [
+        data.get("id"),
+        data.get("task_id"),
+        nested_data.get("id") if isinstance(nested_data, dict) else None,
+    ]
+    for value in candidates:
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
+def json_structure(value: Any, *, depth: int = 0) -> Any:
+    if depth >= 4:
+        return type(value).__name__
+    if isinstance(value, dict):
+        return {str(key): json_structure(item, depth=depth + 1) for key, item in list(value.items())[:20]}
+    if isinstance(value, list):
+        return [] if not value else [json_structure(value[0], depth=depth + 1)]
+    if value is None:
+        return "null"
+    if isinstance(value, bool):
+        return "boolean"
+    if isinstance(value, str):
+        return "string"
+    if isinstance(value, (int, float)):
+        return "number"
+    return type(value).__name__
+
+
 def submit_generation(
     payload: dict[str, Any],
     *,
@@ -275,9 +306,22 @@ def submit_generation(
         payload=payload,
         runner=runner,
     )
-    task_id = data.get("id")
-    if data.get("success") is False or not isinstance(task_id, str) or not task_id.strip():
-        raise AdapterError("provider_response_invalid", "Generation response did not contain an id", exit_code=EXIT_PROVIDER)
+    task_id = submit_task_id(data)
+    structure = json.dumps(json_structure(data), ensure_ascii=False, separators=(",", ":"))
+    if data.get("success") is False:
+        raise AdapterError(
+            "provider_response_invalid",
+            f"Generation submission reported failure; response structure: {structure}",
+            exit_code=EXIT_PROVIDER,
+        )
+    if task_id is None:
+        raise AdapterError(
+            "provider_response_invalid",
+            f"Generation response did not contain a usable task id; response structure: {structure}",
+            exit_code=EXIT_PROVIDER,
+        )
+    if data.get("id") != task_id:
+        data = {**data, "id": task_id}
     return data
 
 
