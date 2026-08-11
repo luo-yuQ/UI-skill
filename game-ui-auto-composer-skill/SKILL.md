@@ -126,6 +126,8 @@ For every high-confidence A major region, write an explicit `reference_applicati
 
 Preserve transferable A relationships even when source and target business names differ. Cite the real region, relationship, hierarchy, group, or layout-rule IDs that justify each skeleton decision.
 
+When A exposes a dedicated primary action region below the dominant central region, such as `primary_mode_action_region`, map it to a separate `central_lower_action_band`. Place the requested primary action, including a refresh action, inside that central band rather than inside the right auxiliary rail. Keep the right rail narrow, secondary, and non-dominant, and keep the central content visibly dominant by proportion and focal hierarchy. A bottom navigation region or bottom band may remain `ignored` when the target has no compatible navigation or business need; record that adding it would invent an unrelated control surface instead of silently discarding it.
+
 ## Decision origins
 
 Every layout decision has one origin:

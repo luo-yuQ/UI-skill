@@ -22,6 +22,8 @@ Not every new design decision needs A/B evidence. The origin must describe where
 
 Build the target layout from A major regions, relationships, hierarchy, repeat directions, and approximate proportions before mapping target business components. Record one explicit disposition for every high-confidence A major region. Prefer `adapted` when the source business content is irrelevant but the spatial role transfers. Use `ignored` only for a precise conflict with user semantics, counts, grids, or an explicitly locked position.
 
+Map a central primary action region below A's dominant content to a separate central lower action band. Do not attach that action to the right auxiliary rail; keep the rail narrow and secondary, preserve the central content as dominant, and allow an unrelated bottom navigation band to be ignored with an explicit no-compatible-business-need rationale.
+
 In `hard_requirements.required_elements`, use a non-null `position` only for an explicitly immutable user position. Use `position: null` for a required element whose directional wording is merely a soft preference. The final layout may still occupy that direction because A supports it; its origin remains `layout_reference`, not a fabricated user hard lock.
 
 ## Repeat contract

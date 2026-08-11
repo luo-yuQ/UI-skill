@@ -60,6 +60,13 @@ class ComposerV211RegressionTests(unittest.TestCase):
         self.assertEqual("2.1.1", self.input["schema_version"])
         self.assertEqual("2.1.1", self.plan["schema_version"])
 
+    def test_primary_action_region_mapping_rule(self):
+        skill_text = (ROOT / "SKILL.md").read_text(encoding="utf-8")
+        self.assertIn("`primary_mode_action_region`", skill_text)
+        self.assertIn("`central_lower_action_band`", skill_text)
+        self.assertIn("rather than inside the right auxiliary rail", skill_text)
+        self.assertIn("bottom navigation region or bottom band may remain `ignored`", skill_text)
+
     def test_1_user_product_count_and_grid(self):
         product = self.component("product_card_template")["repeat"]
         self.assertEqual((6, 2, 3), (product["count"], product["columns"], product["rows"]))
@@ -140,8 +147,9 @@ class ComposerV211RegressionTests(unittest.TestCase):
         self.assertEqual((2, 3), (grid_out["columns"], grid_out["rows"]))
         refresh = next(item for item in self.plan["interactions"] if item["trigger_component_id"] == "refresh_button")
         self.assertIn("refresh", refresh["action"])
+        self.assertEqual("central_lower_action_band", self.component("refresh_button")["parent_id"])
         refresh_layout = next(item for item in self.plan["layout_rules"] if item["component_id"] == "refresh_button")
-        self.assertIn("bottom", refresh_layout["anchor"])
+        self.assertEqual("center", refresh_layout["anchor"])
         self.assertEqual([], self.plan_errors(self.plan))
 
     def test_legacy_fields_are_rejected(self):
@@ -180,18 +188,29 @@ class ComposerV211RegressionTests(unittest.TestCase):
         components = {item["component_id"]: item for item in self.plan["component_tree"]}
         self.assertEqual("content_area", components["category_navigation"]["parent_id"])
         self.assertEqual("content_area", components["product_grid"]["parent_id"])
+        self.assertEqual("content_area", components["central_lower_action_band"]["parent_id"])
         self.assertEqual("content_area", components["auxiliary_shop_rail"]["parent_id"])
-        self.assertEqual("auxiliary_shop_rail", components["refresh_button"]["parent_id"])
+        self.assertEqual("central_lower_action_band", components["refresh_button"]["parent_id"])
         self.assertIn("dominant central", components["product_grid"]["design_intent"].lower())
+        self.assertIn("narrow", components["auxiliary_shop_rail"]["design_intent"].lower())
+        self.assertIn("secondary", components["auxiliary_shop_rail"]["design_intent"].lower())
 
         layouts = {item["component_id"]: item for item in self.plan["layout_rules"]}
         self.assertEqual("center_left", layouts["category_navigation"]["anchor"])
         self.assertEqual("center", layouts["product_grid"]["anchor"])
+        self.assertEqual("bottom_center", layouts["central_lower_action_band"]["anchor"])
         self.assertEqual("center_right", layouts["auxiliary_shop_rail"]["anchor"])
         self.assertEqual("top_center", layouts["top_currency_bar"]["anchor"])
         self.assertEqual("parent", layouts["refresh_button"]["relative_to"])
-        self.assertEqual("bottom_center", layouts["refresh_button"]["anchor"])
+        self.assertEqual("center", layouts["refresh_button"]["anchor"])
         self.assertGreater(layouts["product_grid"]["dimensions"]["width"], layouts["category_navigation"]["dimensions"]["width"])
+        self.assertGreater(layouts["product_grid"]["dimensions"]["width"], 2 * layouts["auxiliary_shop_rail"]["dimensions"]["width"])
+        self.assertEqual(layouts["product_grid"]["dimensions"]["width"], layouts["central_lower_action_band"]["dimensions"]["width"])
+        action_relationships = layouts["central_lower_action_band"]["relationships"]
+        self.assertTrue(any(item["relationship_type"] == "below" and item["target_component_id"] == "product_grid" for item in action_relationships))
+        containment = next(item for item in self.plan["reference_application"]["layout"] if item["decision_id"] == "a_detail_action_containment")
+        self.assertEqual("ignored", containment["disposition"])
+        self.assertIsNone(containment["target_application"])
 
         categories = components["category_tab_template"]["repeat"]
         products = components["product_card_template"]["repeat"]

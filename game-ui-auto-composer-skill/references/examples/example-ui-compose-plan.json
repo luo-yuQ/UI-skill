@@ -102,11 +102,11 @@
   },
   "design_summary": {
     "target_experience": "A clear dark-fantasy guild shop.",
-    "synthesis_summary": "User business semantics, counts, and the 2 x 3 grid are fixed; A supplies the page skeleton with a top status band, left category rail, dominant central product surface, adjacent right auxiliary rail, and a contained lower action area; B supplies classified style evidence.",
+    "synthesis_summary": "User business semantics, counts, and the 2 x 3 grid are fixed; A supplies the page skeleton with a top status band, left category rail, clearly dominant central product surface, separate central lower action band, and narrow right auxiliary rail; B supplies classified style evidence.",
     "key_design_decisions": [
       "Map three categories to A's narrow category rail without adopting A's source count.",
       "Keep six products in the required 2 by 3 grid as the dominant central content.",
-      "Adapt A's right detail rail into non-interactive auxiliary shop space and its contained action area into the requested refresh action."
+      "Keep A's right detail rail narrow and non-interactive, and place the requested refresh action in a separate central lower action band."
     ]
   },
   "reference_application": {
@@ -217,8 +217,8 @@
         ],
         "source_meaning": "Right-side secondary detail rail adjacent to the central list.",
         "disposition": "adapted",
-        "target_application": "Right auxiliary shop rail kept primarily as non-interactive supporting space.",
-        "rationale": "The source product-detail business content is not copied, but its edge-rail proportion and adjacency remain transferable.",
+        "target_application": "Narrow right auxiliary shop rail kept as non-interactive supporting space.",
+        "rationale": "The source product-detail business content is not copied, but its secondary edge-rail proportion and adjacency remain transferable.",
         "origin": "layout_reference"
       },
       {
@@ -229,8 +229,8 @@
         ],
         "source_meaning": "Lower action area contained by the right detail region.",
         "disposition": "adapted",
-        "target_application": "Lower refresh action area contained within the right auxiliary rail.",
-        "rationale": "The source purchase function is discarded while its contained action-band geometry is reused for the requested refresh action.",
+        "target_application": "Separate central lower action band beneath the dominant product surface.",
+        "rationale": "The source purchase function and right-rail parentage are discarded while its lower primary-action role is adapted to the central content hierarchy.",
         "origin": "layout_reference"
       },
       {
@@ -252,9 +252,9 @@
           "rel_detail_contains_action"
         ],
         "source_meaning": "The right detail rail contains its lower action area.",
-        "disposition": "adapted",
-        "target_application": "The auxiliary shop rail contains the refresh button in its lower action area.",
-        "rationale": "Containment transfers while the target action follows the user's requested refresh semantics.",
+        "disposition": "ignored",
+        "target_application": null,
+        "rationale": "Applying the source containment would place the requested primary refresh action inside the auxiliary right rail, conflicting with the central lower action-band mapping and the rail's secondary role.",
         "origin": "layout_reference"
       },
       {
@@ -277,7 +277,7 @@
         ],
         "source_meaning": "Separate global resource status from the contained current-object action.",
         "disposition": "adapted",
-        "target_application": "Keep currencies in the global top band and refresh in the lower auxiliary action area.",
+        "target_application": "Keep currencies in the global top band and refresh in the central lower action band.",
         "rationale": "The global-versus-local action separation transfers to the requested business components.",
         "origin": "layout_reference"
       },
@@ -301,7 +301,7 @@
         "source_meaning": null,
         "disposition": "adopted",
         "target_application": "Provide exactly one refresh action.",
-        "rationale": "The refresh action is explicit; its final placement is supplied by A's contained action area rather than a user position lock."
+        "rationale": "The refresh action is explicit; its final placement follows the Composer rule for a central lower primary-action band rather than a user position lock."
       },
       {
         "decision_id": "derived_panel_spacing",
@@ -310,7 +310,7 @@
         "source_ids": [],
         "source_meaning": null,
         "disposition": "adopted",
-        "target_application": "Use consistent internal padding and gaps within the left rail, central surface, and right auxiliary rail.",
+        "target_application": "Use consistent internal padding and gaps within the left rail, dominant central surface, central lower action band, and right auxiliary rail.",
         "rationale": "Low-risk spacing is required to complete the UI but does not come directly from A."
       }
     ],
@@ -597,8 +597,8 @@
     "hierarchy_emphasis": [
       "The top currency band establishes global status.",
       "The central six-card grid is the dominant focus.",
-      "The left category rail and right auxiliary rail frame the central content.",
-      "Refresh remains contained in the lower part of the auxiliary rail."
+      "The left category rail and narrow right auxiliary rail frame the dominant central content.",
+      "Refresh occupies a separate central lower action band beneath the product grid."
     ],
     "page_specific_notes": [
       "Do not globalize local red.",
@@ -712,7 +712,7 @@
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Preserve A's narrow left rail, dominant central surface, and adjacent right auxiliary rail.",
+      "design_intent": "Preserve A's narrow left rail, clearly dominant central surface with a lower action band, and narrow adjacent right auxiliary rail.",
       "notes": []
     },
     {
@@ -794,16 +794,31 @@
       "notes": []
     },
     {
+      "component_id": "central_lower_action_band",
+      "page_id": "guild_shop",
+      "parent_id": "content_area",
+      "name": "Central Lower Action Band",
+      "semantic_type": "container",
+      "order": 2,
+      "state_ids": [
+        "ready"
+      ],
+      "design_intent": "Provide a distinct lower-central action region beneath the dominant product surface.",
+      "notes": [
+        "Keep this band separate from the right auxiliary rail."
+      ]
+    },
+    {
       "component_id": "auxiliary_shop_rail",
       "page_id": "guild_shop",
       "parent_id": "content_area",
       "name": "Auxiliary Shop Rail",
       "semantic_type": "panel",
-      "order": 2,
+      "order": 3,
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Adapt A's right detail region into restrained non-interactive shop-support space while preserving its rail proportion.",
+      "design_intent": "Adapt A's right detail region into a narrow, restrained, non-interactive, and clearly secondary shop-support rail.",
       "notes": [
         "Do not invent purchase, detail, shortcut, or navigation functions."
       ]
@@ -811,14 +826,14 @@
     {
       "component_id": "refresh_button",
       "page_id": "guild_shop",
-      "parent_id": "auxiliary_shop_rail",
+      "parent_id": "central_lower_action_band",
       "name": "Refresh Button",
       "semantic_type": "button",
       "order": 0,
       "state_ids": [
         "ready"
       ],
-      "design_intent": "Map the requested refresh action into A's lower contained action region without copying purchase semantics.",
+      "design_intent": "Place the requested refresh action in the central lower action band without copying purchase semantics.",
       "content": {
         "text": "刷新",
         "text_role": "action_label",
@@ -906,7 +921,7 @@
         {
           "relationship_type": "above",
           "target_component_id": "content_area",
-          "description": "The global currency band remains above the three-region main skeleton."
+          "description": "The global currency band remains above the main layout skeleton."
         }
       ],
       "content_adaptation": [
@@ -943,7 +958,7 @@
         }
       ],
       "content_adaptation": [
-        "Preserve the narrow-left, dominant-center, supporting-right proportion."
+        "Preserve the narrow-left, dominant-center with lower action band, and narrow supporting-right proportion."
       ],
       "notes": []
     },
@@ -1040,11 +1055,11 @@
       },
       "position": {
         "x": 0.43,
-        "y": 0.5
+        "y": 0.43
       },
       "dimensions": {
-        "width": 0.46,
-        "height": 0.75,
+        "width": 0.5,
+        "height": 0.64,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
@@ -1059,9 +1074,57 @@
           "relationship_type": "left_of",
           "target_component_id": "auxiliary_shop_rail",
           "description": "The dominant product surface remains adjacent to and left of the auxiliary rail."
+        },
+        {
+          "relationship_type": "above",
+          "target_component_id": "central_lower_action_band",
+          "description": "The clearly dominant product surface remains above its separate central action band."
         }
       ],
       "content_adaptation": [],
+      "notes": []
+    },
+    {
+      "rule_id": "l_central_lower_action_band",
+      "page_id": "guild_shop",
+      "component_id": "central_lower_action_band",
+      "relative_to": "parent",
+      "anchor": "bottom_center",
+      "pivot": {
+        "x": 0.5,
+        "y": 0.5
+      },
+      "position": {
+        "x": 0.43,
+        "y": 0.86
+      },
+      "dimensions": {
+        "width": 0.5,
+        "height": 0.11,
+        "unit": "normalized_parent"
+      },
+      "stack_order": 1,
+      "safe_area_policy": "not_applicable",
+      "relationships": [
+        {
+          "relationship_type": "below",
+          "target_component_id": "product_grid",
+          "description": "The central lower action band sits directly beneath the dominant product surface."
+        },
+        {
+          "relationship_type": "left_of",
+          "target_component_id": "auxiliary_shop_rail",
+          "description": "The primary action band remains separate from and left of the narrow auxiliary rail."
+        },
+        {
+          "relationship_type": "inside",
+          "target_component_id": "content_area",
+          "description": "The action band remains inside the main central skeleton."
+        }
+      ],
+      "content_adaptation": [
+        "Reserve this band for the single requested refresh action."
+      ],
       "notes": []
     },
     {
@@ -1075,12 +1138,12 @@
         "y": 0.5
       },
       "position": {
-        "x": 0.83,
+        "x": 0.87,
         "y": 0.5
       },
       "dimensions": {
-        "width": 0.3,
-        "height": 0.82,
+        "width": 0.2,
+        "height": 0.75,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
@@ -1090,6 +1153,11 @@
           "relationship_type": "right_of",
           "target_component_id": "product_grid",
           "description": "The auxiliary rail remains adjacent to the dominant central product surface."
+        },
+        {
+          "relationship_type": "right_of",
+          "target_component_id": "central_lower_action_band",
+          "description": "The narrow auxiliary rail stays separate from the primary action band."
         },
         {
           "relationship_type": "inside",
@@ -1107,18 +1175,18 @@
       "page_id": "guild_shop",
       "component_id": "refresh_button",
       "relative_to": "parent",
-      "anchor": "bottom_center",
+      "anchor": "center",
       "pivot": {
         "x": 0.5,
         "y": 0.5
       },
       "position": {
         "x": 0.5,
-        "y": 0.86
+        "y": 0.5
       },
       "dimensions": {
         "width": 0.75,
-        "height": 0.13,
+        "height": 0.65,
         "unit": "normalized_parent"
       },
       "stack_order": 1,
@@ -1126,8 +1194,8 @@
       "relationships": [
         {
           "relationship_type": "inside",
-          "target_component_id": "auxiliary_shop_rail",
-          "description": "The refresh action occupies A's lower contained action area."
+          "target_component_id": "central_lower_action_band",
+          "description": "The refresh action is centered inside the separate central lower action band."
         }
       ],
       "content_adaptation": [
@@ -1160,7 +1228,7 @@
       "Three categories in the A-derived narrow left rail.",
       "Six products in the dominant central 2 x 3 grid.",
       "Gold and guild currency in the top status band.",
-      "One refresh button in the lower contained area of the right auxiliary rail."
+      "One refresh button in the central lower action band beneath the dominant product grid."
     ],
     "must_not_include": [
       "Any business workflow or primary transaction action not requested by the user.",
@@ -1220,16 +1288,17 @@
         "requirement": "Six products occupy the dominant central 2 x 3 grid."
       },
       {
-        "component_id": "auxiliary_shop_rail",
+        "component_id": "central_lower_action_band",
         "content_role": "refresh_action",
-        "requirement": "The right auxiliary rail preserves A's contained lower action relationship for refresh."
+        "requirement": "The central lower action band contains the refresh action beneath the dominant product grid."
       }
     ],
     "focal_hierarchy": [
       "product_grid",
+      "central_lower_action_band",
       "category_navigation",
-      "auxiliary_shop_rail",
       "top_currency_bar",
+      "auxiliary_shop_rail",
       "refresh_button"
     ],
     "component_separability": [
@@ -1257,7 +1326,7 @@
       "warning_id": "source_business_content_not_copied",
       "severity": "info",
       "category": "reference_scope",
-      "message": "Source product-detail and purchase semantics are not copied; their spatial regions are adapted to auxiliary space and refresh.",
+      "message": "Source product-detail and purchase semantics are not copied; the detail region becomes a narrow auxiliary rail while the action role moves to the central lower band.",
       "related_ids": [
         "product_detail",
         "purchase_action"

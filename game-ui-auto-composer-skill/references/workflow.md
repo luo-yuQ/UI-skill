@@ -16,6 +16,7 @@ validated A/B + user requirement
 5. Extract A major regions, relationships, hierarchy, approximate proportions, and repeat directions into a layout skeleton.
 6. Map requested business components into that skeleton. Locked user positions override A; A overrides soft positions.
 7. Record adopted/adapted/ignored disposition for every high-confidence A major region.
+   Map a central primary action region to a separate lower-central action band, not to the right auxiliary rail; keep the central content dominant and the right rail narrow. An unrelated bottom navigation band may remain ignored with an explicit rationale.
 8. Read B as optional classified style evidence.
 9. Label layout origins as `layout_reference`, `user_requirement`, or `composer_derived`.
 10. Label style origins as `style_reference`, `user_requirement`, or `composer_derived`.
