@@ -30,6 +30,11 @@ validate_input = load_module("composer_v211_regression_validate_input", ROOT / "
 sys.modules["validate_input"] = validate_input
 evidence_registry = load_module("composer_v211_evidence_registry", ROOT / "scripts" / "evidence_registry.py")
 sys.modules["evidence_registry"] = evidence_registry
+finalize_hard_requirements = load_module(
+    "composer_v211_regression_finalize_hard_requirements",
+    ROOT / "scripts" / "finalize_hard_requirements.py",
+)
+sys.modules["finalize_hard_requirements"] = finalize_hard_requirements
 validate_plan = load_module("composer_v211_regression_validate_plan", ROOT / "scripts" / "validate_plan.py")
 
 
@@ -41,7 +46,9 @@ class ComposerV211RegressionTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.input = read_json(INPUT_EXAMPLE)
-        cls.plan = read_json(PLAN_EXAMPLE)
+        cls.plan = finalize_hard_requirements.finalize_document(
+            read_json(PLAN_EXAMPLE), cls.input["request"]["user_requirement"]
+        )
         cls.original_a = read_json(A_SOURCE)
         cls.original_b = read_json(B_SOURCE)
 
@@ -171,6 +178,60 @@ class ComposerV211RegressionTests(unittest.TestCase):
         bad["project_context"]["hard_requirements"]["explicit_counts"][0]["evidence"] = "invented evidence"
         self.assertIn("REQUIREMENT_EVIDENCE_MISMATCH", {item["code"] for item in self.plan_errors(bad)})
 
+    def test_llm_hard_requirement_proposal_is_rejected_until_finalized(self):
+        bad = copy.deepcopy(self.plan)
+        bad["project_context"]["hard_requirements"]["required_elements"].append(
+            {
+                "fact_id": "reference_promoted_detail",
+                "target_component_id": "auxiliary_shop_rail",
+                "semantic": "detail_panel",
+                "position": None,
+                "evidence": "参考提供的布局结构",
+            }
+        )
+        self.assertIn(
+            "HARD_REQUIREMENTS_NOT_FINALIZED",
+            {item["code"] for item in self.plan_errors(bad)},
+        )
+
+    def test_recharge_final_plan_keeps_a_derived_10_item_5x2_outside_hard_requirements(self):
+        requirement = "参考这个充值界面的布局，帮我设计一个新的游戏充值页面。"
+        recharge_input = copy.deepcopy(self.input)
+        recharge_input["request"]["user_requirement"] = requirement
+        candidate = copy.deepcopy(self.plan)
+        candidate["project_context"]["user_requirement"] = requirement
+        candidate["pages"][0]["page_type"] = "recharge_page"
+
+        product = next(
+            item for item in candidate["component_tree"]
+            if item["component_id"] == "product_card_template"
+        )
+        product["repeat"].update(count=10, arrangement="grid", columns=5, rows=2)
+        exact = next(
+            item for item in candidate["generation_constraints"]["exact_counts"]
+            if item["component_id"] == "product_card_template"
+        )
+        exact["count"] = 10
+        grid = next(
+            item for item in candidate["generation_constraints"]["grid_specs"]
+            if item["component_id"] == "product_card_template"
+        )
+        grid.update(columns=5, rows=2)
+        reference_before = copy.deepcopy(candidate["reference_application"])
+        constraints_before = copy.deepcopy(candidate["generation_constraints"])
+
+        finalized = finalize_hard_requirements.finalize_document(
+            candidate, requirement
+        )
+        hard = finalized["project_context"]["hard_requirements"]
+        self.assertEqual("recharge_page", hard["page_semantic"]["value"])
+        self.assertEqual([], hard["explicit_counts"])
+        self.assertEqual([], hard["grid_requirements"])
+        self.assertEqual([], hard["required_elements"])
+        self.assertEqual(reference_before, finalized["reference_application"])
+        self.assertEqual(constraints_before, finalized["generation_constraints"])
+        self.assertEqual([], validate_plan.validate_document(finalized, recharge_input)[0])
+
     def test_a_driven_layout_uses_major_skeleton_when_positions_are_not_locked(self):
         hard = self.plan["project_context"]["hard_requirements"]
         self.assertTrue(all(item["position"] is None for item in hard["required_elements"]))
@@ -235,18 +296,11 @@ class ComposerV211RegressionTests(unittest.TestCase):
         )
         locked_input["request"]["user_requirement"] = requirement
         locked_plan["project_context"]["user_requirement"] = requirement
+        locked_plan = finalize_hard_requirements.finalize_document(
+            locked_plan, requirement
+        )
         hard = locked_plan["project_context"]["hard_requirements"]
-        hard["page_semantic"]["evidence"] = "公会商店"
-        hard["explicit_counts"][0]["evidence"] = "3 个分类"
-        hard["explicit_counts"][1]["evidence"] = "6 个商品"
-        hard["explicit_counts"][2]["evidence"] = "一个刷新按钮"
-        hard["grid_requirements"][0]["evidence"] = "2 x 3"
         requirements = {item["target_component_id"]: item for item in hard["required_elements"]}
-        requirements["category_navigation"].update(position="left", evidence="必须在左侧")
-        requirements["product_grid"].update(position="right", evidence="必须在右侧")
-        requirements["gold_status"].update(position=None, evidence="显示金币和公会币")
-        requirements["guild_currency_status"].update(position=None, evidence="显示金币和公会币")
-        requirements["refresh_button"].update(position="bottom", evidence="必须固定在底部")
 
         layouts = {item["component_id"]: item for item in locked_plan["layout_rules"]}
         layouts["category_navigation"]["anchor"] = "center_left"

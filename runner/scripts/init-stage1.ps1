@@ -3,10 +3,31 @@ param(
     [string]$Scenario,
 
     [Parameter(Mandatory = $true)]
-    [string]$UserRequirement
+    [string]$BusinessRequirement
 )
 
 $ErrorActionPreference = "Stop"
+
+if ([string]::IsNullOrWhiteSpace($BusinessRequirement)) {
+    throw "BusinessRequirement must contain the user's business request."
+}
+
+$runnerControlPatterns = @(
+    '(?i)/stage1\b',
+    '(?i)continue\s+runs[/\\]',
+    '继续\s*runs[/\\]',
+    '只初始化(?:\s*run)?',
+    '只执行\s*(?:A1|B1|B2|Composer)',
+    '运行到\s*(?:A1|B1|B2|Composer).{0,8}停止',
+    '不要执行\s*(?:A1|B1|B2|Composer)',
+    '执行\s*Composer'
+)
+
+foreach ($pattern in $runnerControlPatterns) {
+    if ($BusinessRequirement -match $pattern) {
+        throw "BusinessRequirement contains Runner execution control. Separate workflow control before initializing the run."
+    }
+}
 
 $repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..\..")
 $runsRoot = Join-Path $repoRoot "runs"
@@ -40,7 +61,7 @@ foreach ($dir in $dirs) {
 }
 
 $request = @{
-    user_requirement = $UserRequirement
+    user_requirement = $BusinessRequirement
     layout_references = @()
     style_references = @()
 }

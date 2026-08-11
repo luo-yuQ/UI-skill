@@ -32,14 +32,21 @@ validate_input = load_module("repeat_contract_validate_input", ROOT / "scripts" 
 sys.modules["validate_input"] = validate_input
 evidence_registry = load_module("repeat_contract_evidence_registry", ROOT / "scripts" / "evidence_registry.py")
 sys.modules["evidence_registry"] = evidence_registry
+finalize_hard_requirements = load_module(
+    "repeat_contract_finalize_hard_requirements",
+    ROOT / "scripts" / "finalize_hard_requirements.py",
+)
+sys.modules["finalize_hard_requirements"] = finalize_hard_requirements
 validate_plan = load_module("repeat_contract_validate_plan", ROOT / "scripts" / "validate_plan.py")
 
 
 class RepeatContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        cls.base_plan = read_json(PLAN_PATH)
         cls.input = read_json(INPUT_PATH)
+        cls.base_plan = finalize_hard_requirements.finalize_document(
+            read_json(PLAN_PATH), cls.input["request"]["user_requirement"]
+        )
 
     def plan_with_repeat(
         self,

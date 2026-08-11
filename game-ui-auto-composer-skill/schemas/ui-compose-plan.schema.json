@@ -126,7 +126,12 @@
       "additionalProperties": false,
       "required": ["page_semantic", "explicit_counts", "grid_requirements", "required_elements", "must_include", "must_not_include"],
       "properties": {
-        "page_semantic": {"$ref": "#/$defs/semantic_requirement"},
+        "page_semantic": {
+          "anyOf": [
+            {"$ref": "#/$defs/semantic_requirement"},
+            {"type": "null"}
+          ]
+        },
         "explicit_counts": {"type": "array", "items": {"$ref": "#/$defs/count_requirement"}},
         "grid_requirements": {"type": "array", "items": {"$ref": "#/$defs/grid_requirement"}},
         "required_elements": {"type": "array", "items": {"$ref": "#/$defs/element_requirement"}},

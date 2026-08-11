@@ -33,6 +33,26 @@ When Stage 1 is invoked:
 
 7. If the user requests stopping after a stage, stop only after that stage's required files have been written and the run manifest has been updated.
 
+## Business Input and Runner Control
+
+For a New Run, preserve two separate channels:
+
+- business input: the user's verbatim business/design requirement;
+- Runner control: command name, run path, initialize/resume choice, selected
+  stages, stop-after, and skip instructions.
+
+Call `runner/scripts/init-stage1.ps1` with `BusinessRequirement` containing only
+the business input. Do not include `/stage1`, initialize-only, resume, stage
+selection, stop-after, or “do not execute Composer” language. Keep control in
+the invocation and manifest state.
+
+After initialization, `00-input/request.json.user_requirement` is immutable for
+the lifetime of that run unless the user explicitly requests a business-input
+change. On Resume, never write the `user_requirement` field, never derive a
+replacement from the current message, and never pass resume control to Composer
+as a requirement. Deterministic input sync may still update only the two
+reference-path arrays defined by the Runner contract.
+
 ## A1 Task Construction
 
 The current TRAE Runner does not create a separate model context for A1. A1 is

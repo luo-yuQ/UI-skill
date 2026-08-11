@@ -27,6 +27,11 @@ validate_input = load_module("composer_v211_validate_input", ROOT / "scripts" / 
 sys.modules["validate_input"] = validate_input
 evidence_registry = load_module("composer_v211_registry", ROOT / "scripts" / "evidence_registry.py")
 sys.modules["evidence_registry"] = evidence_registry
+finalize_hard_requirements = load_module(
+    "composer_v211_registry_finalize_hard_requirements",
+    ROOT / "scripts" / "finalize_hard_requirements.py",
+)
+sys.modules["finalize_hard_requirements"] = finalize_hard_requirements
 validate_plan = load_module("composer_v211_validate_plan", ROOT / "scripts" / "validate_plan.py")
 
 
@@ -38,7 +43,9 @@ class ComposerV211EvidenceRegistryTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
         cls.input = read_json(INPUT_EXAMPLE)
-        cls.plan = read_json(PLAN_EXAMPLE)
+        cls.plan = finalize_hard_requirements.finalize_document(
+            read_json(PLAN_EXAMPLE), cls.input["request"]["user_requirement"]
+        )
         cls.registry = evidence_registry.build_evidence_registry(
             cls.input["layout_reference_analysis"],
             cls.input["style_profile"],

@@ -21,10 +21,12 @@ Do not self-loop, retry, repair, or repeatedly rewrite the candidate. Validation
 - `schemas/ui-compose-input.schema.json` - v2.1.1 input.
 - `schemas/ui-compose-plan.schema.json` - v2.1.1 candidate plan.
 - `scripts/build_compose_input.py` - deterministic UTF-8 input construction and source-integrity checks.
+- `scripts/finalize_hard_requirements.py` - deterministic ownership and replacement of the final hard-requirement ledger.
 - `scripts/evidence_registry.py` - immutable Pydantic A/B registry.
 - `scripts/validate_input.py` - schema and upstream-integrity validation.
 - `scripts/validate_plan.py` - schema, requirements, origin, registry membership, and consistency validation.
 - `references/input-schema.md` and `references/output-schema.md` - contract details.
+- `references/hard-requirements-v0.1.md` - deterministic parser rules and intentionally unsupported syntax.
 - `references/workflow.md` - one-pass workflow and validation handoff.
 
 Treat `schemas/ui-compose-plan.schema.json` and `references/output-schema.md` as the runtime output-shape authorities. Do not inspect test fixtures or any complete example plan during normal composition.
@@ -73,7 +75,7 @@ Explicit business semantics and required actions
 
 B remains style evidence and does not compete for layout authority.
 
-Extract explicit facts into `project_context.hard_requirements` before designing:
+Extract explicit facts provisionally for design reasoning before designing:
 
 - page semantic;
 - exact counts;
@@ -83,6 +85,18 @@ Extract explicit facts into `project_context.hard_requirements` before designing
 - must-include and must-not-include constraints.
 
 Evidence strings must be exact user-requirement substrings. Preserve these facts through pages, components, layout, interactions, and generation constraints.
+
+The Composer LLM does not own the final `project_context.hard_requirements`.
+Any ledger emitted by the candidate is an untrusted schema-compatible placeholder.
+Before final validation, `scripts/finalize_hard_requirements.py` rebuilds the
+entire field from the original business `user_requirement`. The finalizer does
+not read A, B, `reference_application`, or Composer design decisions as hard
+requirement facts.
+
+Do not weaken A reuse because of this ownership boundary. A may still determine
+adopted/adapted layout structure, component counts, grid specs, and generation
+constraints when it is not overridden by an actual user hard requirement. An
+A-derived count or grid remains layout evidence, not a User Hard Requirement.
 
 ## Split requirement authority
 
@@ -164,7 +178,7 @@ The behavioral rule "do not invent IDs" remains, but factual truth is not delega
 1. Consume one builder-created, already validated v2.1.1 input.
 2. Parse the explicit user requirement.
 3. Split semantic/count facts, explicit locked positions, and soft position preferences.
-4. Build the hard-requirement ledger and target page semantic.
+4. Identify provisional explicit requirement facts for design; any candidate hard-requirement ledger remains untrusted.
 5. Extract A's major-region skeleton, relationships, hierarchy, proportions, and repeat directions.
 6. Map requested business components into that skeleton, applying locked user positions first and soft positions after A.
 7. Record every A major-region disposition and every material layout/style origin honestly.
@@ -172,7 +186,7 @@ The behavioral rule "do not invent IDs" remains, but factual truth is not delega
 9. Build the target component tree, layout, interactions, and visual direction.
 10. Check repeat direction and layout intent consistency.
 11. Derive generation constraints from user facts, the final design, and approved evidence.
-12. Emit one candidate `ui-compose-plan` and end.
+12. Emit one candidate `ui-compose-plan` with a schema-compatible placeholder hard-requirement object and end.
 
 Do not run a generate/check/rewrite cycle inside this Skill.
 
@@ -217,13 +231,24 @@ Keep repeat metadata consistent with spatial intent:
 
 Composer proposes design and evidence choices. It does not certify A/B membership, upstream immutability, complete schema legality, or overall consistency.
 
-Run after candidate generation:
+Run after candidate generation and before validation:
+
+```powershell
+python scripts/finalize_hard_requirements.py <candidate-plan.json> `
+  --request <authoritative-request.json>
+```
+
+This deterministically replaces the complete hard-requirement object. Then run:
 
 ```powershell
 python scripts/validate_plan.py <candidate-plan.json> --input <validated-input.json>
 ```
 
-The validator builds an Evidence Registry from the actual input and returns PASS or FAIL. It reports exact paths and invalid values. It never guesses a replacement ID and never repairs or re-runs Composer.
+The validator recomputes the deterministic ledger from the input business
+requirement and rejects any mismatch with `HARD_REQUIREMENTS_NOT_FINALIZED`.
+It then builds an Evidence Registry from the actual input and returns PASS or
+FAIL. It reports exact paths and invalid values. It never guesses a replacement
+ID and never repairs or re-runs Composer.
 
 For original upstream integrity:
 
@@ -239,4 +264,5 @@ Parent-relative child anchors can be misinterpreted by the existing position val
 
 ## Final rule
 
-Generate one requirement-preserving candidate, label origins honestly, and let deterministic code decide evidence truth and contract validity.
+Generate one requirement-preserving candidate, label origins honestly, and let
+deterministic code own hard requirements, evidence truth, and contract validity.

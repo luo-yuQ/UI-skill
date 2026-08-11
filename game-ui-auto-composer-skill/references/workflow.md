@@ -12,7 +12,7 @@ validated A/B + user requirement
 1. Consume one validated immutable input.
 2. Parse explicit user requirements.
 3. Split business/count facts, explicitly locked positions, and soft position preferences.
-4. Build the hard-requirement ledger and target semantic; leave soft positions null.
+4. Identify provisional explicit requirement facts for design; the candidate ledger is not authoritative.
 5. Extract A major regions, relationships, hierarchy, approximate proportions, and repeat directions into a layout skeleton.
 6. Map requested business components into that skeleton. Locked user positions override A; A overrides soft positions.
 7. Record adopted/adapted/ignored disposition for every high-confidence A major region.
@@ -35,19 +35,28 @@ After generation, Python builds the Evidence Registry directly from the input:
 A JSON → valid A IDs + type/path
 B JSON → valid B trait IDs + dimension/classification/path
 candidate plan
+→ deterministic hard-requirement finalizer from original business requirement
 → deterministic validator
 → PASS / FAIL
 ```
 
 Only reference origins require registry evidence. User and composer-derived layout decisions use empty source IDs; user and composer-derived style decisions use null trait/classification.
 
-The validator reports exact errors and never guesses replacements or runs a repair loop.
+Run the finalizer before validation:
+
+```powershell
+python scripts/finalize_hard_requirements.py <candidate-plan.json> `
+  --request <request.json>
+```
+
+The validator recomputes that deterministic result, reports exact errors, and
+never guesses replacements or runs a repair loop.
 
 ```powershell
 python scripts/validate_plan.py <candidate-plan.json> --input <input.json>
 ```
 
-Hard-requirement preservation and B classification rules from V2.1 remain active.
+Deterministic hard-requirement ownership and B classification rules remain active.
 
 ## Known issue
 

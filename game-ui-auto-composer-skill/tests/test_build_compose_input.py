@@ -109,6 +109,14 @@ class BuildComposeInputTests(unittest.TestCase):
         )
         self.assertEqual([], errors)
 
+    def test_6_composer_input_receives_business_requirement_without_runner_control(self):
+        requirement = "参考这个充值界面的布局，帮我设计一个新的游戏充值页面。"
+        document, _ = self.build(requirement)
+        written = document["request"]["user_requirement"]
+        self.assertEqual(requirement, written)
+        self.assertNotIn("/stage1", written)
+        self.assertNotIn("只初始化 run，然后停止", written)
+
 
 if __name__ == "__main__":
     unittest.main()

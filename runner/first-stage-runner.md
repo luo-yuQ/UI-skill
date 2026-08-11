@@ -157,17 +157,24 @@ runs/<run-id>/
 
 ## 6. Original Input Rule
 
-Runner 必须保存本次任务的全部原始输入：
+Runner 必须保存本次任务的全部原始业务输入：
 
-- 用户原始 requirement；
+- 用户原始 business requirement；
 - A Layout Reference；
 - B Style References。
 
 所有输入统一保存在 `00-input/`。
 
-### User Requirement
+### Business Requirement and Runner Control
 
-用户需求必须：
+初始化前必须先把当前 invocation 分为两个通道：
+
+```text
+Business Requirement
+Runner Control
+```
+
+Business Requirement 是用户关于目标 UI、业务语义、内容和设计约束的原文。它必须：
 
 - 保留用户原文；
 - 使用 UTF-8；
@@ -177,7 +184,23 @@ Runner 必须保存本次任务的全部原始输入：
 - 不用重新解释后的文本覆盖原文；
 - 不为了适配 schema 修改原始文本。
 
-后续 Composer 使用的 requirement 必须能够按 JSON 值追溯到 `00-input/request.json` 中保存的原始 `user_requirement`。
+Runner Control 包括但不限于：
+
+```text
+/stage1
+只初始化 run，然后停止
+继续 runs/<run-id>
+只执行 A1 / B1 / B2
+运行到某阶段后停止
+执行 Composer
+不要执行 Composer
+```
+
+这些控制语句只属于当前 invocation 与 `run-manifest.json` 状态，永远不得进入
+`request.json.user_requirement` 或 Composer Input。
+
+后续 Composer 使用的 requirement 必须能够按 JSON 值追溯到 `00-input/request.json`
+中保存的原始 business requirement。
 
 ---
 
@@ -189,7 +212,7 @@ Runner 必须保存本次任务的全部原始输入：
 
 ```json
 {
-  "user_requirement": "用户原始需求",
+  "user_requirement": "用户原始业务需求正文",
   "layout_references": [
     "00-input/layout-reference/ref-001.png"
   ],
@@ -203,6 +226,10 @@ Runner 必须保存本次任务的全部原始输入：
 这些路径相对于本次 run 根目录。若后续建立正式的 `request.schema.json`，字段以正式 schema 为准。
 
 Runner 不得将自己的 request contract 与 A、B、Composer schema 混合。
+
+Stage 0 成功写入后，`request.json.user_requirement` 在该 run 生命周期中视为 immutable
+business input。除非用户明确要求修改业务需求，否则任何 Resume invocation 都不得写入、
+重建或覆盖它。Resume 中的“继续”“只执行某阶段”“完成后停止”等文本不得替换原值。
 
 `layout_references` 与 `style_references` 不由 Agent 手工维护。它们由
 `runner/scripts/sync-stage1-inputs.py` 根据当前 run 中真实存在的图片确定性同步。
@@ -253,6 +280,7 @@ If the user does NOT provide an existing run path or run-id:
 - create a new run
 - execute `runner/scripts/init-stage1.ps1`
 - use the returned run path for all following stages
+- separate verbatim business requirement from Runner control before calling the script
 
 ### Resume Existing Run
 
@@ -266,6 +294,7 @@ or explicitly says to continue/resume an existing Stage1 run:
 - DO NOT execute `init-stage1.ps1`
 - DO NOT create another namespace
 - read the existing `run-manifest.json`
+- preserve the existing `00-input/request.json.user_requirement` without writing it
 - continue from the requested stage
 - all new outputs must remain inside that same run
 
@@ -284,7 +313,18 @@ Run:
 Pass:
 
 - scenario
-- original user requirement
+- `BusinessRequirement`: verbatim business requirement only
+
+Example:
+
+```powershell
+powershell -File runner/scripts/init-stage1.ps1 `
+  -Scenario recharge-page `
+  -BusinessRequirement "参考这个充值界面的布局，帮我设计一个新的游戏充值页面。"
+```
+
+The script rejects known Runner-control phrases in `BusinessRequirement`. Runner control is
+not a parameter of `request.json`; it remains in invocation/manifest state.
 
 The script is responsible for:
 
@@ -589,7 +629,18 @@ game-ui-auto-composer-skill/SKILL.md
 30-composer/ui-compose-plan.json
 ```
 
-随后使用当前 Composer validator 严格验证：
+LLM 生成的 `project_context.hard_requirements` 不可信。生成 candidate 后、最终 validation
+前，必须使用原始 business requirement 整体重建该字段：
+
+```powershell
+python game-ui-auto-composer-skill/scripts/finalize_hard_requirements.py `
+  runs/<run-id>/30-composer/ui-compose-plan.json `
+  --request runs/<run-id>/00-input/request.json
+```
+
+Finalizer 只读取 `request.json.user_requirement` 和 candidate plan，不使用 A/B evidence
+生成 hard requirements，也不修改 `reference_application`、`component_tree`、
+`layout_rules` 或 `generation_constraints`。完成后再使用当前 Composer validator 严格验证：
 
 ```powershell
 python game-ui-auto-composer-skill/scripts/validate_plan.py `

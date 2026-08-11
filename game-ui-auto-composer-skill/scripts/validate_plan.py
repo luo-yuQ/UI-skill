@@ -10,6 +10,10 @@ from pathlib import Path
 from typing import Any
 
 from evidence_registry import build_evidence_registry, collect_a_ids, collect_b_traits
+from finalize_hard_requirements import (
+    HardRequirementFinalizationError,
+    derive_hard_requirements,
+)
 from validate_input import LimitedLocalValidator, issue, json_path, load_json
 
 
@@ -162,19 +166,28 @@ def requirement_errors(data: dict[str, Any]) -> list[dict[str, str]]:
 
     evidence_items: list[tuple[str, Any]] = []
     if isinstance(hard, dict):
-        evidence_items.append(("$.project_context.hard_requirements.page_semantic.evidence", hard.get("page_semantic", {}).get("evidence")))
+        page_semantic = hard.get("page_semantic")
+        if isinstance(page_semantic, dict):
+            evidence_items.append(("$.project_context.hard_requirements.page_semantic.evidence", page_semantic.get("evidence")))
         for collection in ("explicit_counts", "grid_requirements", "required_elements"):
             for index, item in enumerate(hard.get(collection, [])):
                 if isinstance(item, dict):
                     evidence_items.append((f"$.project_context.hard_requirements.{collection}[{index}].evidence", item.get("evidence")))
+        for collection in ("must_include", "must_not_include"):
+            for index, value in enumerate(hard.get(collection, [])):
+                evidence_items.append(
+                    (f"$.project_context.hard_requirements.{collection}[{index}]", value)
+                )
     for path, evidence in evidence_items:
         if not isinstance(evidence, str) or evidence not in requirement:
             errors.append(issue(path, "Evidence must be an exact substring of user_requirement", "REQUIREMENT_EVIDENCE_MISMATCH"))
 
-    semantic = hard.get("page_semantic", {}).get("value") if isinstance(hard, dict) else None
-    for index, page in enumerate(pages if isinstance(pages, list) else []):
-        if isinstance(page, dict) and page.get("page_type") != semantic:
-            errors.append(issue(f"$.pages[{index}].page_type", f"Page semantic must remain {semantic!r}", "SEMANTIC_DRIFT"))
+    page_semantic = hard.get("page_semantic") if isinstance(hard, dict) else None
+    semantic = page_semantic.get("value") if isinstance(page_semantic, dict) else None
+    if semantic is not None:
+        for index, page in enumerate(pages if isinstance(pages, list) else []):
+            if isinstance(page, dict) and page.get("page_type") != semantic:
+                errors.append(issue(f"$.pages[{index}].page_type", f"Page semantic must remain {semantic!r}", "SEMANTIC_DRIFT"))
 
     for index, fact in enumerate(hard.get("explicit_counts", []) if isinstance(hard, dict) else []):
         if not isinstance(fact, dict):
@@ -244,6 +257,41 @@ def requirement_errors(data: dict[str, Any]) -> list[dict[str, str]]:
         if re.search(pattern, user_lower) is None and re.search(pattern, target) is not None:
             errors.append(issue("$", f"Target content introduced absent business semantic: {term}", "SEMANTIC_DRIFT"))
     return errors
+
+
+def hard_requirement_ownership_errors(
+    data: dict[str, Any], user_requirement: Any
+) -> list[dict[str, str]]:
+    """Require the final ledger to exactly equal deterministic parser output."""
+
+    if not isinstance(user_requirement, str):
+        return [
+            issue(
+                "$.project_context.user_requirement",
+                "A deterministic hard-requirement source string is required",
+                "HARD_REQUIREMENT_SOURCE_MISSING",
+            )
+        ]
+    try:
+        expected = derive_hard_requirements(user_requirement)
+    except HardRequirementFinalizationError as exc:
+        return [
+            issue(
+                "$.project_context.hard_requirements",
+                str(exc),
+                "HARD_REQUIREMENT_FINALIZATION_ERROR",
+            )
+        ]
+    actual = data.get("project_context", {}).get("hard_requirements")
+    if actual != expected:
+        return [
+            issue(
+                "$.project_context.hard_requirements",
+                "Final hard_requirements must exactly equal deterministic parser output; LLM proposals are not authoritative",
+                "HARD_REQUIREMENTS_NOT_FINALIZED",
+            )
+        ]
+    return []
 
 
 def traceability_errors(data: dict[str, Any], input_data: dict[str, Any]) -> list[dict[str, str]]:
@@ -405,10 +453,18 @@ def validate_document(data: Any, input_data: Any | None = None) -> tuple[list[di
     contract_errors, mode, full, notice = schema_errors(data, schema)
     if not isinstance(data, dict):
         return deduplicate(contract_errors), mode, full, notice
-    errors = [*contract_errors, *base_semantic_errors(data), *requirement_errors(data)]
+    plan_requirement = data.get("project_context", {}).get("user_requirement")
+    authoritative_requirement = plan_requirement
+    if isinstance(input_data, dict):
+        authoritative_requirement = input_data.get("request", {}).get("user_requirement")
+    errors = [
+        *contract_errors,
+        *hard_requirement_ownership_errors(data, authoritative_requirement),
+        *base_semantic_errors(data),
+        *requirement_errors(data),
+    ]
     if isinstance(input_data, dict):
         errors.extend(traceability_errors(data, input_data))
-        plan_requirement = data.get("project_context", {}).get("user_requirement")
         input_requirement = input_data.get("request", {}).get("user_requirement")
         if plan_requirement != input_requirement:
             errors.append(issue("$.project_context.user_requirement", "Plan must copy input request.user_requirement exactly", "USER_REQUIREMENT_MISMATCH"))
@@ -452,7 +508,12 @@ def main() -> int:
                 "B_TRAIT_DIMENSION_MISMATCH",
                 "B_TRAIT_CLASSIFICATION_MISMATCH",
             }),
-            "requirement_preservation_passed": not any(code.startswith("REQUIREMENT_") or code in {"SEMANTIC_DRIFT", "USER_REQUIREMENT_MISMATCH"} for code in codes),
+            "requirement_preservation_passed": not any(
+                code.startswith("REQUIREMENT_")
+                or code.startswith("HARD_REQUIREMENT")
+                or code in {"SEMANTIC_DRIFT", "USER_REQUIREMENT_MISMATCH"}
+                for code in codes
+            ),
             "cross_section_consistency_passed": not any(code.startswith("CROSS_SECTION_") or code == "GRID_COUNT_MISMATCH" for code in codes),
             "local_scope_passed": "LOCAL_TRAIT_SCOPE_VIOLATION" not in codes,
         },

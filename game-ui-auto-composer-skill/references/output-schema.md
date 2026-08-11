@@ -26,6 +26,13 @@ Map a central primary action region below A's dominant content to a separate cen
 
 In `hard_requirements.required_elements`, use a non-null `position` only for an explicitly immutable user position. Use `position: null` for a required element whose directional wording is merely a soft preference. The final layout may still occupy that direction because A supports it; its origin remains `layout_reference`, not a fabricated user hard lock.
 
+The LLM does not own the final `project_context.hard_requirements`. It may emit a
+schema-compatible placeholder, but `scripts/finalize_hard_requirements.py`
+replaces the complete object from the original business requirement before
+validation. A/B evidence and the candidate's own design decisions are not input
+facts for that deterministic parser. `page_semantic` is `null` when no supported
+explicit page semantic is present.
+
 ## Repeat contract
 
 Every `component_tree[].repeat` contains `count`, `arrangement`, `columns`, `rows`, and `content_variation`.
@@ -48,6 +55,12 @@ Also keep prose and geometry consistent: vertical stacks use `column`, horizonta
 - exact error paths and invalid values;
 - no automatic correction or semantic ID mapping;
 - hard requirements, local scope, and cross-section consistency.
+- exact equality between final hard requirements and deterministic parser output.
+
+```powershell
+python scripts/finalize_hard_requirements.py <candidate-plan.json> `
+  --request <request.json>
+```
 
 ```powershell
 python scripts/validate_plan.py <candidate-plan.json> --input <input.json>

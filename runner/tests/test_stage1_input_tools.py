@@ -12,8 +12,10 @@ from PIL import Image
 
 
 RUNNER_ROOT = Path(__file__).resolve().parents[1]
+WORKSPACE_ROOT = RUNNER_ROOT.parent
 SYNC_SCRIPT = RUNNER_ROOT / "scripts" / "sync-stage1-inputs.py"
 INJECT_SCRIPT = RUNNER_ROOT / "scripts" / "inject-a1-source.py"
+INIT_SCRIPT = RUNNER_ROOT / "scripts" / "init-stage1.ps1"
 
 
 class Stage1InputToolTests(unittest.TestCase):
@@ -169,6 +171,31 @@ class Stage1InputToolTests(unittest.TestCase):
             result = self.run_script(INJECT_SCRIPT, run)
             self.assertNotEqual(0, result.returncode)
             self.assertIn("layout-001", result.stderr)
+
+    def test_initializer_rejects_runner_control_before_creating_a_run(self):
+        runs_root = WORKSPACE_ROOT / "runs"
+        before = {path.name for path in runs_root.iterdir() if path.is_dir()}
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(INIT_SCRIPT),
+                "-Scenario",
+                "control-contamination-test",
+                "-BusinessRequirement",
+                "/stage1 参考充值页面。只初始化 run，然后停止。",
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        after = {path.name for path in runs_root.iterdir() if path.is_dir()}
+        self.assertNotEqual(0, result.returncode)
+        self.assertIn("Runner execution control", result.stderr)
+        self.assertEqual(before, after)
 
 
 if __name__ == "__main__":

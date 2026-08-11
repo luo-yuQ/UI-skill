@@ -10,13 +10,32 @@ Execute the workflow defined in:
 
 First determine whether this is a NEW run or a RESUME of an existing run.
 
+Before a New Run is initialized, split the invocation into two channels:
+
+- `BusinessRequirement`: only the user's original business/design request;
+- Runner control: `/stage1`, run selection, initialize-only, stage selection,
+  stop-after, resume, and skip-stage instructions.
+
+Preserve the business wording verbatim. Do not translate, summarize, or polish
+it. Never put Runner control into `BusinessRequirement`. If the two cannot be
+separated reliably, stop instead of contaminating `request.json`.
+
 If the user provides an existing `runs/<run-id>` path, reuse that exact run and DO NOT call the initialization script.
+
+On Resume, `00-input/request.json.user_requirement` is immutable business
+input. Do not rewrite it, reconstruct it from the current conversation, or
+replace it with the resume instruction. Runner control remains in the current
+invocation and `run-manifest.json` only.
 
 Only call:
 
 `runner/scripts/init-stage1.ps1`
 
 when a new run is actually required.
+
+For a New Run, pass the separated business text through the script's
+`BusinessRequirement` parameter. The initialization script rejects known Runner
+control phrases as a final contamination guard.
 
 Do not create multiple run namespaces for different stages of the same user task.
 
