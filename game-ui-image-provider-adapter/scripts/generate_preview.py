@@ -106,7 +106,7 @@ def build_payload(prompt: str, *, model: str, size: str) -> dict[str, Any]:
     return {
         "model": model,
         "prompt": prompt,
-        "type": "image",
+        "type": "text",
         "images": [],
         "size": size,
         "n": 1,
@@ -146,9 +146,9 @@ def submit_generation(
     except Exception as exc:
         raise AdapterError("provider_request_failed", f"Generation submission failed: {exc}", exit_code=EXIT_PROVIDER) from exc
     data = response_json(response, "provider_http_error")
-    task_id = data.get("task_id")
+    task_id = data.get("id")
     if data.get("success") is False or not isinstance(task_id, str) or not task_id.strip():
-        raise AdapterError("provider_response_invalid", "Generation response did not contain a task_id", exit_code=EXIT_PROVIDER)
+        raise AdapterError("provider_response_invalid", "Generation response did not contain an id", exit_code=EXIT_PROVIDER)
     return data
 
 
@@ -173,7 +173,7 @@ def poll_task(
 ) -> None:
     interval = positive_number(submit_data.get("poll_interval"), poll_interval)
     wait_limit = positive_number(submit_data.get("max_wait"), max_wait)
-    status_url = provider_url(base_url, str(submit_data.get("task_status_url") or f"/v1/tasks/{task_id}/status"))
+    status_url = provider_url(base_url, f"/v1/tasks/{task_id}/status")
     started = monotonic_fn()
     while True:
         try:
@@ -350,7 +350,7 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
         active_session = session if session is not None else requests.Session()
         payload = build_payload(prompt, model=args.model, size=provider_size)
         submit_data = submit_generation(payload, base_url=base_url, api_key=api_key, timeout=args.request_timeout, session=active_session)
-        task_id = str(submit_data["task_id"])
+        task_id = str(submit_data["id"])
         poll_task(
             task_id,
             submit_data,

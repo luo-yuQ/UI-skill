@@ -32,6 +32,10 @@ Read only the path passed to `--prompt`, using UTF-8 with optional BOM handling.
 
 Infer a requested canvas only from text such as `Compose for a 1920 x 1080 px canvas.` Map landscape, portrait, and square targets to the closest supported ToAPIs size. Record both values in `result.json`; do not resize the returned image.
 
+## Verified ToAPIs protocol
+
+Submit `type: "text"` with `images: []` to `POST /v1/images/generations`. Read the task ID only from response field `id`. Poll `GET /v1/tasks/{id}/status` and read `task_status`; after completion fetch `GET /v1/tasks/{id}/result`. Prefer `items[0].url` and retain compatibility with `data.result.data[0].url`.
+
 ## Boundaries
 
 Never read, resolve, inspect, or upload:
