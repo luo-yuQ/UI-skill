@@ -1,4 +1,4 @@
-# Game UI Prompt Compiler v0.1
+# Game UI Prompt Compiler v0.2
 
 该 Skill 把 Composer 已确定的 UI 结构和 B2 已归纳的视觉风格编译成一份可直接交给图像生成模型的英文提示词：
 
@@ -14,12 +14,15 @@ ui-compose-plan.json + style-profile.json -> image-prompt.txt
 python game-ui-prompt-compiler-skill/scripts/compile_image_prompt.py `
   --compose-plan path/to/ui-compose-plan.json `
   --style-profile path/to/style-profile.json `
+  --mode text-only `
   --output path/to/image-prompt.txt
 ```
 
+`--mode` 支持 `text-only`（默认，兼容 v0.1）和 `reference-guided`。后者仍不接收或读取图片，只在 Prompt 中声明后续实际提供的参考图是主要视觉风格依据，并将 B2 限制为不会压过参考图的通用辅助指导。
+
 输入文件按 UTF-8 JSON 读取。只有在 JSON 无法解析、没有有效页面、完全没有可用 UI 结构或完全没有可用风格信息时才失败。
 
-输出固定包含六段：
+`text-only` 输出保持原有六段；`reference-guided` 会在 `VISUAL STYLE` 后增加 `REFERENCE USAGE`，明确只参考视觉语言，不复制参考图的角色、场景、布局、文本、业务内容或功能。
 
 ```text
 GOAL

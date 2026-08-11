@@ -82,6 +82,28 @@ ZH_TO_EN_PHRASES = {
 }
 
 ENGINEERING_LABEL_WORDS = {"template", "component", "node", "prefab", "prototype"}
+MODES = ("text-only", "reference-guided")
+
+REFERENCE_USAGE_LINES = (
+    "Use the provided reference image for visual style only",
+    "Do not copy reference-specific characters",
+    "Do not copy reference-specific scenes or environmental content",
+    "Do not copy the reference layout",
+    "Do not copy its text",
+    "Do not copy its business content",
+    "Do not introduce reference-specific gameplay functions",
+    "Keep the new page structure defined by the COMPOSITION and HARD REQUIREMENTS sections",
+)
+
+REFERENCE_GUIDED_DIMENSION_GUIDANCE = {
+    "color": "coherent palette relationships",
+    "material": "coherent material language",
+    "shape": "consistent shape language",
+    "rendering": "consistent rendering treatment",
+    "lighting": "coherent accent lighting",
+    "decoration": "restrained decorative language",
+    "world_visual": "a unified overall visual character",
+}
 
 
 def _text(value: Any) -> str | None:
@@ -494,6 +516,73 @@ def _visual_style_lines(
     return lines
 
 
+def _reference_guided_dimensions(
+    plan: dict[str, Any],
+    style: dict[str, Any],
+    page: dict[str, Any],
+    components: list[dict[str, Any]],
+) -> list[str]:
+    inventory = _style_inventory(style)
+    decisions = _style_decisions(plan)
+    current_scope = {_text(page.get("page_id")), _text(page.get("root_component_id"))}
+    current_scope.update(_text(item.get("component_id")) for item in components)
+    current_scope.discard(None)
+    dimensions: list[str] = []
+
+    for trait in inventory:
+        trait_id = _text(trait.get("trait_id"))
+        classification = _text(trait.get("_classification")) or "uncertain"
+        decision = decisions.get(trait_id or "")
+        disposition = _text(decision.get("disposition")) if decision else None
+        if disposition in REJECTED_STYLE_DISPOSITIONS:
+            continue
+        accepted = classification in {"stable", "secondary"}
+        if classification == "local" and decision and disposition in ALLOWED_STYLE_DISPOSITIONS:
+            target_scope = set(_string_list(decision.get("target_scope")))
+            accepted = decision.get("promoted_by_user_requirement") is True or bool(target_scope & current_scope)
+        if not accepted:
+            continue
+        dimension = _text(trait.get("_dimension"))
+        if dimension and dimension in REFERENCE_GUIDED_DIMENSION_GUIDANCE and dimension not in dimensions:
+            dimensions.append(dimension)
+
+    fallback = _neutral_style_summary(style.get("overall_visual_identity"))
+    fallback = fallback or _neutral_style_summary(style.get("cross_dimension_summary"))
+    if not dimensions and not fallback:
+        raise CompileError("No usable visual style description was found in style-profile.json")
+    return dimensions
+
+
+def _reference_guided_style_lines(
+    plan: dict[str, Any],
+    style: dict[str, Any],
+    page: dict[str, Any],
+    components: list[dict[str, Any]],
+) -> list[str]:
+    page_name = _humanize(page.get("page_type") or page.get("page_id") or "game UI")
+    dimensions = _reference_guided_dimensions(plan, style, page, components)
+    supporting_phrases = [REFERENCE_GUIDED_DIMENSION_GUIDANCE[item] for item in dimensions]
+    lines = [
+        "Use the provided reference image as the primary visual style reference",
+        (
+            "Match its transferable visual language, including palette, rendering style, shape language, "
+            "surface treatment, decoration density, and overall presentation"
+        ),
+        f"Preserve the reference image's overall visual character while applying it to the new {page_name} composition",
+        "Let the provided reference image take priority over generic fantasy style assumptions",
+        "Keep visual treatment consistent across the newly designed interface",
+    ]
+    if supporting_phrases:
+        if len(supporting_phrases) == 1:
+            joined = supporting_phrases[0]
+        else:
+            joined = ", ".join(supporting_phrases[:-1]) + f", and {supporting_phrases[-1]}"
+        lines.append(
+            f"Use secondary guidance only to reinforce {joined}; never let it override the reference image"
+        )
+    return _dedupe(lines)
+
+
 def _imperative_include(value: str) -> str:
     lower = value.lower()
     if lower.startswith(("must ", "keep ", "maintain ", "preserve ", "avoid ", "use ", "place ", "arrange ")):
@@ -598,20 +687,33 @@ def _production_lines(plan: dict[str, Any]) -> list[str]:
     return _dedupe(lines)
 
 
-def compile_prompt(plan: dict[str, Any], style: dict[str, Any]) -> str:
+def compile_prompt(plan: dict[str, Any], style: dict[str, Any], mode: str = "text-only") -> str:
+    if mode not in MODES:
+        raise CompileError(f"Unsupported compilation mode: {mode}")
     page = _select_page(plan)
     components = _page_components(plan, page)
     if not _has_structure(plan, components):
         raise CompileError("No usable UI structure was found in ui-compose-plan.json")
     labels = _component_labels(components)
+    visual_style = (
+        _visual_style_lines(plan, style, page, components)
+        if mode == "text-only"
+        else _reference_guided_style_lines(plan, style, page, components)
+    )
     sections = [
         ("GOAL", _goal_lines(plan, page)),
         ("CANVAS AND PAGE TYPE", _canvas_lines(plan, page)),
         ("COMPOSITION", _composition_lines(plan, page, components, labels)),
-        ("VISUAL STYLE", _visual_style_lines(plan, style, page, components)),
-        ("HARD REQUIREMENTS", _hard_requirement_lines(plan, components, labels)),
-        ("PRODUCTION CONSTRAINTS", _production_lines(plan)),
+        ("VISUAL STYLE", visual_style),
     ]
+    if mode == "reference-guided":
+        sections.append(("REFERENCE USAGE", _dedupe(REFERENCE_USAGE_LINES)))
+    sections.extend(
+        [
+            ("HARD REQUIREMENTS", _hard_requirement_lines(plan, components, labels)),
+            ("PRODUCTION CONSTRAINTS", _production_lines(plan)),
+        ]
+    )
     chunks = []
     for heading, lines in sections:
         chunks.append(heading + "\n" + "\n".join(f"- {line}" for line in lines))
@@ -629,6 +731,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--compose-plan", required=True, type=Path, help="Path to ui-compose-plan.json")
     parser.add_argument("--style-profile", required=True, type=Path, help="Path to style-profile.json")
+    parser.add_argument("--mode", choices=MODES, default="text-only", help="Prompt compilation mode")
     parser.add_argument("--output", required=True, type=Path, help="Path to image-prompt.txt")
     return parser.parse_args(argv)
 
@@ -638,7 +741,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         plan = _read_json(args.compose_plan, "compose plan")
         style = _read_json(args.style_profile, "style profile")
-        prompt = compile_prompt(plan, style)
+        prompt = compile_prompt(plan, style, mode=args.mode)
         args.output.parent.mkdir(parents=True, exist_ok=True)
         args.output.write_text(prompt, encoding="utf-8", newline="\n")
     except CompileError as exc:

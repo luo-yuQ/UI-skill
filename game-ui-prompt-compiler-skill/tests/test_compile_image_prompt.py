@@ -19,6 +19,27 @@ RUN_PLAN = (
 )
 
 
+def compiler_command(
+    compose_plan: Path,
+    style_profile: Path,
+    output: Path,
+    *,
+    mode: str | None = None,
+) -> list[str]:
+    command = [
+        sys.executable,
+        str(SCRIPT),
+        "--compose-plan",
+        str(compose_plan),
+        "--style-profile",
+        str(style_profile),
+    ]
+    if mode is not None:
+        command.extend(["--mode", mode])
+    command.extend(["--output", str(output)])
+    return command
+
+
 class PromptCompilerTests(unittest.TestCase):
     def test_repository_run_preserves_structure_and_style(self):
         if not RUN_PLAN.exists():
@@ -26,16 +47,7 @@ class PromptCompilerTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp_dir:
             output = Path(temp_dir) / "image-prompt.txt"
             result = subprocess.run(
-                [
-                    sys.executable,
-                    str(SCRIPT),
-                    "--compose-plan",
-                    str(RUN_PLAN),
-                    "--style-profile",
-                    str(STYLE),
-                    "--output",
-                    str(output),
-                ],
+                compiler_command(RUN_PLAN, STYLE, output, mode="text-only"),
                 capture_output=True,
                 text=True,
                 encoding="utf-8",
@@ -61,8 +73,131 @@ class PromptCompilerTests(unittest.TestCase):
         self.assertIn("Use silver-black frames and matte panel bases.", prompt)
         self.assertNotIn("localized red content accents", prompt)
         self.assertNotIn("semi-realistic versus", prompt)
+        self.assertNotIn("Use the provided reference image", prompt)
+        self.assertNotIn("REFERENCE USAGE", prompt)
         for internal_name in ("component_id", "trait_id", "source_ref", "confidence"):
             self.assertNotIn(internal_name, prompt)
+
+    def test_text_only_default_is_byte_compatible_with_explicit_mode(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            default_output = temp / "default.txt"
+            explicit_output = temp / "explicit.txt"
+            default_result = subprocess.run(
+                compiler_command(RUN_PLAN, STYLE, default_output),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            explicit_result = subprocess.run(
+                compiler_command(RUN_PLAN, STYLE, explicit_output, mode="text-only"),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(default_result.returncode, 0, default_result.stderr)
+            self.assertEqual(explicit_result.returncode, 0, explicit_result.stderr)
+            self.assertEqual(default_output.read_bytes(), explicit_output.read_bytes())
+
+    def test_reference_guided_uses_reference_authority_and_preserves_hard_requirements(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        with tempfile.TemporaryDirectory() as temp_dir:
+            output = Path(temp_dir) / "image-prompt.txt"
+            result = subprocess.run(
+                compiler_command(RUN_PLAN, STYLE, output, mode="reference-guided"),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            prompt = output.read_text(encoding="utf-8")
+
+        expected_headings = [
+            "GOAL",
+            "CANVAS AND PAGE TYPE",
+            "COMPOSITION",
+            "VISUAL STYLE",
+            "REFERENCE USAGE",
+            "HARD REQUIREMENTS",
+            "PRODUCTION CONSTRAINTS",
+        ]
+        self.assertEqual([line for line in prompt.splitlines() if line in expected_headings], expected_headings)
+        self.assertIn("Use the provided reference image as the primary visual style reference.", prompt)
+        self.assertIn("Exactly 3 category tabs.", prompt)
+        self.assertIn("Exactly 6 product cards.", prompt)
+        self.assertIn("exactly 2 columns and 3 rows", prompt)
+        self.assertIn("The category navigation must remain on the left.", prompt)
+        self.assertIn("The refresh button must remain at the bottom.", prompt)
+        for forbidden in (
+            "cool blue-gray",
+            "silver-black",
+            "dark-fantasy visual",
+            "gothic detail",
+            "warm coral-red",
+            "orange",
+            "cream",
+            "soft gold",
+        ):
+            self.assertNotIn(forbidden, prompt.lower())
+
+    def test_reference_guided_forbids_copying_and_never_leaks_reference_paths(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        style = json.loads(STYLE.read_text(encoding="utf-8"))
+        style["source_ref"] = "C:/private/reference-secret.png"
+        style["workspace_path"] = "D:/workspace/hidden-reference.jpg"
+        style["reference_url"] = "https://private.example/reference.webp"
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            style_path = temp / "style.json"
+            output = temp / "image-prompt.txt"
+            style_path.write_text(json.dumps(style), encoding="utf-8")
+            result = subprocess.run(
+                compiler_command(RUN_PLAN, style_path, output, mode="reference-guided"),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            prompt = output.read_text(encoding="utf-8")
+
+        for forbidden in ("reference-secret.png", "hidden-reference.jpg", "private.example", "C:/", "D:/"):
+            self.assertNotIn(forbidden, prompt)
+        for required in (
+            "Do not copy reference-specific characters.",
+            "Do not copy reference-specific scenes or environmental content.",
+            "Do not copy the reference layout.",
+            "Do not copy its text.",
+            "Do not copy its business content.",
+            "Do not introduce reference-specific gameplay functions.",
+        ):
+            self.assertIn(required, prompt)
+
+    def test_both_modes_leave_upstream_json_unchanged(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        plan_before = RUN_PLAN.read_bytes()
+        style_before = STYLE.read_bytes()
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            for mode in ("text-only", "reference-guided"):
+                result = subprocess.run(
+                    compiler_command(RUN_PLAN, STYLE, temp / f"{mode}.txt", mode=mode),
+                    capture_output=True,
+                    text=True,
+                    encoding="utf-8",
+                    check=False,
+                )
+                self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertEqual(plan_before, RUN_PLAN.read_bytes())
+        self.assertEqual(style_before, STYLE.read_bytes())
 
     def test_translates_chinese_style_filters_internal_instructions_and_visualizes_labels(self):
         if not RUN_PLAN.exists():
