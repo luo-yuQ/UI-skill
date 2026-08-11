@@ -21,6 +21,22 @@ description: 分析用户提供的其他游戏完整 UI 截图，提取页面用
 - FairyGUI、Laya、Unity、Cocos 或其他引擎实现；
 - 没有可访问图片的纯文字请求。
 
+## Runner-managed Source Metadata
+
+当 A1 在 First Stage Runner 中执行时，以下字段由 Runner 的确定性代码负责：
+
+- `source.source_ref`
+- `source.file_name`
+- `source.width`
+- `source.height`
+- `source.orientation`
+
+A1 不需要通过视觉推理估算这些值。A1 仍负责语义分析，以及
+`source.capture_limitations` 等观察性内容。
+
+不要删除这些 schema 字段，也不要修改当前 schema。Runner 会在 schema validation
+前使用 `runner/scripts/inject-a1-source.py` 覆盖为真实文件 metadata。
+
 ## 工作流
 
 1. 验证输入。读取 `references/analysis-workflow.md` 的输入检查和完整流程；不满足完整 UI 条件时说明无法分析的原因。

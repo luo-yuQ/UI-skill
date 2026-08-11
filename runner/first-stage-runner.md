@@ -125,6 +125,7 @@ runs/<run-id>/
 |
 |-- 00-input/
 |   |-- request.json
+|   |-- input-metadata.json
 |   |
 |   |-- layout-reference/
 |   |   `-- ref-001.<ext>
@@ -203,6 +204,40 @@ Runner 必须保存本次任务的全部原始输入：
 
 Runner 不得将自己的 request contract 与 A、B、Composer schema 混合。
 
+`layout_references` 与 `style_references` 不由 Agent 手工维护。它们由
+`runner/scripts/sync-stage1-inputs.py` 根据当前 run 中真实存在的图片确定性同步。
+
+---
+
+### Deterministic Stage 1 Input Sync
+
+在运行 A1、B1 或 B2 前，必须从仓库根目录执行：
+
+```powershell
+python runner/scripts/sync-stage1-inputs.py --run runs/<run-id>
+```
+
+该脚本扫描：
+
+```text
+<run>/00-input/layout-reference/
+<run>/00-input/style-reference/
+```
+
+并且是以下信息的唯一可信来源：
+
+- layout reference paths；
+- style reference paths；
+- `file_name`；
+- `width`；
+- `height`；
+- `orientation`。
+
+脚本只更新 `request.json` 中的 `layout_references` 与 `style_references`，不得改写
+`user_requirement`；真实文件 metadata 写入 `00-input/input-metadata.json`。
+
+Agent 不得手工补写图片路径，不得通过视觉推理或文件名推测图片尺寸与方向。
+
 ---
 
 ## 8. Execution Workflow
@@ -267,6 +302,14 @@ After the script returns the run path, use that exact run namespace for all down
 
 ## 9. Stage 1 - Run A1
 
+运行 A1 前必须先执行 Stage 1 Input Sync：
+
+```powershell
+python runner/scripts/sync-stage1-inputs.py --run runs/<run-id>
+```
+
+同步后如果 `request.json` 中的 `layout_references` 为空，立即停止，不得执行 A1。
+
 执行前必须重新读取：
 
 ```text
@@ -301,6 +344,24 @@ A1 最终输出统一保存为：
 
 ### Validation
 
+A1 生成 `layout-analysis.json` 后、运行 schema validator 前，必须执行：
+
+```powershell
+python runner/scripts/inject-a1-source.py --run runs/<run-id>
+```
+
+该脚本默认使用 `input-metadata.json` 中的 `layout-001`，确定性覆盖：
+
+```text
+source.source_ref
+source.file_name
+source.width
+source.height
+source.orientation
+```
+
+`source.capture_limitations` 及 A1 的其他语义分析内容必须保持不变。注入成功后，才运行当前 A1 validator：
+
 从仓库根目录运行当前 A1 validator：
 
 ```powershell
@@ -315,6 +376,14 @@ python game-ui-layout-reference-analyzer/scripts/validate_layout_reference_analy
 ---
 
 ## 10. Stage 2 - Run B1
+
+运行 B1 前必须重新执行 Stage 1 Input Sync：
+
+```powershell
+python runner/scripts/sync-stage1-inputs.py --run runs/<run-id>
+```
+
+同步后如果 `request.json` 中的 `style_references` 为空，立即停止，不得执行 B1。
 
 执行前必须重新读取：
 
@@ -348,6 +417,14 @@ python game-ui-style-reference-analyzer/scripts/validate_asset_analysis.py `
 ---
 
 ## 11. Stage 3 - Run B2
+
+运行 B2 前必须重新执行 Stage 1 Input Sync：
+
+```powershell
+python runner/scripts/sync-stage1-inputs.py --run runs/<run-id>
+```
+
+同步后如果 `request.json` 中的 `style_references` 为空，立即停止，不得执行 B2。
 
 只有本次参与 synthesis 的全部 B1 final 均合法后，才能运行 B2。
 
@@ -739,6 +816,7 @@ First Stage Runner v0.1 暂不解决：
 
 ```text
 00-input/request.json
+00-input/input-metadata.json
 
 10-layout-reference/layout-analysis.json
 
