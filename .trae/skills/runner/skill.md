@@ -33,6 +33,41 @@ When Stage 1 is invoked:
 
 7. If the user requests stopping after a stage, stop only after that stage's required files have been written and the run manifest has been updated.
 
+## A1 Task Construction
+
+The current TRAE Runner does not create a separate model context for A1. A1 is
+therefore soft-isolated within the current invocation.
+
+Immediately before A1:
+
+1. Run `runner/scripts/sync-stage1-inputs.py --run <run-path>`.
+2. Use `00-input/input-metadata.json`, not `request.json`, to resolve the layout
+   reference paths and deterministic metadata.
+3. Construct a minimal A1-only task containing exactly:
+   - the selected layout reference image or images;
+   - the matching `layout-*` metadata records;
+   - `game-ui-layout-reference-analyzer/SKILL.md`;
+   - the current A1 schema;
+   - only the taxonomy, reference, workflow, and validation files required by
+     the current A1 Skill.
+4. Do not read `00-input/request.json` while constructing or executing A1.
+5. Do not include or quote the original `user_requirement`, B style evidence,
+   Composer information, or instructions describing how the new target page
+   should be designed.
+6. Analyze only evidence supported by the allowed A1 inputs.
+
+The invoking conversation may still contain the user's design request. This is
+not hard isolation: the Runner must ignore that request for A1 and must not use
+it as evidence, focus guidance, or a source of semantic conclusions.
+
+If a future Runner can launch an independent sub-agent/model invocation, pass
+only the inputs listed above and omit conversation history plus `request.json`.
+That future invocation boundary can provide hard context isolation without
+changing the A1 contract.
+
+The original `user_requirement` remains intact in `00-input/request.json` and
+may be read again only when building Composer Input.
+
 ## Important
 
 Runner decides WHEN and WHERE.

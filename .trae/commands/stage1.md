@@ -19,3 +19,32 @@ Only call:
 when a new run is actually required.
 
 Do not create multiple run namespaces for different stages of the same user task.
+
+## A1 Execution Context Boundary
+
+The current TRAE Stage 1 command does not launch A1 as an independent model
+invocation. It executes inside the invoking model conversation, so this workflow
+provides soft isolation only and must not claim hard context isolation.
+
+When entering A1, construct a dedicated minimal A1 task. Its task inputs are
+limited to:
+
+- the current run's layout reference image paths from
+  `00-input/input-metadata.json`;
+- the corresponding deterministic layout metadata from that file;
+- `game-ui-layout-reference-analyzer/SKILL.md`;
+- the current A1 schema, required taxonomy/reference files, and validation
+  contract.
+
+Do not open `00-input/request.json` while constructing or executing the A1 task.
+Do not copy the original `user_requirement`, B style information, Composer
+intent, or new-page design instructions into the A1 task prompt. Although the
+invoking conversation remains technically visible, treat those items as
+unavailable evidence during A1 analysis.
+
+This allowed-input list is also the exact payload boundary for a future
+sub-agent or independent A1 invocation. Do not pass conversation history or
+`request.json` to that future invocation.
+
+The original `user_requirement` re-enters only at the Composer Input stage,
+after A1 and B outputs have passed their gates.

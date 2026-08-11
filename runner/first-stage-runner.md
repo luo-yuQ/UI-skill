@@ -308,7 +308,21 @@ After the script returns the run path, use that exact run namespace for all down
 python runner/scripts/sync-stage1-inputs.py --run runs/<run-id>
 ```
 
-同步后如果 `request.json` 中的 `layout_references` 为空，立即停止，不得执行 A1。
+同步后如果 `input-metadata.json` 中的 `layout_references` 为空，立即停止，不得执行 A1。
+
+### Execution Context Isolation
+
+当前仓库中的 TRAE Stage 1 command 与 Runner skill 在调用它的同一模型会话中执行，
+没有创建独立 sub-agent、独立模型 invocation 或无历史上下文。因此 v0.1 当前只能实现
+**soft isolation**，不得宣称已经实现 hard context isolation。
+
+隔离发生在 A1 task construction 层。构造和执行 A1 专用任务时，不得读取
+`00-input/request.json`，也不得把当前会话中的用户新页面设计要求复制到 A1 task prompt。
+即使原始用户对话在技术上仍对当前模型可见，也必须把其中的 `user_requirement`、B 风格
+信息与 Composer 意图视为 A1 不可用的证据，不得用于分析焦点或语义结论。
+
+如果未来 Runner 支持独立 sub-agent 或 independent invocation，应只传递下方列出的 A1
+输入，不传递对话历史或 `request.json`；该边界届时可升级为 hard isolation。
 
 执行前必须重新读取：
 
@@ -320,17 +334,26 @@ game-ui-layout-reference-analyzer/SKILL.md
 
 ### Input
 
-A1 的业务输入仅来自：
+A1 专用任务只能包含：
 
 ```text
-00-input/layout-reference/
+当前 run 的 layout reference image(s)
+00-input/input-metadata.json 中对应的 layout-* metadata
+game-ui-layout-reference-analyzer/SKILL.md
+game-ui-layout-reference-analyzer/schemas/layout-reference-analysis.schema.json
+A1 当前 Skill 要求的 taxonomy / reference / workflow / validation contract
 ```
 
-A1 只负责分析 Layout Reference。除非 A1 当前 Skill 明确要求，否则 Runner 不得额外向 A1 注入：
+A1 只负责分析 Layout Reference。Runner 不得向 A1 task 注入或主动读取：
 
-- B Style；
-- Composer Plan；
+- `00-input/request.json` 或其中的 `user_requirement`；
+- B Style、B1/B2 输出或 style profile；
+- Composer Plan、Composer intent 或 Composer 相关信息；
+- 当前用户对“新页面要怎么设计”的描述；
 - 后续设计结论。
+
+原始 `user_requirement` 必须继续完整保存在 `00-input/request.json`，隔离不得通过删除、
+清空或改写 request 来实现。
 
 ### Output
 
@@ -490,6 +513,17 @@ User Requirement = AVAILABLE
 ---
 
 ## 13. Stage 4 - Build Composer Input
+
+Stage 4 是原始 `user_requirement` 重新进入 workflow 的第一个阶段。只有到达此处并通过
+Composer Gate 后，Runner 才重新读取：
+
+```text
+00-input/request.json -> original user_requirement
+10-layout-reference/layout-analysis.json
+20-style-reference/style-profile.json
+```
+
+A1 task construction 与 A1 execution 不得提前读取这些 Composer 组合输入。
 
 执行前必须重新读取：
 
