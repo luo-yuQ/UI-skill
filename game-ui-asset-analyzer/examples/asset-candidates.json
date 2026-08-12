@@ -1,0 +1,32 @@
+[
+  {
+    "label": "Currency icon",
+    "semantic_type": "icon",
+    "bbox": {
+      "x": 24,
+      "y": 18,
+      "width": 32,
+      "height": 32
+    },
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The icon is fully visible inside a clean rectangular boundary.",
+    "source_ref": null
+  },
+  {
+    "label": "Purchase price button",
+    "semantic_type": "button",
+    "bbox": {
+      "x": 91,
+      "y": 297,
+      "width": 132,
+      "height": 33
+    },
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": ["text_baked_in"],
+    "reason": "Price text overlaps the reusable button background.",
+    "source_ref": "purchase_card_01"
+  }
+]

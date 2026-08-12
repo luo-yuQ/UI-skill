@@ -1,0 +1,31 @@
+[
+  {
+    "label": "Body copy",
+    "semantic_type": "text",
+    "bbox": {"x": 10, "y": 30, "width": 40, "height": 10},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "Ordinary interface text should remain runtime text."
+  },
+  {
+    "label": "Currency icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 5, "y": 5, "width": 16, "height": 16},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The icon has a clean rectangular boundary.",
+    "source_ref": null
+  },
+  {
+    "label": "Purchase button",
+    "semantic_type": "button",
+    "bbox": {"x": 20, "y": 50, "width": 60, "height": 20},
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": ["text_baked_in"],
+    "reason": "The label is baked into the reusable button surface.",
+    "source_ref": "purchase_card_01"
+  }
+]

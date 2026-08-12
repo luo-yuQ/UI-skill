@@ -1,0 +1,11 @@
+[
+  {
+    "label": "Invalid button",
+    "semantic_type": "button",
+    "bbox": {"x": 20, "y": 50, "width": 60, "height": 20},
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": [],
+    "reason": "Fixture for advanced issue validation."
+  }
+]

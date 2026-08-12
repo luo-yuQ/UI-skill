@@ -1,0 +1,11 @@
+[
+  {
+    "label": "Overflowing icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 90, "y": 5, "width": 11, "height": 16},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "Fixture for boundary validation."
+  }
+]

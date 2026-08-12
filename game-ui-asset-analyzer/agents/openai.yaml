@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Asset Analyzer"
+  short_description: "Analyze UI screenshots into validated asset candidates"
+  default_prompt: "Use $game-ui-asset-analyzer to identify asset candidates in this UI screenshot and build asset-analysis.json."
