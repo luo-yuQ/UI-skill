@@ -1,4 +1,4 @@
 interface:
   display_name: "Game UI Asset Analyzer"
-  short_description: "Analyze UI screenshots into validated asset candidates"
-  default_prompt: "Use $game-ui-asset-analyzer to identify asset candidates in this UI screenshot and build asset-analysis.json."
+  short_description: "Map analyzed UI bboxes to source-image pixels"
+  default_prompt: "Use $game-ui-asset-analyzer to prepare a deterministic analysis image, identify asset candidates, and map their bboxes back to the source image."

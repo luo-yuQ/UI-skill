@@ -72,12 +72,13 @@ def read_image_size(path: Path) -> tuple[int, int]:
 
 def _validate_bbox_bounds(
     items: Any,
-    source_size: tuple[int, int],
+    image_size: tuple[int, int],
     root_path: str,
+    bounds_name: str = "source",
 ) -> list[str]:
     if not isinstance(items, list):
         return []
-    source_width, source_height = source_size
+    image_width, image_height = image_size
     errors: list[str] = []
     for index, item in enumerate(items):
         if not isinstance(item, dict) or not isinstance(item.get("bbox"), dict):
@@ -89,26 +90,27 @@ def _validate_bbox_bounds(
         x, y, width, height = values
         if x < 0 or y < 0 or width <= 0 or height <= 0:
             continue
-        if x + width > source_width:
+        if x + width > image_width:
             errors.append(
                 f"{root_path}[{index}].bbox: right edge {x + width} exceeds "
-                f"source width {source_width}"
+                f"{bounds_name} width {image_width}"
             )
-        if y + height > source_height:
+        if y + height > image_height:
             errors.append(
                 f"{root_path}[{index}].bbox: bottom edge {y + height} exceeds "
-                f"source height {source_height}"
+                f"{bounds_name} height {image_height}"
             )
     return errors
 
 
 def validate_candidates(
     data: Any,
-    source_size: tuple[int, int] | None = None,
+    image_size: tuple[int, int] | None = None,
+    bounds_name: str = "source",
 ) -> list[str]:
     errors = validate_schema(data, CANDIDATE_SCHEMA_PATH)
-    if source_size is not None:
-        errors.extend(_validate_bbox_bounds(data, source_size, "$"))
+    if image_size is not None:
+        errors.extend(_validate_bbox_bounds(data, image_size, "$", bounds_name))
     return errors
 
 

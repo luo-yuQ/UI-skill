@@ -19,6 +19,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import build_asset_analysis as builder  # noqa: E402
+import prepare_analysis_input as preparer  # noqa: E402
 import validate_asset_analysis as validator  # noqa: E402
 
 
@@ -45,6 +46,150 @@ class AssetAnalysisTests(unittest.TestCase):
                     schema["$schema"],
                 )
                 Draft202012Validator.check_schema(schema)
+
+    def test_prepare_1248_by_832_to_1024_by_683(self):
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            metadata_path = temp / "analysis-input-meta.json"
+            Image.new("RGB", (1248, 832), "white").save(source)
+
+            metadata = preparer.prepare_analysis_input(
+                source,
+                analysis_image,
+                metadata_path,
+            )
+            with Image.open(analysis_image) as image:
+                self.assertEqual("PNG", image.format)
+                self.assertEqual((1024, 683), image.size)
+
+        self.assertEqual(
+            {"width": 1024, "height": 683},
+            metadata["analysis_size"],
+        )
+
+    def test_prepare_does_not_upscale_small_image(self):
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            metadata_path = temp / "analysis-input-meta.json"
+            Image.new("RGBA", (800, 600), (0, 0, 0, 0)).save(source)
+
+            metadata = preparer.prepare_analysis_input(
+                source,
+                analysis_image,
+                metadata_path,
+            )
+            with Image.open(analysis_image) as image:
+                self.assertEqual((800, 600), image.size)
+
+        self.assertEqual(
+            {"width": 800, "height": 600},
+            metadata["analysis_size"],
+        )
+
+    def test_prepare_metadata_uses_actual_image_dimensions(self):
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            metadata_path = temp / "analysis-input-meta.json"
+            Image.new("RGB", (1248, 832), "white").save(source)
+
+            preparer.prepare_analysis_input(source, analysis_image, metadata_path)
+            metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+
+        self.assertEqual("preview.png", metadata["source_image"])
+        self.assertEqual({"width": 1248, "height": 832}, metadata["source_size"])
+        self.assertEqual("analysis-input.png", metadata["analysis_image"])
+        self.assertEqual({"width": 1024, "height": 683}, metadata["analysis_size"])
+        self.assertEqual(1248 / 1024, metadata["scale_to_source"]["x"])
+        self.assertEqual(832 / 683, metadata["scale_to_source"]["y"])
+
+    def test_bbox_mapping_uses_actual_per_axis_scales(self):
+        mapped = builder.map_bbox_to_source(
+            {"x": 716, "y": 311, "width": 28, "height": 28},
+            analysis_size=(1024, 683),
+            source_size=(1248, 832),
+        )
+        self.assertEqual(
+            {"x": 873, "y": 379, "width": 34, "height": 34},
+            mapped,
+        )
+
+    def test_bbox_mapping_clamps_right_bottom_boundary(self):
+        mapped = builder.map_bbox_to_source(
+            {"x": 1000, "y": 660, "width": 24, "height": 23},
+            analysis_size=(1024, 683),
+            source_size=(1248, 832),
+        )
+        self.assertGreater(mapped["width"], 0)
+        self.assertGreater(mapped["height"], 0)
+        self.assertLessEqual(mapped["x"] + mapped["width"], 1248)
+        self.assertLessEqual(mapped["y"] + mapped["height"], 832)
+        self.assertEqual(1248, mapped["x"] + mapped["width"])
+        self.assertEqual(832, mapped["y"] + mapped["height"])
+
+    def test_builder_maps_bbox_from_analysis_image_to_source(self):
+        candidates = [
+            {
+                "label": "Mapped icon",
+                "semantic_type": "icon",
+                "bbox": {"x": 716, "y": 311, "width": 28, "height": 28},
+                "should_extract": True,
+                "strategy": "direct_crop",
+                "issues": [],
+                "reason": "Clean analysis-image bounds.",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            Image.new("RGB", (1248, 832), "white").save(source)
+            Image.new("RGB", (1024, 683), "white").save(analysis_image)
+            analysis = builder.build_analysis(source, candidates, analysis_image)
+
+        self.assertEqual(
+            {"x": 873, "y": 379, "width": 34, "height": 34},
+            analysis["assets"][0]["bbox"],
+        )
+
+    def test_builder_without_analysis_image_preserves_bbox(self):
+        candidates = load_fixture("valid-candidates.json")
+        with tempfile.TemporaryDirectory() as raw:
+            source = Path(raw) / "preview.png"
+            Image.new("RGB", (100, 80), "white").save(source)
+            analysis = builder.build_analysis(source, candidates)
+
+        by_label = {asset["label"]: asset for asset in analysis["assets"]}
+        self.assertEqual(
+            {"x": 5, "y": 5, "width": 16, "height": 16},
+            by_label["Currency icon"]["bbox"],
+        )
+
+    def test_builder_validates_candidates_against_analysis_image(self):
+        candidates = [
+            {
+                "label": "Outside analysis image",
+                "semantic_type": "icon",
+                "bbox": {"x": 1020, "y": 10, "width": 20, "height": 20},
+                "should_extract": True,
+                "strategy": "direct_crop",
+                "issues": [],
+                "reason": "Valid in source width but invalid in analysis width.",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            Image.new("RGB", (1248, 832), "white").save(source)
+            Image.new("RGB", (1024, 683), "white").save(analysis_image)
+            with self.assertRaisesRegex(ValueError, "analysis image width"):
+                builder.build_analysis(source, candidates, analysis_image)
 
     def test_cases_1_to_3_are_valid(self):
         candidates = load_fixture("valid-candidates.json")
@@ -173,6 +318,87 @@ class AssetAnalysisTests(unittest.TestCase):
 
         self.assertEqual(0, validate_result.returncode, validate_result.stderr)
         self.assertIn("Valid asset analysis", validate_result.stdout)
+
+    def test_preparer_and_mapped_builder_cli_succeed(self):
+        candidates = [
+            {
+                "label": "Mapped icon",
+                "semantic_type": "icon",
+                "bbox": {"x": 716, "y": 311, "width": 28, "height": 28},
+                "should_extract": True,
+                "strategy": "direct_crop",
+                "issues": [],
+                "reason": "Clean analysis-image bounds.",
+            }
+        ]
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            metadata_path = temp / "analysis-input-meta.json"
+            candidates_path = temp / "asset-candidates.json"
+            output_path = temp / "asset-analysis.json"
+            Image.new("RGB", (1248, 832), "white").save(source)
+            candidates_path.write_text(json.dumps(candidates), encoding="utf-8")
+
+            prepare_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "prepare_analysis_input.py"),
+                    "--source-image",
+                    str(source),
+                    "--output-image",
+                    str(analysis_image),
+                    "--metadata-output",
+                    str(metadata_path),
+                    "--max-width",
+                    "1024",
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, prepare_result.returncode, prepare_result.stderr)
+            self.assertIn("1248x832 -> 1024x683", prepare_result.stdout)
+
+            build_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "build_asset_analysis.py"),
+                    "--source-image",
+                    str(source),
+                    "--analysis-image",
+                    str(analysis_image),
+                    "--model-output",
+                    str(candidates_path),
+                    "--output",
+                    str(output_path),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            self.assertEqual(0, build_result.returncode, build_result.stderr)
+
+            validate_result = subprocess.run(
+                [
+                    sys.executable,
+                    str(SCRIPTS / "validate_asset_analysis.py"),
+                    str(output_path),
+                    "--source-image",
+                    str(source),
+                ],
+                capture_output=True,
+                text=True,
+                check=False,
+            )
+            result = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(0, validate_result.returncode, validate_result.stderr)
+        self.assertEqual(
+            {"x": 873, "y": 379, "width": 34, "height": 34},
+            result["assets"][0]["bbox"],
+        )
 
     def test_invalid_cli_does_not_write_output(self):
         with tempfile.TemporaryDirectory() as raw:

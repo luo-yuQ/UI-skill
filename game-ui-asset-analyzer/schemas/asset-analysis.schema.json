@@ -62,6 +62,7 @@
       ]
     },
     "bbox": {
+      "description": "Pixel bounds mapped into the original source image coordinate space; origin is top-left.",
       "type": "object",
       "additionalProperties": false,
       "required": ["x", "y", "width", "height"],

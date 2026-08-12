@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/asset-candidates.schema.json",
   "title": "Game UI Asset Candidates v0.1",
-  "description": "The complete content a vision model may emit for Stage2 asset analysis.",
+  "description": "The complete content a vision model may emit for Stage2 asset analysis. Every bbox is expressed in analysis-input image pixels.",
   "type": "array",
   "items": { "$ref": "#/$defs/candidate" },
   "$defs": {
@@ -37,6 +37,7 @@
       ]
     },
     "bbox": {
+      "description": "Pixel bounds in the deterministic analysis-input image coordinate space; origin is top-left.",
       "type": "object",
       "additionalProperties": false,
       "required": ["x", "y", "width", "height"],
