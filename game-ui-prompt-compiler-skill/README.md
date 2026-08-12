@@ -28,11 +28,17 @@ python game-ui-prompt-compiler-skill/scripts/compile_image_prompt.py `
 GOAL
 CANVAS AND PAGE TYPE
 COMPOSITION
+REFERENCE-DERIVED LAYOUT CONSTRAINTS
 VISUAL STYLE
 HARD REQUIREMENTS
-PRODUCTION CONSTRAINTS
+GENERATION CONSTRAINTS
+DO NOT / FIDELITY BOUNDARIES
 ```
 
-其中 Composer 的精确数量、网格行列和位置要求会被显式强化；B2 的 `stable` 特征优先使用，`secondary` 仅在适用时使用，`local` 需要 Composer 明确限定到当前页面，`conflicting` 和 `uncertain` 不会被擅自定案。
+其中 `HARD REQUIREMENTS` 只编译 `project_context.hard_requirements`。A-derived
+精确数量、网格行列和布局复用在 `REFERENCE-DERIVED LAYOUT CONSTRAINTS`
+中显式强化。B2 的 `stable` 特征优先使用，`secondary` 仅在适用时使用；所有
+具体 component `target_scope` 都会保留，`local` / `conditionally_adopted`
+不会被提升为 page-wide 风格，`conflicting` 和 `uncertain` 不会被擅自定案。
 
 输出文本必须全英文。编译器会将常见中文视觉描述转换为自然英文，并在必要时从描述性的英文 `trait_id` 生成视觉短语；若最终仍残留中日韩字符则拒绝写出。内部 provenance、agent instruction、A/B evidence 指令不会进入 prompt。组件名中的 `template`、`component`、`node`、`prefab`、`prototype` 等工程后缀会在输出前移除，例如 `category tab template` 会输出为 `category tabs`。

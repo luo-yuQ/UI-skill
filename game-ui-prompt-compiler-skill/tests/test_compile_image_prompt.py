@@ -1,9 +1,9 @@
+import json
+import re
 import subprocess
 import sys
 import tempfile
 import unittest
-import json
-import re
 from pathlib import Path
 
 
@@ -40,6 +40,10 @@ def compiler_command(
     return command
 
 
+def prompt_section(prompt: str, heading: str) -> str:
+    return prompt.split(f"{heading}\n", 1)[1].split("\n\n", 1)[0]
+
+
 class PromptCompilerTests(unittest.TestCase):
     def test_repository_run_preserves_structure_and_style(self):
         if not RUN_PLAN.exists():
@@ -60,9 +64,11 @@ class PromptCompilerTests(unittest.TestCase):
             "GOAL",
             "CANVAS AND PAGE TYPE",
             "COMPOSITION",
+            "REFERENCE-DERIVED LAYOUT CONSTRAINTS",
             "VISUAL STYLE",
             "HARD REQUIREMENTS",
-            "PRODUCTION CONSTRAINTS",
+            "GENERATION CONSTRAINTS",
+            "DO NOT / FIDELITY BOUNDARIES",
         ]
         self.assertEqual([line for line in prompt.splitlines() if line in expected_headings], expected_headings)
         self.assertIn("Exactly 3 category tabs.", prompt)
@@ -70,7 +76,10 @@ class PromptCompilerTests(unittest.TestCase):
         self.assertIn("exactly 2 columns and 3 rows", prompt)
         self.assertIn("Place the category navigation on the left side.", prompt)
         self.assertIn("Use cool blue-gray and near-black globally.", prompt)
-        self.assertIn("Use silver-black frames and matte panel bases.", prompt)
+        self.assertIn(
+            "Silver-black boundaries. Keep this treatment limited to the category navigation, product grid, and refresh button, not page-wide.",
+            prompt,
+        )
         self.assertNotIn("localized red content accents", prompt)
         self.assertNotIn("semi-realistic versus", prompt)
         self.assertNotIn("Use the provided reference image", prompt)
@@ -122,10 +131,12 @@ class PromptCompilerTests(unittest.TestCase):
             "GOAL",
             "CANVAS AND PAGE TYPE",
             "COMPOSITION",
+            "REFERENCE-DERIVED LAYOUT CONSTRAINTS",
             "VISUAL STYLE",
             "REFERENCE USAGE",
             "HARD REQUIREMENTS",
-            "PRODUCTION CONSTRAINTS",
+            "GENERATION CONSTRAINTS",
+            "DO NOT / FIDELITY BOUNDARIES",
         ]
         self.assertEqual([line for line in prompt.splitlines() if line in expected_headings], expected_headings)
         self.assertIn("Use the provided reference image as the primary visual style reference.", prompt)
@@ -263,7 +274,10 @@ class PromptCompilerTests(unittest.TestCase):
         self.assertIsNone(re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", prompt))
         self.assertTrue(prompt.isascii())
         self.assertIn("Use a low-saturation cool blue-gray palette.", prompt)
-        self.assertIn("Use silver-black hard-surface materials.", prompt)
+        self.assertIn(
+            "Silver-black boundaries. Keep this treatment limited to the category navigation, product grid, and refresh button, not page-wide.",
+            prompt,
+        )
         self.assertIn("Exactly 3 category tabs.", prompt)
         self.assertIn("Exactly 6 product cards.", prompt)
         self.assertNotIn("category tab templates", prompt.lower())
@@ -272,6 +286,147 @@ class PromptCompilerTests(unittest.TestCase):
         self.assertNotIn("style evidence", prompt.lower())
         self.assertNotIn("provenance", prompt.lower())
         self.assertNotIn("source_ref", prompt.lower())
+
+    def test_recharge_hard_requirement_provenance_and_local_style_scope(self):
+        if not RUN_PLAN.exists():
+            self.skipTest("Ignored repository run is not present in this checkout")
+        plan = json.loads(RUN_PLAN.read_text(encoding="utf-8"))
+        style = json.loads(STYLE.read_text(encoding="utf-8"))
+
+        plan["project_context"]["hard_requirements"] = {
+            "page_semantic": {
+                "fact_id": "page_recharge",
+                "value": "recharge_page",
+                "evidence": "新的游戏充值页面",
+            }
+        }
+        plan["project_context"]["constraints"] = [
+            "Keep the reference-derived two-column page split.",
+            "Do not replace the recharge flow with another business flow.",
+        ]
+        plan["pages"][0]["page_type"] = "recharge_page"
+        for component in plan["component_tree"]:
+            if component.get("component_id") == "product_card_template":
+                component["name"] = "Recharge Option"
+                component["repeat"] = {"count": 12}
+        plan["component_tree"].append(
+            {
+                "component_id": "cp-buy-button",
+                "name": "Main Purchase Button",
+                "semantic_type": "button",
+                "parent_id": "guild_shop_root",
+            }
+        )
+        plan["reference_application"]["layout"] = [
+            {
+                "decision_id": "a_exact_recharge_layout",
+                "disposition": "adopted",
+                "target_application": (
+                    "Reuse the exact two-column layout with a 4 x 3 recharge-option grid."
+                ),
+            }
+        ]
+        plan["generation_constraints"]["exact_counts"] = [
+            {"component_id": "product_card_template", "count": 12}
+        ]
+        plan["generation_constraints"]["grid_specs"] = [
+            {"component_id": "product_card_template", "columns": 4, "rows": 3}
+        ]
+        plan["generation_constraints"]["must_not_include"] = [
+            "A page-wide warm red-orange palette."
+        ]
+        plan["visual_direction"] = {
+            "summary": "Deep cool-toned background with a clear warm accent hierarchy.",
+            "directives": [
+                {
+                    "direction": "Use a deep cool-toned background.",
+                    "source_trait_ids": ["color_cool_blue_gray"],
+                    "target_scope": ["guild_shop_root"],
+                    "user_override": False,
+                },
+                {
+                    "direction": "Use warm red-orange UI palette.",
+                    "source_trait_ids": ["color_local_warm_ui"],
+                    "target_scope": ["cp-buy-button"],
+                    "user_override": False,
+                },
+                {
+                    "direction": "Keep the right rail cooler and quieter than the main grid.",
+                    "source_trait_ids": [],
+                    "target_scope": ["product_grid"],
+                    "user_override": True,
+                },
+                {
+                    "direction": "Use restrained fantasy ornament and soft glow.",
+                    "source_trait_ids": [],
+                    "target_scope": ["guild_shop_root"],
+                    "user_override": True,
+                },
+            ],
+            "page_specific_notes": ["Do not globalize the warm purchase accent."],
+        }
+        style["visual_profiles"]["color_profile"]["local"].append(
+            {
+                "trait_id": "color_local_warm_ui",
+                "trait": "warm red-orange UI palette",
+                "classification": "local",
+                "description": "Warm color is local to the primary purchase action.",
+            }
+        )
+        plan["reference_application"]["style"].append(
+            {
+                "decision_id": "b_local_warm_purchase",
+                "trait_id": "color_local_warm_ui",
+                "dimension": "color",
+                "classification": "local",
+                "disposition": "conditionally_adopted",
+                "target_scope": ["cp-buy-button"],
+                "target_application": (
+                    "Warm orange-gold accents on the main purchase button."
+                ),
+                "promoted_by_user_requirement": False,
+            }
+        )
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            temp = Path(temp_dir)
+            plan_path = temp / "ui-compose-plan.json"
+            style_path = temp / "style-profile.json"
+            output = temp / "image-prompt.txt"
+            plan_path.write_text(json.dumps(plan, ensure_ascii=False), encoding="utf-8")
+            style_path.write_text(json.dumps(style, ensure_ascii=False), encoding="utf-8")
+            result = subprocess.run(
+                compiler_command(plan_path, style_path, output, mode="text-only"),
+                capture_output=True,
+                text=True,
+                encoding="utf-8",
+                check=False,
+            )
+            self.assertEqual(result.returncode, 0, result.stderr)
+            prompt = output.read_text(encoding="utf-8")
+
+        hard = prompt_section(prompt, "HARD REQUIREMENTS")
+        layout = prompt_section(prompt, "REFERENCE-DERIVED LAYOUT CONSTRAINTS")
+        visual = prompt_section(prompt, "VISUAL STYLE")
+        generation = prompt_section(prompt, "GENERATION CONSTRAINTS")
+        boundaries = prompt_section(prompt, "DO NOT / FIDELITY BOUNDARIES")
+
+        self.assertEqual("- Output must be a recharge page.", hard)
+        self.assertNotIn("4 x 3", hard)
+        self.assertNotIn("two-column", hard)
+        self.assertIn("Reuse the exact two-column layout with a 4 x 3 recharge-option grid.", layout)
+        self.assertIn("Exactly 12 recharge options.", layout)
+        self.assertIn("exactly 4 columns and 3 rows", layout)
+        self.assertIn("Deep cool-toned background", visual)
+        self.assertIn(
+            "Warm orange-gold accents on the main purchase button. Keep this treatment limited to the main purchase button, not page-wide.",
+            visual,
+        )
+        self.assertIn("right rail cooler and quieter than the main grid", visual)
+        self.assertIn("restrained fantasy ornament and soft glow", visual)
+        self.assertNotIn("Use warm red-orange UI palette", visual)
+        self.assertIn("reference-derived two-column page split", generation)
+        self.assertIn("Do not include a page-wide warm red-orange palette", boundaries)
 
     def test_invalid_json_fails_without_creating_output(self):
         with tempfile.TemporaryDirectory() as temp_dir:

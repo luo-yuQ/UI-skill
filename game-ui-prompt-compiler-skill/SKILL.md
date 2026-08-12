@@ -39,9 +39,10 @@ Apply these rules in order:
 6. In `text-only` mode, use B2 `stable` traits first.
 7. Use `secondary` traits when Composer adopted them; if Composer has no style-disposition records, include supported secondary traits conservatively.
 8. Use a `local` trait only when Composer explicitly adopts it for the selected page or one of that page's components.
-9. Omit `conflicting` and `uncertain` traits instead of choosing a side or turning low-confidence evidence into a requirement.
-10. In `reference-guided` mode, keep Composer as the structure authority, make the downstream reference image the primary visual style authority, and use B2 only for generic secondary guidance that cannot overpower the reference.
-11. Add only restrained, general production constraints that improve readable, front-facing, separable game UI generation.
+9. Preserve every adopted style decision's `target_scope`. When the scope names concrete components, state that the treatment is limited to those components and is not page-wide. Never turn a `local` or `conditionally_adopted` trait into an unconditional global palette or style. Prefer page-level `visual_direction` for global style relationships.
+10. Omit `conflicting` and `uncertain` traits instead of choosing a side or turning low-confidence evidence into a requirement.
+11. In `reference-guided` mode, keep Composer as the structure authority, make the downstream reference image the primary visual style authority, and use B2 only for generic secondary guidance that cannot overpower the reference.
+12. Add only restrained, general production constraints that improve readable, front-facing, separable game UI generation.
 
 Do not redesign the page, add functions, change component counts, resolve `missing_assets`, inspect images, call GPT Image, build provider adapters, validate generated images, cut assets, or handle FairyGUI.
 
@@ -56,16 +57,31 @@ CANVAS AND PAGE TYPE
 
 COMPOSITION
 
+REFERENCE-DERIVED LAYOUT CONSTRAINTS
+
 VISUAL STYLE
 
 HARD REQUIREMENTS
 
-PRODUCTION CONSTRAINTS
+GENERATION CONSTRAINTS
+
+DO NOT / FIDELITY BOUNDARIES
 ```
 
 Insert `REFERENCE USAGE` after `VISUAL STYLE` in `reference-guided` mode. State that the reference controls transferable palette, rendering, material, shape, decoration, and overall visual character only. Explicitly forbid copying its characters, scenes, layout, text, business content, or gameplay functions. Never claim to have observed any specific reference color, shape, or content.
 
-Keep the result like a concise design brief, not a keyword pile. Reinforce exact counts and grids with `exactly`, `must`, and `do not add` language. Keep layout and visible hierarchy in `COMPOSITION`, evidence-backed appearance in `VISUAL STYLE`, and count/position invariants in `HARD REQUIREMENTS`.
+`HARD REQUIREMENTS` may compile only `project_context.hard_requirements`.
+Never relabel `project_context.constraints`, `reference_application`,
+`generation_constraints`, layout reuse decisions, or B-derived style decisions as
+user hard requirements. Keep A-derived exact layout reuse and grid/count fidelity
+in `REFERENCE-DERIVED LAYOUT CONSTRAINTS`; keep implementation guidance in
+`GENERATION CONSTRAINTS`; keep exclusions and reference boundaries in
+`DO NOT / FIDELITY BOUNDARIES`.
+
+Keep the result like a concise design brief, not a keyword pile. Reinforce exact
+counts and grids with `exactly`, `must`, and `do not add` language in their
+provenance-correct section. Keep visible hierarchy in `COMPOSITION` and
+evidence-backed, scope-preserving appearance in `VISUAL STYLE`.
 
 ## Fail only when compilation is impossible
 

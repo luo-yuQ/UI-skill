@@ -92,7 +92,7 @@ REFERENCE_USAGE_LINES = (
     "Do not copy its text",
     "Do not copy its business content",
     "Do not introduce reference-specific gameplay functions",
-    "Keep the new page structure defined by the COMPOSITION and HARD REQUIREMENTS sections",
+    "Keep the new page structure defined by the COMPOSITION, REFERENCE-DERIVED LAYOUT CONSTRAINTS, and HARD REQUIREMENTS sections",
 )
 
 REFERENCE_GUIDED_DIMENSION_GUIDANCE = {
@@ -441,6 +441,56 @@ def _style_trait_phrase(trait: dict[str, Any]) -> str | None:
     return _trait_id_phrase(trait.get("trait_id"), trait.get("_dimension"))
 
 
+def _concrete_scope_labels(
+    decision: dict[str, Any] | None,
+    page: dict[str, Any],
+    labels: dict[str, str],
+) -> list[str]:
+    if not decision:
+        return []
+    page_scope = {_text(page.get("page_id")), _text(page.get("root_component_id"))}
+    page_scope.discard(None)
+    result: list[str] = []
+    for component_id in _string_list(decision.get("target_scope")):
+        if component_id in page_scope:
+            continue
+        label = _label_for(component_id, labels).lower()
+        if label not in result:
+            result.append(label)
+    return result
+
+
+def _join_labels(labels: list[str]) -> str:
+    if len(labels) == 1:
+        return f"the {labels[0]}"
+    if len(labels) == 2:
+        return f"the {labels[0]} and {labels[1]}"
+    return "the " + ", ".join(labels[:-1]) + f", and {labels[-1]}"
+
+
+def _scoped_style_line(
+    trait: dict[str, Any],
+    decision: dict[str, Any],
+    page: dict[str, Any],
+    labels: dict[str, str],
+) -> str | None:
+    scope_labels = _concrete_scope_labels(decision, page, labels)
+    if not scope_labels:
+        return None
+    application = _english_prompt_text(decision.get("target_application"))
+    if application:
+        statement = _sentence(application)
+    else:
+        trait_name = _style_trait_phrase(trait)
+        if not trait_name:
+            return None
+        statement = _sentence(f"Use {_lower_first(trait_name)}")
+    return (
+        f"{statement} Keep this treatment limited to {_join_labels(scope_labels)}, "
+        "not page-wide"
+    )
+
+
 def _visual_style_lines(
     plan: dict[str, Any],
     style: dict[str, Any],
@@ -449,6 +499,7 @@ def _visual_style_lines(
 ) -> list[str]:
     inventory = _style_inventory(style)
     decisions = _style_decisions(plan)
+    labels = _component_labels(components)
     all_trait_ids = {_text(item.get("trait_id")) for item in inventory if _text(item.get("trait_id"))}
     visual = plan.get("visual_direction") if isinstance(plan.get("visual_direction"), dict) else {}
     directive_trait_ids = {
@@ -487,16 +538,49 @@ def _visual_style_lines(
         raise CompileError("No usable visual style description was found in style-profile.json")
 
     lines: list[str] = []
+    summary = _english_prompt_text(visual.get("summary"))
+    if summary:
+        lines.append(summary)
     covered: set[str] = set()
     for directive in _dict_list(visual.get("directives")):
         direction = _english_prompt_text(directive.get("direction"))
         if not direction:
             continue
-        source_ids = set(_string_list(directive.get("source_trait_ids")))
+        source_id_list = _string_list(directive.get("source_trait_ids"))
+        source_ids = set(source_id_list)
         blocked = {trait_id for trait_id in source_ids if trait_id in all_trait_ids and trait_id not in accepted}
-        if source_ids and not blocked and bool(source_ids & set(accepted)):
-            lines.append(direction)
-            covered.update(source_ids & set(accepted))
+        accepted_source_ids = [trait_id for trait_id in source_id_list if trait_id in accepted]
+        if source_ids and not blocked and accepted_source_ids:
+            scoped_lines: list[str] = []
+            unscoped_ids: list[str] = []
+            for trait_id in accepted_source_ids:
+                decision = decisions.get(trait_id)
+                scoped = (
+                    _scoped_style_line(accepted[trait_id], decision, page, labels)
+                    if decision
+                    else None
+                )
+                if scoped:
+                    scoped_lines.append(scoped)
+                else:
+                    unscoped_ids.append(trait_id)
+            if scoped_lines:
+                lines.extend(scoped_lines)
+                for trait_id in unscoped_ids:
+                    decision = decisions.get(trait_id)
+                    application = (
+                        _english_prompt_text(decision.get("target_application"))
+                        if decision
+                        else None
+                    )
+                    trait_name = _style_trait_phrase(accepted[trait_id])
+                    if application:
+                        lines.append(application)
+                    elif trait_name:
+                        lines.append(f"Use {_lower_first(trait_name)}")
+            else:
+                lines.append(direction)
+            covered.update(accepted_source_ids)
         elif not source_ids and directive.get("user_override") is True:
             lines.append(direction)
 
@@ -504,7 +588,15 @@ def _visual_style_lines(
         if trait_id in covered:
             continue
         trait_name = _style_trait_phrase(trait)
-        if trait_name:
+        decision = decisions.get(trait_id)
+        scoped = (
+            _scoped_style_line(trait, decision, page, labels)
+            if decision
+            else None
+        )
+        if scoped:
+            lines.append(scoped)
+        elif trait_name:
             lines.append(f"Use {_lower_first(trait_name)}")
 
     if not lines:
@@ -524,9 +616,8 @@ def _reference_guided_dimensions(
 ) -> list[str]:
     inventory = _style_inventory(style)
     decisions = _style_decisions(plan)
-    current_scope = {_text(page.get("page_id")), _text(page.get("root_component_id"))}
-    current_scope.update(_text(item.get("component_id")) for item in components)
-    current_scope.discard(None)
+    page_scope = {_text(page.get("page_id")), _text(page.get("root_component_id"))}
+    page_scope.discard(None)
     dimensions: list[str] = []
 
     for trait in inventory:
@@ -537,9 +628,11 @@ def _reference_guided_dimensions(
         if disposition in REJECTED_STYLE_DISPOSITIONS:
             continue
         accepted = classification in {"stable", "secondary"}
+        target_scope = set(_string_list(decision.get("target_scope"))) if decision else set()
+        if target_scope - page_scope:
+            accepted = False
         if classification == "local" and decision and disposition in ALLOWED_STYLE_DISPOSITIONS:
-            target_scope = set(_string_list(decision.get("target_scope")))
-            accepted = decision.get("promoted_by_user_requirement") is True or bool(target_scope & current_scope)
+            accepted = bool(target_scope) and not bool(target_scope - page_scope)
         if not accepted:
             continue
         dimension = _text(trait.get("_dimension"))
@@ -604,13 +697,19 @@ def _hard_requirement_lines(
 ) -> list[str]:
     project = plan.get("project_context") if isinstance(plan.get("project_context"), dict) else {}
     hard = project.get("hard_requirements") if isinstance(project.get("hard_requirements"), dict) else {}
-    generation = plan.get("generation_constraints") if isinstance(plan.get("generation_constraints"), dict) else {}
     lines: list[str] = []
     counted: set[str] = set()
     repeated_labels: list[str] = []
 
-    count_records = _dict_list(hard.get("explicit_counts")) + _dict_list(generation.get("exact_counts"))
-    for record in count_records:
+    page_semantic = hard.get("page_semantic") if isinstance(hard.get("page_semantic"), dict) else {}
+    semantic = _text(page_semantic.get("value"))
+    if semantic:
+        page_name = _humanize(semantic).lower()
+        if not page_name.endswith("page"):
+            page_name += " page"
+        lines.append(f"Output must be a {page_name}")
+
+    for record in _dict_list(hard.get("explicit_counts")):
         component_id = _text(record.get("target_component_id") or record.get("component_id"))
         count = record.get("count")
         if not component_id or component_id in counted or not isinstance(count, int) or count < 0:
@@ -621,9 +720,8 @@ def _hard_requirement_lines(
         if count > 1:
             repeated_labels.append(label)
 
-    grid_records = _dict_list(hard.get("grid_requirements")) + _dict_list(generation.get("grid_specs"))
     gridded: set[str] = set()
-    for record in grid_records:
+    for record in _dict_list(hard.get("grid_requirements")):
         component_id = _text(record.get("target_component_id") or record.get("component_id"))
         columns = record.get("columns")
         rows = record.get("rows")
@@ -654,18 +752,84 @@ def _hard_requirement_lines(
         if component_id and position in POSITION_LABELS:
             lines.append(f"The {_label_for(component_id, labels).lower()} must remain {POSITION_LABELS[position]}")
 
-    for value in _string_list(project.get("constraints")):
-        lines.append(_imperative_include(value) if not value.lower().startswith("do not") else value)
-    hard_includes = _string_list(hard.get("must_include"))
-    generation_includes = _string_list(generation.get("must_include"))
-    lines.extend(_imperative_include(value) for value in (hard_includes or generation_includes))
+    lines.extend(_imperative_include(value) for value in _string_list(hard.get("must_include")))
     lines.extend(_imperative_exclude(value) for value in _string_list(hard.get("must_not_include")))
-    lines.extend(_imperative_exclude(value) for value in _string_list(generation.get("must_not_include")))
     lines.extend(f"Do not add extra {label}" for label in repeated_labels)
     return _dedupe(lines)
 
 
-def _production_lines(plan: dict[str, Any]) -> list[str]:
+def _reference_layout_lines(
+    plan: dict[str, Any],
+    components: list[dict[str, Any]],
+    labels: dict[str, str],
+) -> list[str]:
+    project = plan.get("project_context") if isinstance(plan.get("project_context"), dict) else {}
+    hard = project.get("hard_requirements") if isinstance(project.get("hard_requirements"), dict) else {}
+    reference = plan.get("reference_application") if isinstance(plan.get("reference_application"), dict) else {}
+    generation = plan.get("generation_constraints") if isinstance(plan.get("generation_constraints"), dict) else {}
+    lines: list[str] = []
+
+    for decision in _dict_list(reference.get("layout")):
+        if _text(decision.get("disposition")) in REJECTED_STYLE_DISPOSITIONS:
+            continue
+        application = _english_prompt_text(decision.get("target_application"))
+        if application:
+            lines.append(application)
+
+    hard_counts = {
+        (_text(item.get("target_component_id")), item.get("count"))
+        for item in _dict_list(hard.get("explicit_counts"))
+    }
+    for record in _dict_list(generation.get("exact_counts")):
+        component_id = _text(record.get("component_id") or record.get("target_component_id"))
+        count = record.get("count")
+        if (
+            not component_id
+            or not isinstance(count, int)
+            or count < 0
+            or (component_id, count) in hard_counts
+        ):
+            continue
+        lines.append(f"Exactly {count} {_pluralize(_label_for(component_id, labels), count)}")
+
+    hard_grids = {
+        (
+            _text(item.get("target_component_id")),
+            item.get("columns"),
+            item.get("rows"),
+        )
+        for item in _dict_list(hard.get("grid_requirements"))
+    }
+    for record in _dict_list(generation.get("grid_specs")):
+        component_id = _text(record.get("component_id") or record.get("target_component_id"))
+        columns = record.get("columns")
+        rows = record.get("rows")
+        if (
+            not component_id
+            or not isinstance(columns, int)
+            or columns < 1
+            or not isinstance(rows, int)
+            or rows < 1
+            or (component_id, columns, rows) in hard_grids
+        ):
+            continue
+        count = next(
+            (
+                item.get("repeat", {}).get("count")
+                for item in components
+                if _text(item.get("component_id")) == component_id
+                and isinstance(item.get("repeat"), dict)
+            ),
+            2,
+        )
+        label = _pluralize(
+            _label_for(component_id, labels), count if isinstance(count, int) else 2
+        )
+        lines.append(f"Arrange the {label} in exactly {columns} columns and {rows} rows")
+    return _dedupe(lines)
+
+
+def _generation_constraint_lines(plan: dict[str, Any]) -> list[str]:
     lines = [
         "Front-facing 2D game UI",
         "Keep component boundaries visually clear",
@@ -675,7 +839,16 @@ def _production_lines(plan: dict[str, Any]) -> list[str]:
         "Preserve separable UI regions for later asset extraction",
         "Maintain consistent UI material and decoration language",
     ]
+    project = plan.get("project_context") if isinstance(plan.get("project_context"), dict) else {}
     generation = plan.get("generation_constraints") if isinstance(plan.get("generation_constraints"), dict) else {}
+    for value in _string_list(project.get("constraints")):
+        if not value.lower().startswith(("do not ", "avoid ", "never ", "no ")):
+            lines.append(_imperative_include(value))
+    lines.extend(_imperative_include(value) for value in _string_list(generation.get("must_include")))
+    for record in _dict_list(generation.get("key_content_zones")):
+        requirement = _english_prompt_text(record.get("requirement"))
+        if requirement:
+            lines.append(requirement)
     for key in (
         "component_separability",
         "overlap_restrictions",
@@ -684,6 +857,20 @@ def _production_lines(plan: dict[str, Any]) -> list[str]:
         "cutout_friendly_requirements",
     ):
         lines.extend(_string_list(generation.get(key)))
+    return _dedupe(lines)
+
+
+def _fidelity_boundary_lines(plan: dict[str, Any]) -> list[str]:
+    project = plan.get("project_context") if isinstance(plan.get("project_context"), dict) else {}
+    generation = plan.get("generation_constraints") if isinstance(plan.get("generation_constraints"), dict) else {}
+    visual = plan.get("visual_direction") if isinstance(plan.get("visual_direction"), dict) else {}
+    lines: list[str] = []
+    for value in _string_list(project.get("constraints")):
+        if value.lower().startswith(("do not ", "avoid ", "never ", "no ")):
+            lines.append(value)
+    lines.extend(_imperative_exclude(value) for value in _string_list(generation.get("must_not_include")))
+    lines.extend(_string_list(generation.get("reference_fidelity_boundaries")))
+    lines.extend(_string_list(visual.get("page_specific_notes")))
     return _dedupe(lines)
 
 
@@ -704,6 +891,10 @@ def compile_prompt(plan: dict[str, Any], style: dict[str, Any], mode: str = "tex
         ("GOAL", _goal_lines(plan, page)),
         ("CANVAS AND PAGE TYPE", _canvas_lines(plan, page)),
         ("COMPOSITION", _composition_lines(plan, page, components, labels)),
+        (
+            "REFERENCE-DERIVED LAYOUT CONSTRAINTS",
+            _reference_layout_lines(plan, components, labels),
+        ),
         ("VISUAL STYLE", visual_style),
     ]
     if mode == "reference-guided":
@@ -711,7 +902,8 @@ def compile_prompt(plan: dict[str, Any], style: dict[str, Any], mode: str = "tex
     sections.extend(
         [
             ("HARD REQUIREMENTS", _hard_requirement_lines(plan, components, labels)),
-            ("PRODUCTION CONSTRAINTS", _production_lines(plan)),
+            ("GENERATION CONSTRAINTS", _generation_constraint_lines(plan)),
+            ("DO NOT / FIDELITY BOUNDARIES", _fidelity_boundary_lines(plan)),
         ]
     )
     chunks = []
