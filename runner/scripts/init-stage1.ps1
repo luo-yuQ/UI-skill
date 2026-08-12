@@ -70,11 +70,16 @@ $request |
     ConvertTo-Json -Depth 10 |
     Set-Content -Path (Join-Path $runRoot "00-input\request.json") -Encoding UTF8
 
+$now = (Get-Date).ToUniversalTime().ToString("o")
+
 $manifest = @{
+    schema_version = "0.1"
     run_id = $runId
-    status = "running"
+    status = "active"
+    created_at = $now
+    updated_at = $now
     stages = @{
-        input = @{
+        init = @{
             status = "completed"
         }
         a1 = @{
@@ -91,6 +96,8 @@ $manifest = @{
         }
         composer = @{
             status = "pending"
+            current_revision = 0
+            accepted_revision = $null
         }
     }
 }

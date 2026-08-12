@@ -41,6 +41,8 @@ Runner 不负责：
 
 > Runner 决定流程怎么走、文件写到哪里。
 > Skill 决定阶段任务怎么执行、文件内容应该是什么。
+>
+> LLM decides content. Code decides workflow.
 
 ---
 
@@ -167,14 +169,15 @@ Runner 必须保存本次任务的全部原始业务输入：
 
 ### Business Requirement and Runner Control
 
-初始化前必须先把当前 invocation 分为两个通道：
+初始化前必须由 `runner/scripts/parse-stage1-invocation.py` 把当前 invocation
+确定性地分为两个通道：
 
 ```text
 Business Requirement
 Runner Control
 ```
 
-Business Requirement 是用户关于目标 UI、业务语义、内容和设计约束的原文。它必须：
+Parser 输出的 `user_requirement` 是用户关于目标 UI、业务语义、内容和设计约束的原文。它必须：
 
 - 保留用户原文；
 - 使用 UTF-8；
@@ -228,8 +231,9 @@ Runner Control 包括但不限于：
 Runner 不得将自己的 request contract 与 A、B、Composer schema 混合。
 
 Stage 0 成功写入后，`request.json.user_requirement` 在该 run 生命周期中视为 immutable
-business input。除非用户明确要求修改业务需求，否则任何 Resume invocation 都不得写入、
-重建或覆盖它。Resume 中的“继续”“只执行某阶段”“完成后停止”等文本不得替换原值。
+business input。任何 Resume invocation 都不得写入、重建或覆盖它。Resume 中的
+“继续”“只执行某阶段”“完成后停止”等文本不得替换原值；需要不同业务需求时必须创建
+新的 run。
 
 `layout_references` 与 `style_references` 不由 Agent 手工维护。它们由
 `runner/scripts/sync-stage1-inputs.py` 根据当前 run 中真实存在的图片确定性同步。
@@ -271,34 +275,25 @@ Agent 不得手工补写图片路径，不得通过视觉推理或文件名推�
 
 ## Run Selection
 
-Before initializing a run, determine whether this invocation is:
+New / Resume selection is code-owned. Runner must consume the successful JSON
+output of `runner/scripts/parse-stage1-invocation.py` unchanged and must not
+classify the invocation itself.
 
-### New Run
+Deterministic v0.1 rules:
 
-If the user does NOT provide an existing run path or run-id:
+1. One distinct explicit `runs/<run-id>` means `mode = resume` and that exact
+   path is the only selected run.
+2. Multiple distinct paths fail with `AMBIGUOUS_RUN_ID`.
+3. Explicit resume intent without a run path fails with `RUN_ID_REQUIRED`.
+4. No run path and no resume intent means `mode = new`.
 
-- create a new run
-- execute `runner/scripts/init-stage1.ps1`
-- use the returned run path for all following stages
-- separate verbatim business requirement from Runner control before calling the script
+The parser reads only the current invocation. It must never inspect conversation
+history, Agent memory, existing run directories, timestamps, the latest run, or
+manifest status. The Runner must not add any of those fallback heuristics.
 
-### Resume Existing Run
-
-If the user explicitly provides an existing path such as:
-
-`runs/<run-id>`
-
-or explicitly says to continue/resume an existing Stage1 run:
-
-- use that exact run
-- DO NOT execute `init-stage1.ps1`
-- DO NOT create another namespace
-- read the existing `run-manifest.json`
-- preserve the existing `00-input/request.json.user_requirement` without writing it
-- continue from the requested stage
-- all new outputs must remain inside that same run
-
-An existing run must never be replaced by a newly initialized run unless the user explicitly asks to start a new run.
+For `mode = new`, initialize one run using only parser `user_requirement`. For
+`mode = resume`, verify and use only parser `run_path`, skip initialization, read
+the existing manifest, and never write `request.json.user_requirement`.
 
 ## Stage 0 — Initialize Run
 
@@ -323,8 +318,9 @@ powershell -File runner/scripts/init-stage1.ps1 `
   -BusinessRequirement "参考这个充值界面的布局，帮我设计一个新的游戏充值页面。"
 ```
 
-The script rejects known Runner-control phrases in `BusinessRequirement`. Runner control is
-not a parameter of `request.json`; it remains in invocation/manifest state.
+The script rejects known Runner-control phrases in `BusinessRequirement` as a
+defense in depth. Runner control is not a parameter of `request.json`; it remains
+in parser output and manifest state.
 
 The script is responsible for:
 
@@ -660,16 +656,29 @@ v0.1 允许复用调用方已经提供的 final，但必须先把该文件保存
 
 1. 保存为 `10-layout-reference/layout-analysis.json`；
 2. 按当前 A1 schema 与 validator 验证；
-3. 验证通过后将 A1 stage 标记为 `reused`；
+3. 验证通过后将 A1 stage 的 `status` 标记为 `completed`，并可用附加
+   `execution = reused` 记录来源；
 4. 不重复运行 A1。
 
-合法的 `style-profile.json` 可按同样规则直接作为 B2 final 使用，并将 B2 stage 标记为 `reused`。
+合法的 `style-profile.json` 可按同样规则直接作为 B2 final 使用：B2 的
+`status` 为 `completed`，可附加 `execution = reused`。
 
 > Reuse means validate and reuse.
 
 Reuse 不意味着默认信任。若当前 validator 判定失败，即使该文件来自历史成功 run，也不得继续使用。
 
 复用 B2 final 时，不要求为当前 run 伪造 B1 finals；未执行的 B1 应在 manifest 中如实标记为 `skipped`。
+
+### Reusable-final gate
+
+文件存在本身不代表 stage 已完成。一个 stage final 只有同时满足以下三项才可复用：
+
+1. expected artifact exists；
+2. corresponding validator PASS；
+3. manifest 中对应 stage 的 `status = completed`。
+
+任一条件缺失都必须视为不可复用。v0.1 Runner 仍由现有阶段命令执行 validator；
+本轮不重写整个 pipeline runtime。
 
 ---
 
@@ -712,51 +721,71 @@ Skill 或 schema 的修改属于独立开发行为，不属于 Runner 本次执�
 
 ```json
 {
+  "schema_version": "0.1",
   "run_id": "20260811-160500_guild-shop_001",
-  "status": "running",
+  "status": "active",
+  "created_at": "2026-08-11T08:05:00.0000000Z",
+  "updated_at": "2026-08-11T08:05:00.0000000Z",
   "stages": {
-    "input": {
+    "init": {
       "status": "completed"
     },
     "a1": {
-      "status": "completed"
+      "status": "pending"
     },
     "b1": {
-      "status": "completed"
+      "status": "pending"
     },
     "b2": {
-      "status": "completed"
+      "status": "pending"
     },
     "composer_input": {
-      "status": "completed"
+      "status": "pending"
     },
     "composer": {
-      "status": "pending"
+      "status": "pending",
+      "current_revision": 0,
+      "accepted_revision": null
     }
   }
 }
 ```
 
-Stage status：
+新 manifest 的通用 Stage status：
 
 ```text
 pending
 running
 completed
 failed
-skipped
-reused
 ```
+
+`composer.status` 还为未来 runtime 预留 `awaiting_feedback` 与 `accepted`。
+`current_revision = 0` 表示尚未产生 revision；`accepted_revision = null`
+表示尚未接受任何 revision。本轮不实现 revision loop，也不创建 revision 产物。
+
+`composer_input` 为兼容当前独立的 deterministic builder/validator stage 而保留。
+跳过的可选上游可以使用 `skipped`；复用不再作为 status，而使用
+`status = completed` 加可选 `execution = reused`，以满足 reusable-final gate。
 
 整个 run 的 status 至少支持：
 
 ```text
-running
+active
 completed
 failed
 ```
 
-每次阶段开始、验证结束、失败或复用后都必须立即更新 manifest。发生失败时，失败 stage 还应记录足以定位问题的 validator 错误；不得把失败输出内容改写后再记录。
+每次阶段开始、验证结束、失败或复用后都必须立即更新 manifest 和
+`updated_at`。发生失败时，失败 stage 还应记录足以定位问题的 validator
+错误；不得把失败输出内容改写后再记录。
+
+### Legacy manifest compatibility
+
+历史 run 不做批量迁移。读取旧 manifest 时可兼容整体 `status = running`、
+`stages.input` 以及旧 `reused` stage status；它们分别只读映射为 `active`、
+`init` 和 `completed + execution = reused`。只有在该旧 run 后续确实发生状态
+更新时，才可按 v0.1 写回；不得仅为迁移而改写历史 run。
 
 Manifest 首先用于回答：
 
@@ -776,17 +805,19 @@ First Stage Runner v0.1 的完整 Workflow 为：
 A1 -> B1 -> B2 -> Composer Input -> Composer
 ```
 
-测试过程中必须允许在以下阶段边界停止：
+Invocation parser v0.1 只允许在以下阶段边界停止：
 
 ```text
+stop after init
 stop after A1
-stop after B1
 stop after B2
-stop after Composer Input
 stop after Composer
 ```
 
-v0.1 不要求实现正式 CLI 参数。Agent 根据测试要求，在指定阶段完成并验证、更新 manifest 后停止，不得启动下一个阶段。
+对应 parser 值为 `init`、`a1`、`b2`、`composer`。没有明确 stop 指令时为
+`null`。明显存在但无法映射到该集合的控制必须以
+`UNSUPPORTED_STAGE_CONTROL` 失败，不得猜测。Runner 在指定阶段完成并验证、
+更新 manifest 后停止，不得启动下一个阶段。
 
 该能力用于：
 
@@ -876,6 +907,11 @@ First Stage Runner v0.1 暂不解决：
 - FairyGUI；
 - 完整 CLI；
 - Python orchestration runtime。
+- Session ID 或 `active-run.json`；
+- workspace-global current run；
+- 时间窗口、latest run 或 manifest `running` 自动恢复；
+- Composer revision runtime 与用户反馈循环；
+- accepted plan gate 的实际执行。
 
 这些内容在 Workflow contract 稳定后再评估。
 

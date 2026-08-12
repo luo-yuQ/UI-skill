@@ -2,10 +2,12 @@ from __future__ import annotations
 
 import copy
 import json
+import shutil
 import subprocess
 import sys
 import tempfile
 import unittest
+import uuid
 from pathlib import Path
 
 from PIL import Image
@@ -196,6 +198,48 @@ class Stage1InputToolTests(unittest.TestCase):
         self.assertNotEqual(0, result.returncode)
         self.assertIn("Runner execution control", result.stderr)
         self.assertEqual(before, after)
+
+    def test_initializer_writes_manifest_v01_and_original_requirement_once(self):
+        scenario = f"manifest-test-{uuid.uuid4().hex}"
+        requirement = "设计一个不会被控制指令污染的商城页面。"
+        result = subprocess.run(
+            [
+                "powershell",
+                "-NoProfile",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-File",
+                str(INIT_SCRIPT),
+                "-Scenario",
+                scenario,
+                "-BusinessRequirement",
+                requirement,
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        self.assertEqual(0, result.returncode, result.stderr)
+        run = Path(result.stdout.strip())
+        try:
+            request = json.loads(
+                (run / "00-input" / "request.json").read_text(encoding="utf-8-sig")
+            )
+            manifest = json.loads(
+                (run / "run-manifest.json").read_text(encoding="utf-8-sig")
+            )
+            self.assertEqual(requirement, request["user_requirement"])
+            self.assertEqual("0.1", manifest["schema_version"])
+            self.assertEqual("active", manifest["status"])
+            self.assertEqual(manifest["created_at"], manifest["updated_at"])
+            self.assertEqual("completed", manifest["stages"]["init"]["status"])
+            for stage in ("a1", "b1", "b2", "composer_input", "composer"):
+                self.assertEqual("pending", manifest["stages"][stage]["status"])
+            self.assertEqual(0, manifest["stages"]["composer"]["current_revision"])
+            self.assertIsNone(manifest["stages"]["composer"]["accepted_revision"])
+        finally:
+            if run.is_dir() and run.parent.resolve() == (WORKSPACE_ROOT / "runs").resolve():
+                shutil.rmtree(run)
 
 
 if __name__ == "__main__":
