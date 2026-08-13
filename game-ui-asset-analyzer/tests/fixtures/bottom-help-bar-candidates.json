@@ -15,7 +15,7 @@
     "should_extract": true,
     "strategy": "direct_crop",
     "issues": [],
-    "reason": "The security symbol has a clean independent boundary."
+    "reason": "The full rectangular icon tile belongs to the asset; no pixels need removal or transparency conversion."
   },
   {
     "label": "Secure payment label",
@@ -33,7 +33,7 @@
     "should_extract": true,
     "strategy": "direct_crop",
     "issues": [],
-    "reason": "The credit symbol has a clean independent boundary."
+    "reason": "The full rectangular icon tile belongs to the asset; no pixels need removal or transparency conversion."
   },
   {
     "label": "Instant credit label",
@@ -51,7 +51,7 @@
     "should_extract": true,
     "strategy": "direct_crop",
     "issues": [],
-    "reason": "The help symbol has a clean independent boundary."
+    "reason": "The full rectangular icon tile belongs to the asset; no pixels need removal or transparency conversion."
   },
   {
     "label": "Help label",

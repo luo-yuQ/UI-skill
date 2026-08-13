@@ -16,6 +16,7 @@ ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures"
 EXAMPLES = ROOT / "examples"
+STRATEGY_REFERENCE = ROOT / "references" / "extraction-strategies.md"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
@@ -250,6 +251,24 @@ class AssetAnalysisTests(unittest.TestCase):
         candidates = load_fixture("invalid-foreground-strategy-mismatch.json")
         errors = validator.validate_candidates(candidates, (100, 80))
         self.assert_has_error(errors, "should_extract")
+
+    def test_tight_icon_fixture_distinguishes_geometry_from_pixel_ownership(self):
+        candidates = load_fixture("tight-icon-strategy-contrast.json")
+        self.assertEqual([], validator.validate_candidates(candidates, (100, 80)))
+
+        by_label = {candidate["label"]: candidate for candidate in candidates}
+        irregular = by_label["Tight circular icon on card"]
+        tile = by_label["Icon on intentional rectangular tile"]
+        self.assertEqual("foreground_extract", irregular["strategy"])
+        self.assertIn("corners contain card pixels", irregular["reason"])
+        self.assertEqual("direct_crop", tile["strategy"])
+        self.assertIn("every pixel", tile["reason"])
+
+    def test_strategy_reference_defines_direct_crop_by_pixel_ownership(self):
+        contract = STRATEGY_REFERENCE.read_text(encoding="utf-8")
+        self.assertIn("bbox tightness != direct-crop eligibility", contract)
+        self.assertIn("pixel-for-pixel reusable, not merely geometrically tight", contract)
+        self.assertIn("any pixels inside it should be removed or made transparent", contract)
 
     def test_compound_card_fixture_keeps_overlapping_parent_and_children(self):
         candidates = load_fixture("compound-card-candidates.json")

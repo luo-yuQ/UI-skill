@@ -16,15 +16,23 @@ Use exactly one of these four values.
 
 ### `direct_crop`
 
-Use when all pixels required for the target asset exist and the candidate bbox already contains the correct reusable rectangular asset. No foreground/background separation, mask, alpha isolation, pixel recovery, or generation is needed.
+Use when all pixels required for the target asset exist and the entire candidate rectangle can be retained pixel-for-pixel as the final reusable asset. Every pixel in the crop must belong to the intended asset; no foreground/background separation, pixel deletion, transparency conversion, mask, alpha isolation, pixel recovery, or generation is needed.
 
 Set `should_extract: true`.
 
 Typical cases include a complete rectangular control, an independently rendered rectangular asset, or any candidate whose bbox itself is the desired final crop.
 
+Apply this invariant:
+
+```text
+bbox tightness != direct-crop eligibility
+```
+
+A geometrically tight or clean-looking bbox is not sufficient. If card background, panel background, unrelated UI pixels, or any other pixels inside the rectangle must be removed or made transparent, do not use `direct_crop`.
+
 ### `foreground_extract`
 
-Use when all pixels required for the target asset exist in the screenshot, but the bbox also contains surrounding pixels that are not part of the asset. The asset can plausibly be isolated from existing pixels through foreground/background separation, mask, and alpha.
+Use when all pixels required for the target asset exist in the screenshot, but the bbox also contains surrounding pixels that are not part of the asset. The asset can plausibly be isolated from existing pixels through foreground/background separation, mask, and alpha. Use this strategy even when the bbox is very tight if any pixels inside it should be removed or made transparent in the final asset.
 
 Set `should_extract: true`.
 
@@ -54,7 +62,7 @@ Apply these questions in order to each candidate:
 2. Are all pixels required by the intended reusable asset present in the screenshot?
    - No: use `advanced_required`.
    - Yes: continue.
-3. Is the candidate bbox itself already the correct rectangular asset?
+3. Can every pixel in the rectangular crop be retained as part of the final reusable asset?
    - Yes: use `direct_crop`.
    - No: continue.
 4. Can the complete target foreground be separated from surrounding existing pixels?
@@ -68,13 +76,15 @@ should become an image asset?
     target pixels complete?
     |-- no  -> advanced_required
     `-- yes
-        rectangular crop sufficient?
+        rectangular crop pixel-for-pixel reusable?
         |-- yes -> direct_crop
         `-- no
             foreground separable?
             |-- yes -> foreground_extract
             `-- no / unresolved -> advanced_required
 ```
+
+Here, sufficient means pixel-for-pixel reusable, not merely geometrically tight.
 
 Complete decomposition before this procedure. Do not assign `advanced_required` to a large parent and then omit its children. Evaluate every parent and child separately.
 
@@ -132,6 +142,24 @@ Use `advanced_required` when the intended asset is complete but the screenshot c
 Use `foreground_extract` when the subject pixels are complete and foreground separation has a reasonable boundary basis despite a complex background. Use `advanced_required` when the asset boundary itself cannot be defined reliably. Keep the issue diagnostic rather than mapping it automatically.
 
 ## Required examples
+
+### Tight small-icon contrast
+
+#### Tight irregular icon on a card: `foreground_extract`
+
+A small circular or irregular icon may have a bbox that tightly hugs its visible boundary while the rectangular corners still contain card pixels. If the final reusable icon needs transparent corners, use `foreground_extract`. Tight bbox geometry does not make it `direct_crop`.
+
+```json
+{"semantic_type":"icon","should_extract":true,"strategy":"foreground_extract","issues":["complex_background"]}
+```
+
+#### Icon on an intentional rectangular tile: `direct_crop`
+
+If the rectangular tile/background is intentionally part of the icon asset and every pixel in the bbox should remain, use `direct_crop`. Also use `direct_crop` when the source already contains transparency and the rectangular crop can be retained unchanged.
+
+```json
+{"semantic_type":"icon","should_extract":true,"strategy":"direct_crop","issues":[]}
+```
 
 ### A. Crystal illustration on a card background
 

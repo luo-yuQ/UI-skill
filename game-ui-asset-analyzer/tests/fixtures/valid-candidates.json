@@ -15,7 +15,7 @@
     "should_extract": true,
     "strategy": "direct_crop",
     "issues": [],
-    "reason": "The icon has a clean rectangular boundary.",
+    "reason": "Every pixel in the rectangular crop belongs to the icon tile and can be retained unchanged.",
     "source_ref": null
   },
   {

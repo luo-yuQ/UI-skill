@@ -1,0 +1,20 @@
+[
+  {
+    "label": "Tight circular icon on card",
+    "semantic_type": "icon",
+    "bbox": {"x": 5, "y": 5, "width": 24, "height": 24},
+    "should_extract": true,
+    "strategy": "foreground_extract",
+    "issues": ["complex_background"],
+    "reason": "The bbox is tight, but its corners contain card pixels that must become transparent."
+  },
+  {
+    "label": "Icon on intentional rectangular tile",
+    "semantic_type": "icon",
+    "bbox": {"x": 40, "y": 5, "width": 24, "height": 24},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The tile is part of the asset, so every pixel in the rectangular crop should remain."
+  }
+]

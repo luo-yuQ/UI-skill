@@ -77,10 +77,12 @@ Apply this decision order independently to every parent and child candidate afte
 
 1. If it should not become an image asset, use `do_not_extract`.
 2. If the intended reusable asset requires pixels missing from the screenshot, use `advanced_required`.
-3. If the bbox itself is the complete rectangular asset, use `direct_crop`.
-4. If all target pixels exist and only surrounding background must be separated, use `foreground_extract`; otherwise use `advanced_required`.
+3. If every pixel in the rectangular crop belongs to the final reusable asset and can be retained unchanged, use `direct_crop`.
+4. If all target pixels exist but any pixels inside the bbox must be removed or made transparent, use `foreground_extract`; otherwise use `advanced_required`.
 
 Treat `foreground_extract` only as isolation of a complete foreground from pixels already present through mask/alpha separation. It does not fill, redraw, recover occlusion, remove baked-in target content, or guess missing boundaries. Treat `advanced_required` as a record that the ideal independent asset cannot be reliably obtained from the current screenshot; it is not a repair plan, and Stage2 never generates missing pixels.
+
+Apply `bbox tightness != direct-crop eligibility`. A small icon with a tight bbox still requires `foreground_extract` when its rectangular corners or surrounding pixels contain card, panel, or unrelated UI background that should become transparent. `direct_crop` requires the crop to be reusable pixel-for-pixel, not merely tightly bounded.
 
 Do not derive strategy from `semantic_type` or an issue string. Issues are diagnostic. A complete illustration on a complex background may use `foreground_extract`, while a panel whose surface is covered by children may use `advanced_required`. Parent and child strategies are independent.
 

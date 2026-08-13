@@ -24,7 +24,7 @@
     "should_extract": true,
     "strategy": "direct_crop",
     "issues": [],
-    "reason": "The badge treatment is visually independent and has clean rectangular bounds."
+    "reason": "The full rectangular crop belongs to the badge asset, so every pixel can be retained unchanged."
   },
   {
     "label": "Bundle amount text",
