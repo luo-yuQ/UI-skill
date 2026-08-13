@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Asset Extractor"
+  short_description: "Extract reusable PNGs from frozen Stage2-A bboxes"
+  default_prompt: "Use $game-ui-asset-extractor to crop or foreground-extract assets from frozen Stage2-A final bboxes."

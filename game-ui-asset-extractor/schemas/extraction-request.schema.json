@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/extraction-request.schema.json",
+  "title": "Game UI Asset Extraction Request v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_image", "assets"],
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "source_image": {"type": "string", "minLength": 1},
+    "config": {"$ref": "#/$defs/config"},
+    "assets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/asset"}
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {"const": "pillow", "default": "pillow"},
+        "roi_padding": {"type": "integer", "minimum": 0, "default": 10},
+        "background_min_pixels": {"type": "integer", "minimum": 1, "default": 16},
+        "mask_threshold": {"type": "number", "minimum": 0, "default": 22.0},
+        "morphology_radius": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
+        "alpha_dilation_radius": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
+        "alpha_blur_radius": {"type": "number", "minimum": 0, "maximum": 20, "default": 1.0}
+      }
+    },
+    "asset_type": {
+      "type": "string",
+      "enum": ["background", "panel", "button", "icon", "illustration", "frame", "progress_bar", "decoration", "text", "unknown"]
+    },
+    "asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "asset_type", "final_bbox", "extraction_mode"],
+      "properties": {
+        "asset_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "asset_type": {"$ref": "#/$defs/asset_type"},
+        "final_bbox": {"$ref": "#/$defs/bbox"},
+        "extraction_mode": {"enum": ["direct_crop", "foreground_extract"]}
+      }
+    }
+  }
+}
+

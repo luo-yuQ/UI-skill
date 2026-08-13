@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/extraction-result.schema.json",
+  "title": "Game UI Asset Extraction Result v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "source_image", "source_size", "backend", "config", "assets"],
+  "properties": {
+    "schema_version": {"const": "0.1"},
+    "status": {"enum": ["success", "failed"]},
+    "source_image": {"type": "string", "minLength": 1},
+    "source_size": {
+      "anyOf": [
+        {"$ref": "#/$defs/source_size"},
+        {"type": "null"}
+      ]
+    },
+    "backend": {"const": "pillow"},
+    "config": {"$ref": "#/$defs/config"},
+    "assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}}
+  },
+  "$defs": {
+    "source_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "offset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0}
+      }
+    },
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["backend", "roi_padding", "background_min_pixels", "mask_threshold", "morphology_radius", "alpha_dilation_radius", "alpha_blur_radius"],
+      "properties": {
+        "backend": {"const": "pillow"},
+        "roi_padding": {"type": "integer", "minimum": 0},
+        "background_min_pixels": {"type": "integer", "minimum": 1},
+        "mask_threshold": {"type": "number", "minimum": 0},
+        "morphology_radius": {"type": "integer", "minimum": 0},
+        "alpha_dilation_radius": {"type": "integer", "minimum": 0},
+        "alpha_blur_radius": {"type": "number", "minimum": 0}
+      }
+    },
+    "result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_id", "asset_type", "extraction_mode", "status", "source_image", "final_bbox", "extraction_roi", "roi_padding", "final_bbox_offset", "background_method", "background_rgb", "background_parameters", "mask_method", "mask_threshold", "mask_parameters", "alpha_parameters", "output_path", "mask_path"],
+      "properties": {
+        "asset_id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9_-]*$"},
+        "asset_type": {"type": "string"},
+        "extraction_mode": {"enum": ["direct_crop", "foreground_extract"]},
+        "status": {"enum": ["success", "failed"]},
+        "source_image": {"type": "string", "minLength": 1},
+        "final_bbox": {"$ref": "#/$defs/bbox"},
+        "extraction_roi": {"anyOf": [{"$ref": "#/$defs/bbox"}, {"type": "null"}]},
+        "roi_padding": {"type": "integer", "minimum": 0},
+        "final_bbox_offset": {"anyOf": [{"$ref": "#/$defs/offset"}, {"type": "null"}]},
+        "background_method": {"anyOf": [{"enum": ["context_ring_median", "roi_border_median_fallback", "global_border_median_fallback"]}, {"type": "null"}]},
+        "background_rgb": {"anyOf": [{"type": "array", "prefixItems": [{"type": "integer", "minimum": 0, "maximum": 255}, {"type": "integer", "minimum": 0, "maximum": 255}, {"type": "integer", "minimum": 0, "maximum": 255}], "items": false}, {"type": "null"}]},
+        "background_parameters": {"type": "object"},
+        "mask_method": {"anyOf": [{"const": "color_distance_v0"}, {"type": "null"}]},
+        "mask_threshold": {"anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]},
+        "mask_parameters": {"type": "object"},
+        "alpha_parameters": {"type": "object"},
+        "output_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "mask_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "failure_reason": {"type": "string", "minLength": 1}
+      },
+      "allOf": [
+        {
+          "if": {"properties": {"status": {"const": "failed"}}, "required": ["status"]},
+          "then": {"required": ["failure_reason"]},
+          "else": {"not": {"required": ["failure_reason"]}}
+        }
+      ]
+    }
+  }
+}
