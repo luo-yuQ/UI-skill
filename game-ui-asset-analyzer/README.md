@@ -1,11 +1,12 @@
 # Game UI Asset Analyzer v0.1
 
-This Stage2 skill prepares a deterministic visual-analysis image, then maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`. It does not extract assets or refine bboxes.
+This Stage2 skill prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It does not extract assets or overwrite formal bboxes.
 
 ## Requirements
 
 - Python 3.10+
 - Pillow
+- NumPy
 - jsonschema
 
 ## Minimal usage
@@ -31,6 +32,24 @@ For compatibility, omit `--analysis-image` to treat the source image as the anal
 
 See `examples/asset-candidates.json` for a minimal candidate document. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs.
 
+## Optional icon bbox refinement
+
+After validating `asset-analysis.json`, run:
+
+```powershell
+python scripts/bbox_refiner.py --source-image path\to\preview.png --asset-analysis path\to\asset-analysis.json --output path\to\bbox-refinement.json --debug-dir path\to\debug-refiner
+```
+
+Optional controls:
+
+- `--expand-px 12`: override the default `max(8, round(max(width, height) * 0.45))` ROI expansion.
+- `--safety-padding 2`: set final padding around detected foreground.
+- `--ids icon_001,icon_002`: process only verified IDs.
+
+v0.1 processes only `should_extract=true`, `strategy=direct_crop`, `semantic_type=icon`. It estimates background from ROI border pixels, uses adaptive RGB color distance, finds 8-connected components, chooses the component group nearest and overlapping the coarse bbox, and applies deterministic reasonability checks. Results go to `bbox-refinement.json`; `asset-analysis.json` is read-only.
+
+With `--debug-dir`, every processed eligible asset writes `<id>-roi.png`, `<id>-mask.png`, and `<id>-overlay.png`. The overlay uses yellow for coarse bbox, blue for ROI, and green for successful refined bbox.
+
 ## Recommended run layout
 
 ```text
@@ -41,7 +60,9 @@ runs/<run-id>/
     |-- analysis-input.png
     |-- analysis-input-meta.json
     |-- asset-candidates.json
-    `-- asset-analysis.json
+    |-- asset-analysis.json
+    |-- bbox-refinement.json
+    `-- debug-refiner/
 ```
 
 `asset-candidates.json` uses analysis-image pixels. `asset-analysis.json` uses original `preview.png` pixels.
