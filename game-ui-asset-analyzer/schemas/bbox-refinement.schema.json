@@ -62,6 +62,7 @@
         "roi_bbox",
         "refined_bbox",
         "status",
+        "use_bbox",
         "confidence",
         "metrics"
       ],
@@ -83,7 +84,8 @@
             { "type": "null" }
           ]
         },
-        "status": { "enum": ["success", "failed", "skipped"] },
+        "status": { "enum": ["success", "fallback", "failed", "skipped"] },
+        "use_bbox": { "enum": ["refined", "coarse"] },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "metrics": {
           "anyOf": [
@@ -100,9 +102,23 @@
             "properties": {
               "roi_bbox": { "$ref": "#/$defs/bbox" },
               "refined_bbox": { "$ref": "#/$defs/bbox" },
+              "use_bbox": { "const": "refined" },
               "metrics": { "$ref": "#/$defs/metrics" }
             },
             "not": { "required": ["failure_reason"] }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "fallback" } } },
+          "then": {
+            "properties": {
+              "roi_bbox": { "$ref": "#/$defs/bbox" },
+              "refined_bbox": { "$ref": "#/$defs/bbox" },
+              "use_bbox": { "const": "coarse" },
+              "confidence": { "const": 0.0 },
+              "metrics": { "$ref": "#/$defs/metrics" }
+            },
+            "required": ["failure_reason"]
           }
         },
         {
@@ -110,6 +126,7 @@
           "then": {
             "properties": {
               "refined_bbox": { "type": "null" },
+              "use_bbox": { "const": "coarse" },
               "confidence": { "const": 0.0 }
             },
             "required": ["failure_reason"]

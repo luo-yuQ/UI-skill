@@ -46,7 +46,7 @@ Optional controls:
 - `--safety-padding 2`: set final padding around detected foreground.
 - `--ids icon_001,icon_002`: process only verified IDs.
 
-v0.1 processes only `should_extract=true`, `strategy=direct_crop`, `semantic_type=icon`. It estimates background from ROI border pixels, uses adaptive RGB color distance, finds 8-connected components, chooses the component group nearest and overlapping the coarse bbox, and applies deterministic reasonability checks. Results go to `bbox-refinement.json`; `asset-analysis.json` is read-only.
+v0.1 processes only `should_extract=true`, `strategy=direct_crop`, `semantic_type=icon`. It estimates background from ROI border pixels, uses adaptive RGB color distance, finds 8-connected components, chooses the component group nearest and overlapping the coarse bbox, and applies deterministic reasonability checks. A final acceptance gate requires area ratio `0.6–1.5`, center shift at most `10px`, and width/height ratios `0.6–1.5`. Accepted results set `use_bbox=refined`; rejected results set `status=fallback` and `use_bbox=coarse`. Results go to `bbox-refinement.json`; `asset-analysis.json` is read-only.
 
 With `--debug-dir`, every processed eligible asset writes `<id>-roi.png`, `<id>-mask.png`, and `<id>-overlay.png`. The overlay uses yellow for coarse bbox, blue for ROI, and green for successful refined bbox.
 

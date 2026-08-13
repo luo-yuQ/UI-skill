@@ -113,6 +113,7 @@ class BBoxRefinerTests(unittest.TestCase):
         )
 
         self.assertEqual("success", result["status"])
+        self.assertEqual("refined", result["use_bbox"])
         self.assertLess(
             bbox_edge_error(result["refined_bbox"], ground_truth),
             bbox_edge_error(coarse, ground_truth),
@@ -145,7 +146,7 @@ class BBoxRefinerTests(unittest.TestCase):
         image[35:55, 45:65] = FOREGROUND
         image[18:20, 22:24] = (255, 0, 255)
         image[70:72, 87:89] = (255, 0, 255)
-        coarse = {"x": 40, "y": 31, "width": 29, "height": 29}
+        coarse = {"x": 40, "y": 31, "width": 28, "height": 28}
 
         result, _mask = refiner.refine_icon(
             image,
@@ -155,6 +156,7 @@ class BBoxRefinerTests(unittest.TestCase):
         )
 
         self.assertEqual("success", result["status"])
+        self.assertEqual("refined", result["use_bbox"])
         refined = result["refined_bbox"]
         self.assertGreater(refined["x"], 22)
         self.assertLess(refined["x"] + refined["width"], 87)
@@ -167,6 +169,7 @@ class BBoxRefinerTests(unittest.TestCase):
         result, mask = refiner.refine_icon(image, icon_asset("icon_001", coarse))
 
         self.assertEqual("failed", result["status"])
+        self.assertEqual("coarse", result["use_bbox"])
         self.assertIsNone(result["refined_bbox"])
         self.assertEqual(0.0, result["confidence"])
         self.assertIn("no relevant foreground", result["failure_reason"])
@@ -229,6 +232,7 @@ class BBoxRefinerTests(unittest.TestCase):
             )
 
         self.assertEqual(["skipped", "skipped", "skipped"], [r["status"] for r in document["refinements"]])
+        self.assertEqual(["coarse", "coarse", "coarse"], [r["use_bbox"] for r in document["refinements"]])
         self.assertEqual([], refiner.validate_refinement(document))
 
     def test_ids_filter_processes_only_synthetic_requested_asset(self):
@@ -251,6 +255,42 @@ class BBoxRefinerTests(unittest.TestCase):
 
         self.assertEqual(["icon_001"], [r["asset_id"] for r in document["refinements"]])
         self.assertEqual("success", document["refinements"][0]["status"])
+        self.assertEqual("refined", document["refinements"][0]["use_bbox"])
+
+    def test_acceptance_gate_rejects_area_expansion_over_two_times(self):
+        coarse = {"x": 40, "y": 30, "width": 20, "height": 20}
+        refined = {"x": 35, "y": 25, "width": 30, "height": 30}
+        metrics = {
+            "center_shift_px": 0.0,
+            "area_ratio": 2.25,
+            "foreground_pixel_ratio": 0.8,
+        }
+        result = refiner._finalize_icon_result(
+            {"asset_id": "icon_001", "coarse_bbox": coarse, "roi_bbox": coarse},
+            coarse,
+            refined,
+            metrics,
+        )
+        self.assertEqual("fallback", result["status"])
+        self.assertEqual("coarse", result["use_bbox"])
+        self.assertEqual("refined bbox rejected by acceptance gate", result["failure_reason"])
+
+    def test_acceptance_gate_rejects_center_shift_over_ten_pixels(self):
+        coarse = {"x": 40, "y": 30, "width": 20, "height": 20}
+        refined = {"x": 51, "y": 30, "width": 20, "height": 20}
+        metrics = {
+            "center_shift_px": 11.0,
+            "area_ratio": 1.0,
+            "foreground_pixel_ratio": 0.8,
+        }
+        result = refiner._finalize_icon_result(
+            {"asset_id": "icon_001", "coarse_bbox": coarse, "roi_bbox": coarse},
+            coarse,
+            refined,
+            metrics,
+        )
+        self.assertEqual("fallback", result["status"])
+        self.assertEqual("coarse", result["use_bbox"])
 
     def test_cli_writes_debug_artifacts_without_modifying_analysis(self):
         with tempfile.TemporaryDirectory() as raw:

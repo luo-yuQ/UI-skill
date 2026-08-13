@@ -33,6 +33,14 @@ BORDER_THICKNESS = 3
 MIN_COMPONENT_PIXELS = 4
 MERGE_DISTANCE_FACTOR = 0.25
 
+# Final conservative acceptance gate for icon refinements. A rejected result is
+# still observable, but downstream users must retain the original coarse bbox.
+ACCEPT_MIN_AREA_RATIO = 0.60
+ACCEPT_MAX_AREA_RATIO = 1.50
+ACCEPT_MAX_CENTER_SHIFT_PX = 10.0
+ACCEPT_MIN_DIMENSION_RATIO = 0.60
+ACCEPT_MAX_DIMENSION_RATIO = 1.50
+
 
 def load_json(path: Path) -> Any:
     return json.loads(path.read_text(encoding="utf-8"))
@@ -325,6 +333,51 @@ def _failure_reason(
     return None
 
 
+def _passes_icon_acceptance_gate(
+    coarse_bbox: dict[str, int],
+    refined_bbox: dict[str, int],
+    metrics: dict[str, float],
+) -> bool:
+    """Accept only conservative icon bbox changes that are likely safer than coarse."""
+
+    width_ratio = refined_bbox["width"] / coarse_bbox["width"]
+    height_ratio = refined_bbox["height"] / coarse_bbox["height"]
+    return (
+        ACCEPT_MIN_AREA_RATIO <= metrics["area_ratio"] <= ACCEPT_MAX_AREA_RATIO
+        and metrics["center_shift_px"] <= ACCEPT_MAX_CENTER_SHIFT_PX
+        and ACCEPT_MIN_DIMENSION_RATIO <= width_ratio <= ACCEPT_MAX_DIMENSION_RATIO
+        and ACCEPT_MIN_DIMENSION_RATIO <= height_ratio <= ACCEPT_MAX_DIMENSION_RATIO
+    )
+
+
+def _finalize_icon_result(
+    base: dict[str, Any],
+    coarse_bbox: dict[str, int],
+    refined_bbox: dict[str, int],
+    metrics: dict[str, float],
+) -> dict[str, Any]:
+    """Choose refined or coarse after the conservative final acceptance gate."""
+
+    if not _passes_icon_acceptance_gate(coarse_bbox, refined_bbox, metrics):
+        return {
+            **base,
+            "refined_bbox": refined_bbox,
+            "status": "fallback",
+            "use_bbox": "coarse",
+            "confidence": 0.0,
+            "metrics": metrics,
+            "failure_reason": "refined bbox rejected by acceptance gate",
+        }
+    return {
+        **base,
+        "refined_bbox": refined_bbox,
+        "status": "success",
+        "use_bbox": "refined",
+        "confidence": _confidence(coarse_bbox, refined_bbox, metrics),
+        "metrics": metrics,
+    }
+
+
 def refine_icon(
     source_rgb: np.ndarray,
     asset: dict[str, Any],
@@ -364,6 +417,7 @@ def refine_icon(
             **base,
             "refined_bbox": None,
             "status": "failed",
+            "use_bbox": "coarse",
             "confidence": 0.0,
             "metrics": None,
             "failure_reason": "no relevant foreground component detected",
@@ -384,17 +438,12 @@ def refine_icon(
             **base,
             "refined_bbox": None,
             "status": "failed",
+            "use_bbox": "coarse",
             "confidence": 0.0,
             "metrics": metrics,
             "failure_reason": failure,
         }, mask
-    return {
-        **base,
-        "refined_bbox": refined_bbox,
-        "status": "success",
-        "confidence": _confidence(coarse_bbox, refined_bbox, metrics),
-        "metrics": metrics,
-    }, mask
+    return _finalize_icon_result(base, coarse_bbox, refined_bbox, metrics), mask
 
 
 def is_eligible(asset: dict[str, Any]) -> bool:
@@ -412,6 +461,7 @@ def _skipped(asset: dict[str, Any]) -> dict[str, Any]:
         "roi_bbox": None,
         "refined_bbox": None,
         "status": "skipped",
+        "use_bbox": "coarse",
         "confidence": 0.0,
         "metrics": None,
         "failure_reason": "v0.1 supports only direct_crop icons with should_extract=true",
@@ -567,10 +617,12 @@ def main(argv: list[str] | None = None) -> int:
         print(f"Refinement failed: {exc}", file=sys.stderr)
         return 1
     successes = sum(item["status"] == "success" for item in document["refinements"])
+    fallbacks = sum(item["status"] == "fallback" for item in document["refinements"])
     failures = sum(item["status"] == "failed" for item in document["refinements"])
     skipped = sum(item["status"] == "skipped" for item in document["refinements"])
     print(
-        f"Wrote {args.output}: {successes} success, {failures} failed, {skipped} skipped"
+        f"Wrote {args.output}: {successes} success, {fallbacks} fallback, "
+        f"{failures} failed, {skipped} skipped"
     )
     return 0
 
