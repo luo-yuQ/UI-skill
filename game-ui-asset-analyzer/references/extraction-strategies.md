@@ -1,4 +1,10 @@
-# Extraction Strategies v0.1
+# Extraction Strategies v0.1 — Stage2-A v0.2 Usage
+
+## Decomposition first, strategy second
+
+Finish discovering the smallest visually complete reusable candidates before assigning extraction decisions. Then assign `should_extract`, `strategy`, and `issues` independently to every candidate.
+
+Do not stop decomposition because a large region is difficult to crop. In particular, `advanced_required` describes extraction difficulty for an already identified candidate; it never replaces decomposition. If an offer-card parent requires advanced extraction, still inspect and emit independent children such as its crystal illustration, price button, BEST VALUE decoration, and icons. Each child may independently use `direct_crop`, `advanced_required`, or `do_not_extract` according to the rules below.
 
 Use exactly one strategy:
 
@@ -22,6 +28,8 @@ Use only these structured issue values:
 - `uncertain_boundary`: the exact asset edge cannot be located reliably.
 
 The `issues` array may be empty except for `advanced_required`, which must have at least one issue. Do not repeat an issue.
+
+Issues describe only the candidate whose visual boundary has already been selected. `text_baked_in` must not cause a bbox to expand until it absorbs a whole card or business region. Keep the candidate boundary at the reusable visual asset, then record the issue on that candidate.
 
 ## Consistency rules
 

@@ -15,6 +15,7 @@ from PIL import Image
 ROOT = Path(__file__).resolve().parents[1]
 SCRIPTS = ROOT / "scripts"
 FIXTURES = ROOT / "tests" / "fixtures"
+EXAMPLES = ROOT / "examples"
 if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
@@ -25,6 +26,15 @@ import validate_asset_analysis as validator  # noqa: E402
 
 def load_fixture(name: str):
     return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
+
+
+def bboxes_overlap(left: dict[str, int], right: dict[str, int]) -> bool:
+    return (
+        left["x"] < right["x"] + right["width"]
+        and right["x"] < left["x"] + left["width"]
+        and left["y"] < right["y"] + right["height"]
+        and right["y"] < left["y"] + left["height"]
+    )
 
 
 class AssetAnalysisTests(unittest.TestCase):
@@ -214,6 +224,77 @@ class AssetAnalysisTests(unittest.TestCase):
         candidates = load_fixture("invalid-advanced-no-issues.json")
         errors = validator.validate_candidates(candidates, (100, 80))
         self.assert_has_error(errors, "issues")
+
+    def test_compound_card_fixture_keeps_overlapping_parent_and_children(self):
+        candidates = load_fixture("compound-card-candidates.json")
+        self.assertEqual([], validator.validate_candidates(candidates, (800, 600)))
+
+        by_label = {candidate["label"]: candidate for candidate in candidates}
+        expected_types = {
+            "Offer card surface": "panel",
+            "Crystal bundle illustration": "illustration",
+            "Purchase price button": "button",
+            "Bundle amount text": "text",
+            "Bonus amount text": "text",
+            "BEST VALUE decoration": "decoration",
+        }
+        self.assertEqual(
+            expected_types,
+            {label: by_label[label]["semantic_type"] for label in expected_types},
+        )
+
+        parent_bbox = by_label["Offer card surface"]["bbox"]
+        for child_label in expected_types.keys() - {"Offer card surface"}:
+            with self.subTest(child=child_label):
+                self.assertTrue(bboxes_overlap(parent_bbox, by_label[child_label]["bbox"]))
+                self.assertIn("should_extract", by_label[child_label])
+                self.assertIn("strategy", by_label[child_label])
+
+    def test_public_compound_card_example_matches_validated_fixture(self):
+        example = json.loads(
+            (EXAMPLES / "asset-candidates.json").read_text(encoding="utf-8")
+        )
+        self.assertEqual(load_fixture("compound-card-candidates.json"), example)
+        self.assertEqual([], validator.validate_candidates(example, (800, 600)))
+
+    def test_bottom_help_bar_fixture_keeps_panel_and_internal_icons(self):
+        candidates = load_fixture("bottom-help-bar-candidates.json")
+        self.assertEqual([], validator.validate_candidates(candidates, (800, 600)))
+
+        panel = next(
+            candidate
+            for candidate in candidates
+            if candidate["label"] == "Bottom help panel"
+        )
+        icons = [
+            candidate for candidate in candidates if candidate["semantic_type"] == "icon"
+        ]
+        self.assertEqual(
+            {"Secure payment icon", "Instant credit icon", "Help icon"},
+            {icon["label"] for icon in icons},
+        )
+        self.assertTrue(all(bboxes_overlap(panel["bbox"], icon["bbox"]) for icon in icons))
+
+    def test_builder_maps_compound_fixture_without_losing_candidates(self):
+        candidates = load_fixture("compound-card-candidates.json")
+        with tempfile.TemporaryDirectory() as raw:
+            temp = Path(raw)
+            source = temp / "preview.png"
+            analysis_image = temp / "analysis-input.png"
+            Image.new("RGB", (1600, 1200), "white").save(source)
+            Image.new("RGB", (800, 600), "white").save(analysis_image)
+            analysis = builder.build_analysis(source, candidates, analysis_image)
+
+        self.assertEqual(len(candidates), len(analysis["assets"]))
+        by_label = {asset["label"]: asset for asset in analysis["assets"]}
+        self.assertEqual(
+            {"x": 200, "y": 160, "width": 600, "height": 760},
+            by_label["Offer card surface"]["bbox"],
+        )
+        self.assertEqual(
+            {"x": 290, "y": 270, "width": 420, "height": 300},
+            by_label["Crystal bundle illustration"]["bbox"],
+        )
 
     def test_builder_reads_source_size_sorts_and_assigns_ids(self):
         candidates = load_fixture("valid-candidates.json")

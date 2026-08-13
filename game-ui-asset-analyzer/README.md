@@ -1,6 +1,6 @@
-# Game UI Asset Analyzer v0.1
+# Game UI Asset Analyzer — Stage2-A v0.2
 
-This Stage2 skill prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It does not extract assets or overwrite formal bboxes.
+This Stage2-A skill decomposes a UI into reusable visual assets, prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It targets visual asset boundaries rather than interaction hit areas. It does not extract assets or overwrite formal bboxes.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ The builder reads both image files rather than trusting JSON metadata. It valida
 
 For compatibility, omit `--analysis-image` to treat the source image as the analysis image and leave bbox coordinates unchanged.
 
-See `examples/asset-candidates.json` for a minimal candidate document. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs.
+See `examples/asset-candidates.json` for a compound-card candidate document with an overlapping reusable parent and independent children. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs. Stage2-A v0.2 keeps the v0.1 schema and taxonomy enum contracts unchanged.
 
 ## Optional icon bbox refinement
 

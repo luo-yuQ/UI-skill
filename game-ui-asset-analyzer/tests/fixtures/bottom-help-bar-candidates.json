@@ -1,0 +1,65 @@
+[
+  {
+    "label": "Bottom help panel",
+    "semantic_type": "panel",
+    "bbox": {"x": 40, "y": 500, "width": 720, "height": 72},
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": ["merged_with_neighbor"],
+    "reason": "The reusable bar surface is visually fused with its contained icons and labels."
+  },
+  {
+    "label": "Secure payment icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 75, "y": 518, "width": 32, "height": 32},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The security symbol has a clean independent boundary."
+  },
+  {
+    "label": "Secure payment label",
+    "semantic_type": "text",
+    "bbox": {"x": 116, "y": 523, "width": 120, "height": 22},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "The label should remain runtime text."
+  },
+  {
+    "label": "Instant credit icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 290, "y": 518, "width": 32, "height": 32},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The credit symbol has a clean independent boundary."
+  },
+  {
+    "label": "Instant credit label",
+    "semantic_type": "text",
+    "bbox": {"x": 331, "y": 523, "width": 120, "height": 22},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "The label should remain runtime text."
+  },
+  {
+    "label": "Help icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 535, "y": 518, "width": 32, "height": 32},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The help symbol has a clean independent boundary."
+  },
+  {
+    "label": "Help label",
+    "semantic_type": "text",
+    "bbox": {"x": 576, "y": 523, "width": 90, "height": 22},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "The label should remain runtime text."
+  }
+]

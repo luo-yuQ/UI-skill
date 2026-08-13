@@ -1,4 +1,4 @@
 interface:
   display_name: "Game UI Asset Analyzer"
-  short_description: "Analyze UI assets and refine direct-crop icon bboxes"
-  default_prompt: "Use $game-ui-asset-analyzer to analyze UI asset candidates, map their bboxes to source pixels, and optionally refine eligible icon bboxes."
+  short_description: "Decompose reusable UI assets and map their bboxes"
+  default_prompt: "Use $game-ui-asset-analyzer to decompose this game UI into reusable visual asset candidates and map their bboxes to source pixels."
