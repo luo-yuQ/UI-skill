@@ -56,6 +56,15 @@ class AssetAnalysisTests(unittest.TestCase):
                     schema["$schema"],
                 )
                 Draft202012Validator.check_schema(schema)
+                self.assertEqual(
+                    {
+                        "direct_crop",
+                        "foreground_extract",
+                        "advanced_required",
+                        "do_not_extract",
+                    },
+                    set(schema["$defs"]["strategy"]["enum"]),
+                )
 
     def test_prepare_1248_by_832_to_1024_by_683(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -225,6 +234,23 @@ class AssetAnalysisTests(unittest.TestCase):
         errors = validator.validate_candidates(candidates, (100, 80))
         self.assert_has_error(errors, "issues")
 
+    def test_foreground_extract_with_issue_is_valid(self):
+        candidate = copy.deepcopy(load_fixture("valid-candidates.json")[1])
+        candidate["strategy"] = "foreground_extract"
+        candidate["issues"] = ["complex_background"]
+        self.assertEqual([], validator.validate_candidates([candidate], (100, 80)))
+
+    def test_foreground_extract_without_issue_is_valid(self):
+        candidate = copy.deepcopy(load_fixture("valid-candidates.json")[1])
+        candidate["strategy"] = "foreground_extract"
+        candidate["issues"] = []
+        self.assertEqual([], validator.validate_candidates([candidate], (100, 80)))
+
+    def test_foreground_extract_with_should_extract_false_fails(self):
+        candidates = load_fixture("invalid-foreground-strategy-mismatch.json")
+        errors = validator.validate_candidates(candidates, (100, 80))
+        self.assert_has_error(errors, "should_extract")
+
     def test_compound_card_fixture_keeps_overlapping_parent_and_children(self):
         candidates = load_fixture("compound-card-candidates.json")
         self.assertEqual([], validator.validate_candidates(candidates, (800, 600)))
@@ -241,6 +267,19 @@ class AssetAnalysisTests(unittest.TestCase):
         self.assertEqual(
             expected_types,
             {label: by_label[label]["semantic_type"] for label in expected_types},
+        )
+        self.assertEqual(
+            {
+                "direct_crop",
+                "foreground_extract",
+                "advanced_required",
+                "do_not_extract",
+            },
+            {candidate["strategy"] for candidate in candidates},
+        )
+        self.assertEqual(
+            "foreground_extract",
+            by_label["Crystal bundle illustration"]["strategy"],
         )
 
         parent_bbox = by_label["Offer card surface"]["bbox"]
@@ -294,6 +333,10 @@ class AssetAnalysisTests(unittest.TestCase):
         self.assertEqual(
             {"x": 290, "y": 270, "width": 420, "height": 300},
             by_label["Crystal bundle illustration"]["bbox"],
+        )
+        self.assertEqual(
+            "foreground_extract",
+            by_label["Crystal bundle illustration"]["strategy"],
         )
 
     def test_builder_reads_source_size_sorts_and_assigns_ids(self):

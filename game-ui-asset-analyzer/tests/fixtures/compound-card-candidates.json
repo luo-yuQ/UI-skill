@@ -13,9 +13,9 @@
     "semantic_type": "illustration",
     "bbox": {"x": 145, "y": 135, "width": 210, "height": 150},
     "should_extract": true,
-    "strategy": "advanced_required",
+    "strategy": "foreground_extract",
     "issues": ["complex_background"],
-    "reason": "The featured crystal artwork has an independent identity but needs foreground separation."
+    "reason": "All crystal pixels are visible; only the surrounding card background needs foreground separation."
   },
   {
     "label": "BEST VALUE decoration",

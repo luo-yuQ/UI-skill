@@ -1,4 +1,4 @@
 interface:
   display_name: "Game UI Asset Analyzer"
-  short_description: "Decompose reusable UI assets and map their bboxes"
-  default_prompt: "Use $game-ui-asset-analyzer to decompose this game UI into reusable visual asset candidates and map their bboxes to source pixels."
+  short_description: "Decompose UI assets and assign extraction strategies"
+  default_prompt: "Use $game-ui-asset-analyzer to decompose this game UI into reusable visual assets, assign each v0.3 extraction strategy, and map bboxes to source pixels."

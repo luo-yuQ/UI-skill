@@ -1,6 +1,6 @@
 ---
 name: game-ui-asset-analyzer
-description: Decompose a game UI screenshot into reusable visual asset candidates, prepare a deterministic width-capped analysis image, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A v0.2 UI asset decomposition and icon bbox QA with reproducible coordinate spaces; do not use for image extraction, segmentation models, alpha matting, repair, redraw, engine assembly, or final PNG manifests.
+description: Decompose a game UI screenshot into reusable visual asset candidates, assign the Stage2-A v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
 ---
 
 # Game UI Asset Analyzer
@@ -68,6 +68,21 @@ Perform these lightweight visual passes; do not implement them as a deterministi
 4. Check whether any obviously independent visual asset still lacks a candidate.
 
 Only after all four passes, assign `should_extract`, `strategy`, and `issues` to each candidate independently. A parent marked `advanced_required` does not permit omission of its children.
+
+## Strategy Contract v0.3
+
+Use exactly `direct_crop`, `foreground_extract`, `advanced_required`, or `do_not_extract`. Read [references/extraction-strategies.md](references/extraction-strategies.md) for the complete definitions and examples.
+
+Apply this decision order independently to every parent and child candidate after decomposition:
+
+1. If it should not become an image asset, use `do_not_extract`.
+2. If the intended reusable asset requires pixels missing from the screenshot, use `advanced_required`.
+3. If the bbox itself is the complete rectangular asset, use `direct_crop`.
+4. If all target pixels exist and only surrounding background must be separated, use `foreground_extract`; otherwise use `advanced_required`.
+
+Treat `foreground_extract` only as isolation of a complete foreground from pixels already present through mask/alpha separation. It does not fill, redraw, recover occlusion, remove baked-in target content, or guess missing boundaries. Treat `advanced_required` as a record that the ideal independent asset cannot be reliably obtained from the current screenshot; it is not a repair plan, and Stage2 never generates missing pixels.
+
+Do not derive strategy from `semantic_type` or an issue string. Issues are diagnostic. A complete illustration on a complex background may use `foreground_extract`, while a panel whose surface is covered by children may use `advanced_required`. Parent and child strategies are independent.
 
 Do not ask the vision model to read `source_size`, calculate scale factors, or convert a bbox back to source coordinates. Do not ask it to emit `id`, `schema_version`, `source_image`, `source_size`, or `taxonomy_version`. The model is responsible only for `label`, `semantic_type`, `bbox` in analysis-image pixels, `should_extract`, `strategy`, `issues`, `reason`, and optional `source_ref`. Do not use `reason` for machine decisions; it exists only for human debugging and QA.
 

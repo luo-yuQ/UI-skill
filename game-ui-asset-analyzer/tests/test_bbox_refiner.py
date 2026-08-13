@@ -229,15 +229,29 @@ class BBoxRefinerTests(unittest.TestCase):
                     {"x": 5, "y": 45, "width": 20, "height": 20},
                     strategy="advanced_required",
                 ),
+                icon_asset(
+                    "icon_002",
+                    {"x": 35, "y": 45, "width": 20, "height": 20},
+                    strategy="foreground_extract",
+                ),
             ]
             document = refiner.refine_document(
                 image_path,
                 analysis_for(image_path, (100, 80), assets),
             )
 
-        self.assertEqual(["skipped", "skipped", "skipped"], [r["status"] for r in document["refinements"]])
-        self.assertEqual(["coarse", "coarse", "coarse"], [r["use_bbox"] for r in document["refinements"]])
-        self.assertEqual([0, 0, 0], [r["candidate_count"] for r in document["refinements"]])
+        self.assertEqual(
+            ["skipped", "skipped", "skipped", "skipped"],
+            [r["status"] for r in document["refinements"]],
+        )
+        self.assertEqual(
+            ["coarse", "coarse", "coarse", "coarse"],
+            [r["use_bbox"] for r in document["refinements"]],
+        )
+        self.assertEqual(
+            [0, 0, 0, 0],
+            [r["candidate_count"] for r in document["refinements"]],
+        )
         self.assertEqual([], refiner.validate_refinement(document))
 
     def test_ids_filter_processes_only_synthetic_requested_asset(self):

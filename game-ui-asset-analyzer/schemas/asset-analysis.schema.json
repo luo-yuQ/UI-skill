@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/asset-analysis.schema.json",
-  "title": "Game UI Asset Analysis v0.1",
-  "description": "Deterministically built Stage2 asset-analysis.json contract.",
+  "title": "Game UI Asset Analysis v0.1 with Strategy Contract v0.3",
+  "description": "Deterministically built Stage2-A asset-analysis.json contract. The field structure remains v0.1 while strategy uses the backward-compatible v0.3 four-state contract.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -48,7 +48,12 @@
     },
     "strategy": {
       "type": "string",
-      "enum": ["direct_crop", "do_not_extract", "advanced_required"]
+      "enum": [
+        "direct_crop",
+        "foreground_extract",
+        "advanced_required",
+        "do_not_extract"
+      ]
     },
     "issue": {
       "type": "string",
@@ -126,7 +131,11 @@
         },
         {
           "if": {
-            "properties": { "strategy": { "enum": ["direct_crop", "advanced_required"] } },
+            "properties": {
+              "strategy": {
+                "enum": ["direct_crop", "foreground_extract", "advanced_required"]
+              }
+            },
             "required": ["strategy"]
           },
           "then": { "properties": { "should_extract": { "const": true } } }

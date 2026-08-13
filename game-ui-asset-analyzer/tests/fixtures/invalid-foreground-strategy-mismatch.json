@@ -1,0 +1,11 @@
+[
+  {
+    "label": "Foreground icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 10, "y": 10, "width": 20, "height": 20},
+    "should_extract": false,
+    "strategy": "foreground_extract",
+    "issues": [],
+    "reason": "Invalid because foreground extraction must produce an asset."
+  }
+]

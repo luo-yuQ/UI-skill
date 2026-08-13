@@ -1,6 +1,6 @@
-# Game UI Asset Analyzer — Stage2-A v0.2
+# Game UI Asset Analyzer — Stage2-A Strategy Contract v0.3
 
-This Stage2-A skill decomposes a UI into reusable visual assets, prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It targets visual asset boundaries rather than interaction hit areas. It does not extract assets or overwrite formal bboxes.
+This Stage2-A skill decomposes a UI into reusable visual assets, assigns the four-state v0.3 extraction strategy contract, prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It targets visual asset boundaries rather than interaction hit areas. It does not extract assets or overwrite formal bboxes.
 
 ## Requirements
 
@@ -30,7 +30,7 @@ The builder reads both image files rather than trusting JSON metadata. It valida
 
 For compatibility, omit `--analysis-image` to treat the source image as the analysis image and leave bbox coordinates unchanged.
 
-See `examples/asset-candidates.json` for a compound-card candidate document with an overlapping reusable parent and independent children. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs. Stage2-A v0.2 keeps the v0.1 schema and taxonomy enum contracts unchanged.
+See `examples/asset-candidates.json` for a compound-card candidate document with an overlapping reusable parent, independent children, and all four strategies: `direct_crop`, `foreground_extract`, `advanced_required`, and `do_not_extract`. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs. Strategy Contract v0.3 extends the v0.1 schema enum without changing its fields or the taxonomy enum.
 
 ## Optional icon bbox refinement
 
