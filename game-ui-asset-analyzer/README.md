@@ -46,9 +46,9 @@ Optional controls:
 - `--safety-padding 2`: set final padding around detected foreground.
 - `--ids icon_001,icon_002`: process only verified IDs.
 
-v0.1 processes only `should_extract=true`, `strategy=direct_crop`, `semantic_type=icon`. It estimates background from ROI border pixels, uses adaptive RGB color distance, finds 8-connected components, chooses the component group nearest and overlapping the coarse bbox, and applies deterministic reasonability checks. A final acceptance gate requires area ratio `0.6–1.5`, center shift at most `10px`, and width/height ratios `0.6–1.5`. Accepted results set `use_bbox=refined`; rejected results set `status=fallback` and `use_bbox=coarse`. Results go to `bbox-refinement.json`; `asset-analysis.json` is read-only.
+BBox Refiner v0.2 processes only `should_extract=true`, `strategy=direct_crop`, `semantic_type=icon`. It keeps the v0.1 foreground detector and 8-connected components, but generates multiple single-component and progressively merged bbox candidates. Deterministic scoring considers center distance, coarse overlap, area similarity, and width/height similarity, with a strong oversize penalty. Ranked candidates pass through the unchanged acceptance gate—area ratio `0.6–1.5`, center shift at most `10px`, and width/height ratios `0.6–1.5`—until one succeeds. Output records `candidate_count` and the accepted `selected_candidate_rank`; all rejected candidates produce `status=fallback`, `use_bbox=coarse`, and a null rank. Results go to `bbox-refinement.json`; `asset-analysis.json` is read-only.
 
-With `--debug-dir`, every processed eligible asset writes `<id>-roi.png`, `<id>-mask.png`, and `<id>-overlay.png`. The overlay uses yellow for coarse bbox, blue for ROI, and green for successful refined bbox.
+With `--debug-dir`, every processed eligible asset writes `<id>-roi.png`, `<id>-mask.png`, `<id>-overlay.png`, and `<id>-candidates.png`. The candidate overlay shows the coarse bbox, ROI, top three ranked candidates, and the final accepted bbox when present.
 
 ## Recommended run layout
 

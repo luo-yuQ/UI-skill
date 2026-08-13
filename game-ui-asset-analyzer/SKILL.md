@@ -47,7 +47,7 @@ Run the refiner only after producing and validating `asset-analysis.json`:
 python scripts/bbox_refiner.py --source-image path\to\preview.png --asset-analysis path\to\asset-analysis.json --output path\to\bbox-refinement.json --debug-dir path\to\debug-refiner
 ```
 
-Use `--ids icon_001,icon_002` only when callers provide verified existing IDs. The refiner estimates local border background, creates an adaptive color-distance mask inside an expanded ROI, analyzes 8-connected components, groups nearby icon fragments, and applies small safety padding. A final conservative acceptance gate rejects excessive area, center, or dimension changes: accepted results use `status: success` and `use_bbox: refined`; rejected results use `status: fallback` and `use_bbox: coarse`. The vision model does not participate in refinement and must not generate confidence values.
+Use `--ids icon_001,icon_002` only when callers provide verified existing IDs. BBox Refiner v0.2 estimates local border background, creates an adaptive color-distance mask inside an expanded ROI, and analyzes 8-connected components. It generates multiple single-component and progressively merged bbox candidates, scores them by center proximity, coarse overlap, area similarity, and width/height similarity, and strongly penalizes oversized icon candidates. Try candidates in score order against the existing conservative acceptance gate; accept the first passing candidate, otherwise retain coarse. Record `candidate_count` and `selected_candidate_rank` in `bbox-refinement.json`. The vision model does not participate in refinement and must not generate scores or confidence values.
 
 ## Responsibility boundary
 

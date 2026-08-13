@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/bbox-refinement.schema.json",
-  "title": "Game UI BBox Refinement v0.1",
+  "title": "Game UI BBox Refinement v0.2",
   "description": "Deterministic local foreground bbox suggestions. This artifact never replaces asset-analysis.json.",
   "type": "object",
   "additionalProperties": false,
@@ -13,10 +13,10 @@
     "refinements"
   ],
   "properties": {
-    "schema_version": { "const": "0.1" },
+    "schema_version": { "const": "0.2" },
     "source_image": { "type": "string", "minLength": 1 },
     "source_size": { "$ref": "#/$defs/source_size" },
-    "method": { "const": "local-foreground-v0.1" },
+    "method": { "const": "local-foreground-v0.2" },
     "refinements": {
       "type": "array",
       "items": { "$ref": "#/$defs/refinement" }
@@ -63,6 +63,8 @@
         "refined_bbox",
         "status",
         "use_bbox",
+        "candidate_count",
+        "selected_candidate_rank",
         "confidence",
         "metrics"
       ],
@@ -86,6 +88,13 @@
         },
         "status": { "enum": ["success", "fallback", "failed", "skipped"] },
         "use_bbox": { "enum": ["refined", "coarse"] },
+        "candidate_count": { "type": "integer", "minimum": 0 },
+        "selected_candidate_rank": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
         "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
         "metrics": {
           "anyOf": [
@@ -103,6 +112,8 @@
               "roi_bbox": { "$ref": "#/$defs/bbox" },
               "refined_bbox": { "$ref": "#/$defs/bbox" },
               "use_bbox": { "const": "refined" },
+              "candidate_count": { "type": "integer", "minimum": 1 },
+              "selected_candidate_rank": { "type": "integer", "minimum": 1 },
               "metrics": { "$ref": "#/$defs/metrics" }
             },
             "not": { "required": ["failure_reason"] }
@@ -115,6 +126,8 @@
               "roi_bbox": { "$ref": "#/$defs/bbox" },
               "refined_bbox": { "$ref": "#/$defs/bbox" },
               "use_bbox": { "const": "coarse" },
+              "candidate_count": { "type": "integer", "minimum": 1 },
+              "selected_candidate_rank": { "type": "null" },
               "confidence": { "const": 0.0 },
               "metrics": { "$ref": "#/$defs/metrics" }
             },
@@ -127,6 +140,8 @@
             "properties": {
               "refined_bbox": { "type": "null" },
               "use_bbox": { "const": "coarse" },
+              "candidate_count": { "const": 0 },
+              "selected_candidate_rank": { "type": "null" },
               "confidence": { "const": 0.0 }
             },
             "required": ["failure_reason"]

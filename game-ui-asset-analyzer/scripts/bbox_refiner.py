@@ -20,8 +20,8 @@ from validate_asset_analysis import validate_analysis
 
 ROOT = Path(__file__).resolve().parents[1]
 REFINEMENT_SCHEMA_PATH = ROOT / "schemas" / "bbox-refinement.schema.json"
-METHOD = "local-foreground-v0.1"
-SCHEMA_VERSION = "0.1"
+METHOD = "local-foreground-v0.2"
+SCHEMA_VERSION = "0.2"
 
 # Explicit v0.1 reasonability limits. They intentionally reject large semantic jumps.
 MAX_CENTER_SHIFT_FACTOR = 0.75
@@ -214,30 +214,38 @@ def _component_score(
     return overlap_ratio * 4.0 + proximity * 2.0 + math.sqrt(area_fit) * 0.5
 
 
-def select_component_group(
+def _relevant_components(
     components: list[dict[str, Any]],
     coarse_local: dict[str, int],
 ) -> list[dict[str, Any]]:
-    """Select a relevant primary component and deterministic nearby companions."""
+    """Filter small or remote components without choosing a single winner."""
 
     coarse_area = coarse_local["width"] * coarse_local["height"]
     min_area = max(MIN_COMPONENT_PIXELS, round(coarse_area * 0.006))
     scale = max(coarse_local["width"], coarse_local["height"])
     coarse_center = bbox_center(coarse_local)
-    candidates = []
+    relevant = []
     for component in components:
         if component["area"] < min_area:
             continue
         overlap = _bbox_intersection_area(component["bbox"], coarse_local)
         center_distance = math.dist(component["center"], coarse_center)
         if overlap > 0 or center_distance <= scale * 0.75:
-            candidates.append(component)
-    if not candidates:
+            relevant.append(component)
+    return relevant
+
+
+def generate_component_groups(
+    components: list[dict[str, Any]],
+    coarse_local: dict[str, int],
+) -> list[list[dict[str, Any]]]:
+    """Generate deterministic single-component and progressively merged groups."""
+
+    relevant = _relevant_components(components, coarse_local)
+    if not relevant:
         return []
 
-    primary = max(candidates, key=lambda item: (_component_score(item, coarse_local), item["area"]))
-    selected = [primary]
-    remaining = [component for component in candidates if component is not primary]
+    scale = max(coarse_local["width"], coarse_local["height"])
     merge_distance = max(3.0, scale * MERGE_DISTANCE_FACTOR)
     vicinity = expand_bbox(
         coarse_local,
@@ -247,20 +255,83 @@ def select_component_group(
         ),
         math.ceil(merge_distance),
     )
+    component_order = {id(component): index for index, component in enumerate(relevant)}
+    groups_by_bbox: dict[tuple[int, int, int, int], list[dict[str, Any]]] = {}
 
-    changed = True
-    while changed:
-        changed = False
-        group_bbox = _union_bbox([component["bbox"] for component in selected])
-        for component in list(remaining):
-            if (
-                _bbox_gap(component["bbox"], group_bbox) <= merge_distance
+    def add_group(group: list[dict[str, Any]]) -> None:
+        group_bbox = _union_bbox([component["bbox"] for component in group])
+        key = (
+            group_bbox["x"],
+            group_bbox["y"],
+            group_bbox["width"],
+            group_bbox["height"],
+        )
+        existing = groups_by_bbox.get(key)
+        if existing is None or sum(item["area"] for item in group) > sum(
+            item["area"] for item in existing
+        ):
+            groups_by_bbox[key] = list(group)
+
+    primaries = sorted(
+        relevant,
+        key=lambda item: (
+            -_component_score(item, coarse_local),
+            -item["area"],
+            component_order[id(item)],
+        ),
+    )
+    for primary in primaries:
+        selected = [primary]
+        add_group(selected)
+        remaining = [component for component in relevant if component is not primary]
+        while remaining:
+            group_bbox = _union_bbox([component["bbox"] for component in selected])
+            mergeable = [
+                component
+                for component in remaining
+                if _bbox_gap(component["bbox"], group_bbox) <= merge_distance
                 and _bbox_intersection_area(component["bbox"], vicinity) > 0
-            ):
-                selected.append(component)
-                remaining.remove(component)
-                changed = True
-    return selected
+            ]
+            if not mergeable:
+                break
+            next_component = min(
+                mergeable,
+                key=lambda item: (
+                    _bbox_gap(item["bbox"], group_bbox),
+                    -_component_score(item, coarse_local),
+                    component_order[id(item)],
+                ),
+            )
+            selected.append(next_component)
+            remaining.remove(next_component)
+            add_group(selected)
+
+    return list(groups_by_bbox.values())
+
+
+def select_component_group(
+    components: list[dict[str, Any]],
+    coarse_local: dict[str, int],
+) -> list[dict[str, Any]]:
+    """Compatibility helper returning the highest legacy-style component group."""
+
+    groups = generate_component_groups(components, coarse_local)
+    if not groups:
+        return []
+    return max(
+        groups,
+        key=lambda group: (
+            _component_score(
+                {
+                    "bbox": _union_bbox([item["bbox"] for item in group]),
+                    "center": bbox_center(_union_bbox([item["bbox"] for item in group])),
+                    "area": sum(item["area"] for item in group),
+                },
+                coarse_local,
+            ),
+            sum(item["area"] for item in group),
+        ),
+    )
 
 
 def _clamp_and_pad_bbox(
@@ -295,6 +366,67 @@ def _metrics(
         "area_ratio": round(refined_area / coarse_area, 6),
         "foreground_pixel_ratio": round(min(1.0, selected_pixels / refined_area), 6),
     }
+
+
+def _bbox_candidate_score(
+    coarse_bbox: dict[str, int],
+    candidate_bbox: dict[str, int],
+) -> float:
+    """Score icon geometry deterministically and strongly penalize oversize boxes."""
+
+    coarse_area = coarse_bbox["width"] * coarse_bbox["height"]
+    candidate_area = candidate_bbox["width"] * candidate_bbox["height"]
+    area_ratio = candidate_area / coarse_area
+    width_ratio = candidate_bbox["width"] / coarse_bbox["width"]
+    height_ratio = candidate_bbox["height"] / coarse_bbox["height"]
+    scale = max(coarse_bbox["width"], coarse_bbox["height"])
+    center_distance = math.dist(bbox_center(candidate_bbox), bbox_center(coarse_bbox))
+    center_score = max(0.0, 1.0 - center_distance / max(1.0, scale))
+
+    intersection = _bbox_intersection_area(candidate_bbox, coarse_bbox)
+    union = candidate_area + coarse_area - intersection
+    overlap_score = intersection / max(1, union)
+    area_score = math.exp(-abs(math.log(area_ratio)))
+    dimension_score = (
+        math.exp(-abs(math.log(width_ratio)))
+        + math.exp(-abs(math.log(height_ratio)))
+    ) / 2.0
+
+    # The quadratic area term ensures a 50x36 candidate loses decisively to a
+    # roughly coarse-sized icon candidate even if the larger region overlaps.
+    oversize_penalty = max(0.0, area_ratio - 1.0) ** 2 * 6.0
+    oversize_penalty += max(0.0, width_ratio - 1.25) ** 2 * 2.0
+    oversize_penalty += max(0.0, height_ratio - 1.25) ** 2 * 2.0
+    return round(
+        center_score * 3.0
+        + overlap_score * 3.0
+        + area_score * 2.0
+        + dimension_score * 2.0
+        - oversize_penalty,
+        8,
+    )
+
+
+def _rank_bbox_candidates(
+    coarse_bbox: dict[str, int],
+    candidates: list[dict[str, Any]],
+) -> list[dict[str, Any]]:
+    """Return candidates in stable best-first order."""
+
+    for candidate in candidates:
+        candidate["score"] = _bbox_candidate_score(coarse_bbox, candidate["bbox"])
+    return sorted(
+        candidates,
+        key=lambda item: (
+            -item["score"],
+            math.dist(bbox_center(item["bbox"]), bbox_center(coarse_bbox)),
+            abs(item["bbox"]["width"] * item["bbox"]["height"] - coarse_bbox["width"] * coarse_bbox["height"]),
+            item["bbox"]["y"],
+            item["bbox"]["x"],
+            item["bbox"]["width"],
+            item["bbox"]["height"],
+        ),
+    )
 
 
 def _confidence(
@@ -355,6 +487,8 @@ def _finalize_icon_result(
     coarse_bbox: dict[str, int],
     refined_bbox: dict[str, int],
     metrics: dict[str, float],
+    candidate_count: int = 1,
+    selected_candidate_rank: int = 1,
 ) -> dict[str, Any]:
     """Choose refined or coarse after the conservative final acceptance gate."""
 
@@ -364,6 +498,8 @@ def _finalize_icon_result(
             "refined_bbox": refined_bbox,
             "status": "fallback",
             "use_bbox": "coarse",
+            "candidate_count": candidate_count,
+            "selected_candidate_rank": None,
             "confidence": 0.0,
             "metrics": metrics,
             "failure_reason": "refined bbox rejected by acceptance gate",
@@ -373,8 +509,46 @@ def _finalize_icon_result(
         "refined_bbox": refined_bbox,
         "status": "success",
         "use_bbox": "refined",
+        "candidate_count": candidate_count,
+        "selected_candidate_rank": selected_candidate_rank,
         "confidence": _confidence(coarse_bbox, refined_bbox, metrics),
         "metrics": metrics,
+    }
+
+
+def _select_ranked_candidate(
+    base: dict[str, Any],
+    coarse_bbox: dict[str, int],
+    ranked_candidates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Try candidates in score order and retain coarse only if every gate fails."""
+
+    candidate_count = len(ranked_candidates)
+    for rank, candidate in enumerate(ranked_candidates, start=1):
+        metrics = candidate["metrics"]
+        if _failure_reason(coarse_bbox, candidate["bbox"], metrics) is not None:
+            continue
+        if _passes_icon_acceptance_gate(coarse_bbox, candidate["bbox"], metrics):
+            return _finalize_icon_result(
+                base,
+                coarse_bbox,
+                candidate["bbox"],
+                metrics,
+                candidate_count,
+                rank,
+            )
+
+    best = ranked_candidates[0]
+    return {
+        **base,
+        "refined_bbox": best["bbox"],
+        "status": "fallback",
+        "use_bbox": "coarse",
+        "candidate_count": candidate_count,
+        "selected_candidate_rank": None,
+        "confidence": 0.0,
+        "metrics": best["metrics"],
+        "failure_reason": "all refined bbox candidates rejected by acceptance gate",
     }
 
 
@@ -383,6 +557,7 @@ def refine_icon(
     asset: dict[str, Any],
     expand_px: int | None = None,
     safety_padding: int = 2,
+    debug_candidates_out: list[dict[str, int]] | None = None,
 ) -> tuple[dict[str, Any], np.ndarray]:
     """Refine one eligible icon and return its result plus ROI mask."""
 
@@ -406,44 +581,45 @@ def refine_icon(
         "width": coarse_bbox["width"],
         "height": coarse_bbox["height"],
     }
-    selected = select_component_group(components, coarse_local)
+    component_groups = generate_component_groups(components, coarse_local)
     base = {
         "asset_id": asset["id"],
         "coarse_bbox": coarse_bbox,
         "roi_bbox": roi_bbox,
     }
-    if not selected:
+    if not component_groups:
         return {
             **base,
             "refined_bbox": None,
             "status": "failed",
             "use_bbox": "coarse",
+            "candidate_count": 0,
+            "selected_candidate_rank": None,
             "confidence": 0.0,
             "metrics": None,
             "failure_reason": "no relevant foreground component detected",
         }, mask
 
-    tight_local = _union_bbox([component["bbox"] for component in selected])
-    refined_bbox = _clamp_and_pad_bbox(
-        tight_local,
-        roi_bbox,
-        (image_width, image_height),
-        safety_padding,
-    )
-    selected_pixels = sum(component["area"] for component in selected)
-    metrics = _metrics(coarse_bbox, refined_bbox, selected_pixels)
-    failure = _failure_reason(coarse_bbox, refined_bbox, metrics)
-    if failure is not None:
-        return {
-            **base,
-            "refined_bbox": None,
-            "status": "failed",
-            "use_bbox": "coarse",
-            "confidence": 0.0,
-            "metrics": metrics,
-            "failure_reason": failure,
-        }, mask
-    return _finalize_icon_result(base, coarse_bbox, refined_bbox, metrics), mask
+    bbox_candidates: list[dict[str, Any]] = []
+    for group in component_groups:
+        tight_local = _union_bbox([component["bbox"] for component in group])
+        candidate_bbox = _clamp_and_pad_bbox(
+            tight_local,
+            roi_bbox,
+            (image_width, image_height),
+            safety_padding,
+        )
+        selected_pixels = sum(component["area"] for component in group)
+        bbox_candidates.append(
+            {
+                "bbox": candidate_bbox,
+                "metrics": _metrics(coarse_bbox, candidate_bbox, selected_pixels),
+            }
+        )
+    ranked_candidates = _rank_bbox_candidates(coarse_bbox, bbox_candidates)
+    if debug_candidates_out is not None:
+        debug_candidates_out.extend(dict(candidate["bbox"]) for candidate in ranked_candidates)
+    return _select_ranked_candidate(base, coarse_bbox, ranked_candidates), mask
 
 
 def is_eligible(asset: dict[str, Any]) -> bool:
@@ -462,6 +638,8 @@ def _skipped(asset: dict[str, Any]) -> dict[str, Any]:
         "refined_bbox": None,
         "status": "skipped",
         "use_bbox": "coarse",
+        "candidate_count": 0,
+        "selected_candidate_rank": None,
         "confidence": 0.0,
         "metrics": None,
         "failure_reason": "v0.1 supports only direct_crop icons with should_extract=true",
@@ -474,6 +652,7 @@ def _write_debug(
     asset_id: str,
     result: dict[str, Any],
     mask: np.ndarray,
+    candidate_bboxes: list[dict[str, int]],
 ) -> None:
     debug_dir.mkdir(parents=True, exist_ok=True)
     roi_bbox = result["roi_bbox"]
@@ -490,10 +669,31 @@ def _write_debug(
     cx1, cy1, cx2, cy2 = bbox_edges(result["coarse_bbox"])
     draw.rectangle((cx1, cy1, cx2 - 1, cy2 - 1), outline=(255, 215, 0), width=2)
     draw.rectangle((x1, y1, x2 - 1, y2 - 1), outline=(0, 160, 255), width=2)
-    if result["refined_bbox"] is not None:
+    if result["use_bbox"] == "refined" and result["refined_bbox"] is not None:
         fx1, fy1, fx2, fy2 = bbox_edges(result["refined_bbox"])
         draw.rectangle((fx1, fy1, fx2 - 1, fy2 - 1), outline=(0, 255, 80), width=2)
     overlay.save(debug_dir / f"{asset_id}-overlay.png")
+
+    candidate_overlay = source_image.convert("RGB").copy()
+    candidate_draw = ImageDraw.Draw(candidate_overlay)
+    candidate_draw.rectangle((cx1, cy1, cx2 - 1, cy2 - 1), outline=(255, 215, 0), width=2)
+    candidate_draw.rectangle((x1, y1, x2 - 1, y2 - 1), outline=(0, 160, 255), width=2)
+    candidate_colors = [(255, 0, 255), (255, 128, 0), (0, 255, 255)]
+    for rank, (candidate_bbox, color) in enumerate(
+        zip(candidate_bboxes[:3], candidate_colors),
+        start=1,
+    ):
+        bx1, by1, bx2, by2 = bbox_edges(candidate_bbox)
+        candidate_draw.rectangle((bx1, by1, bx2 - 1, by2 - 1), outline=color, width=1)
+        candidate_draw.text((bx1 + 1, by1 + 1), str(rank), fill=color)
+    if result["use_bbox"] == "refined" and result["refined_bbox"] is not None:
+        fx1, fy1, fx2, fy2 = bbox_edges(result["refined_bbox"])
+        candidate_draw.rectangle(
+            (fx1, fy1, fx2 - 1, fy2 - 1),
+            outline=(0, 255, 80),
+            width=3,
+        )
+    candidate_overlay.save(debug_dir / f"{asset_id}-candidates.png")
 
 
 def validate_refinement(data: Any) -> list[str]:
@@ -550,10 +750,24 @@ def refine_document(
         if not is_eligible(asset):
             refinements.append(_skipped(asset))
             continue
-        result, mask = refine_icon(source_rgb, asset, expand_px, safety_padding)
+        debug_candidates: list[dict[str, int]] = []
+        result, mask = refine_icon(
+            source_rgb,
+            asset,
+            expand_px,
+            safety_padding,
+            debug_candidates,
+        )
         refinements.append(result)
         if debug_dir is not None:
-            _write_debug(debug_dir, source_pil, asset["id"], result, mask)
+            _write_debug(
+                debug_dir,
+                source_pil,
+                asset["id"],
+                result,
+                mask,
+                debug_candidates,
+            )
 
     document = {
         "schema_version": SCHEMA_VERSION,

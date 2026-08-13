@@ -114,6 +114,8 @@ class BBoxRefinerTests(unittest.TestCase):
 
         self.assertEqual("success", result["status"])
         self.assertEqual("refined", result["use_bbox"])
+        self.assertGreaterEqual(result["candidate_count"], 1)
+        self.assertEqual(1, result["selected_candidate_rank"])
         self.assertLess(
             bbox_edge_error(result["refined_bbox"], ground_truth),
             bbox_edge_error(coarse, ground_truth),
@@ -170,6 +172,8 @@ class BBoxRefinerTests(unittest.TestCase):
 
         self.assertEqual("failed", result["status"])
         self.assertEqual("coarse", result["use_bbox"])
+        self.assertEqual(0, result["candidate_count"])
+        self.assertIsNone(result["selected_candidate_rank"])
         self.assertIsNone(result["refined_bbox"])
         self.assertEqual(0.0, result["confidence"])
         self.assertIn("no relevant foreground", result["failure_reason"])
@@ -233,6 +237,7 @@ class BBoxRefinerTests(unittest.TestCase):
 
         self.assertEqual(["skipped", "skipped", "skipped"], [r["status"] for r in document["refinements"]])
         self.assertEqual(["coarse", "coarse", "coarse"], [r["use_bbox"] for r in document["refinements"]])
+        self.assertEqual([0, 0, 0], [r["candidate_count"] for r in document["refinements"]])
         self.assertEqual([], refiner.validate_refinement(document))
 
     def test_ids_filter_processes_only_synthetic_requested_asset(self):
@@ -273,6 +278,8 @@ class BBoxRefinerTests(unittest.TestCase):
         )
         self.assertEqual("fallback", result["status"])
         self.assertEqual("coarse", result["use_bbox"])
+        self.assertEqual(1, result["candidate_count"])
+        self.assertIsNone(result["selected_candidate_rank"])
         self.assertEqual("refined bbox rejected by acceptance gate", result["failure_reason"])
 
     def test_acceptance_gate_rejects_center_shift_over_ten_pixels(self):
@@ -291,6 +298,55 @@ class BBoxRefinerTests(unittest.TestCase):
         )
         self.assertEqual("fallback", result["status"])
         self.assertEqual("coarse", result["use_bbox"])
+
+    def test_retry_uses_second_ranked_candidate_when_first_fails_gate(self):
+        coarse = {"x": 40, "y": 30, "width": 20, "height": 20}
+        bad_bbox = {"x": 35, "y": 25, "width": 30, "height": 30}
+        good_bbox = {"x": 39, "y": 29, "width": 22, "height": 22}
+        ranked = [
+            {
+                "bbox": bad_bbox,
+                "metrics": refiner._metrics(coarse, bad_bbox, 700),
+                "score": 10.0,
+            },
+            {
+                "bbox": good_bbox,
+                "metrics": refiner._metrics(coarse, good_bbox, 400),
+                "score": 9.0,
+            },
+        ]
+        result = refiner._select_ranked_candidate(
+            {"asset_id": "icon_001", "coarse_bbox": coarse, "roi_bbox": coarse},
+            coarse,
+            ranked,
+        )
+        self.assertEqual("success", result["status"])
+        self.assertEqual("refined", result["use_bbox"])
+        self.assertEqual(2, result["candidate_count"])
+        self.assertEqual(2, result["selected_candidate_rank"])
+        self.assertEqual(good_bbox, result["refined_bbox"])
+
+    def test_multi_candidate_scoring_prefers_icon_sized_component_over_large_neighbor(self):
+        image = np.full((90, 130, 3), BACKGROUND, dtype=np.uint8)
+        image[33:55, 46:68] = (235, 205, 70)
+        image[25:61, 70:110] = (255, 235, 90)
+        coarse = {"x": 43, "y": 30, "width": 28, "height": 28}
+        debug_candidates: list[dict[str, int]] = []
+
+        result, _mask = refiner.refine_icon(
+            image,
+            icon_asset("icon_001", coarse),
+            expand_px=40,
+            safety_padding=1,
+            debug_candidates_out=debug_candidates,
+        )
+
+        self.assertEqual("success", result["status"])
+        self.assertEqual("refined", result["use_bbox"])
+        self.assertGreaterEqual(result["candidate_count"], 2)
+        self.assertEqual(1, result["selected_candidate_rank"])
+        self.assertEqual({"x": 45, "y": 32, "width": 24, "height": 24}, result["refined_bbox"])
+        self.assertLess(debug_candidates[0]["width"], 40)
 
     def test_cli_writes_debug_artifacts_without_modifying_analysis(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -337,6 +393,7 @@ class BBoxRefinerTests(unittest.TestCase):
             self.assertTrue((debug_dir / "icon_001-roi.png").is_file())
             self.assertTrue((debug_dir / "icon_001-mask.png").is_file())
             self.assertTrue((debug_dir / "icon_001-overlay.png").is_file())
+            self.assertTrue((debug_dir / "icon_001-candidates.png").is_file())
 
 
 if __name__ == "__main__":
