@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/level1-regions.schema.json",
+  "title": "Stage2-A Level-1 Region Decomposition v0.1 (VLM output)",
+  "description": "Independent raw VLM contract for page-level logical regions. Region is not an asset semantic type.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_image",
+    "source_size",
+    "background_root",
+    "regions"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "source_image": { "type": "string", "minLength": 1 },
+    "source_size": { "$ref": "#/$defs/size" },
+    "background_root": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "node_kind", "requires_reconstruction"],
+      "properties": {
+        "id": { "const": "background_root" },
+        "node_kind": { "const": "background_root" },
+        "requires_reconstruction": { "const": true }
+      }
+    },
+    "regions": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/region" }
+    }
+  },
+  "$defs": {
+    "size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "bbox": {
+      "description": "Original source-image pixel bounds with a top-left origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "region": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "node_kind", "label", "bbox"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^region_[0-9]{3,}$"
+        },
+        "node_kind": { "const": "region" },
+        "label": { "type": "string", "minLength": 1 },
+        "description": { "type": "string" },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    }
+  }
+}
