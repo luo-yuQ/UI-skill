@@ -2,6 +2,16 @@
 
 This Stage2-A skill decomposes a UI into reusable visual assets, assigns the four-state v0.3 extraction strategy contract, prepares a deterministic visual-analysis image, maps visual-model candidate bboxes back into the original source image while building `asset-analysis.json`, and optionally writes standalone bbox-refinement suggestions for eligible icons. It targets visual asset boundaries rather than interaction hit areas. It does not extract assets or overwrite formal bboxes.
 
+## Recursive Stage2-A status
+
+- Level-1 Region Decomposition — **FROZEN**
+- Coordinate Contract v0.1 — **FROZEN**
+- `semantic_decompose` v0.1 — **FROZEN**
+- Node Router v0.1 — **contract implemented / behavior validated**
+- `structural_split` — **prototype**
+- `expand_instances` — **prototype**
+- recursive engine — **not implemented**
+
 ## Requirements
 
 - Python 3.10+
@@ -31,6 +41,16 @@ The builder reads both image files rather than trusting JSON metadata. It valida
 For compatibility, omit `--analysis-image` to treat the source image as the analysis image and leave bbox coordinates unchanged.
 
 See `examples/asset-candidates.json` for a compound-card candidate document with an overlapping reusable parent, independent children, and all four strategies: `direct_crop`, `foreground_extract`, `advanced_required`, and `do_not_extract`. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs. Strategy Contract v0.3 extends the v0.1 schema enum without changing its fields or the taxonomy enum.
+
+## Recursive Stage2-A: Node Router v0.1
+
+Use the production prompt and classification contract in `references/node-router-v0.1.md` on one deterministic Current Node Analysis Image. Validate the raw VLM JSON with `schemas/node-route.schema.json`, then let engineering code resolve the frozen role-to-action mapping:
+
+```powershell
+python scripts/validate_node_route.py path\to\node-route.json
+```
+
+The VLM returns only `node_role`, diagnostic `confidence`, and a non-empty `reason`. It never emits `next_action`; `scripts/validate_node_route.py` owns the deterministic mapping and rejects unknown roles. It does not execute `structural_split`, `expand_instances`, `semantic_decompose`, or tree recursion.
 
 ## Recursive Stage2-A: `semantic_decompose` v0.1
 

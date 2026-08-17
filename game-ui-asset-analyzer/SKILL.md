@@ -1,6 +1,6 @@
 ---
 name: game-ui-asset-analyzer
-description: Decompose a game UI screenshot into reusable visual asset candidates, assign the Stage2-A v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
+description: Classify recursive UI nodes with the Stage2-A Node Router v0.1 contract, decompose selected components into reusable visual asset candidates, assign the v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A node routing, UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for recursive traversal, image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
 ---
 
 # Game UI Asset Analyzer
@@ -9,7 +9,11 @@ Analyze reusable visual assets in a deterministic analysis image while leaving r
 
 ## Workflow
 
-For an already-selected recursive-tree node whose role is `component` or `component_instance` and whose assigned strategy is `semantic_decompose`, use [references/semantic-decompose-v0.1.md](references/semantic-decompose-v0.1.md), emit `schemas/semantic-decomposition.schema.json`, and run `scripts/validate_semantic_decomposition.py` against the actual Analysis Image. That scoped contract identifies direct visual-asset children only. It does not classify the node, route prompts, traverse the tree, schedule branches, or extract pixels.
+For one Current Node, use [references/node-router-v0.1.md](references/node-router-v0.1.md) with the existing deterministic Analysis Image, emit only `node_role`, diagnostic `confidence`, and `reason` matching `schemas/node-route.schema.json`, and run `scripts/validate_node_route.py`. Let `ROLE_ACTION_MAP` resolve `next_action`; never ask the VLM to emit it. Do not execute the action or traverse the tree.
+
+When the resolved action is `semantic_decompose`, use [references/semantic-decompose-v0.1.md](references/semantic-decompose-v0.1.md), emit `schemas/semantic-decomposition.schema.json`, and run `scripts/validate_semantic_decomposition.py` against the actual Analysis Image. That frozen scoped contract identifies direct visual-asset children only; do not change its taxonomy or behavior.
+
+Current recursive Stage2-A status: Level-1 Region Decomposition, Coordinate Contract v0.1, and `semantic_decompose` v0.1 are **FROZEN**; Node Router v0.1 is **contract implemented / behavior validated**; `structural_split` and `expand_instances` are **prototypes**; the recursive engine is **not implemented**.
 
 The workflow below remains the existing full-screen flat asset-analysis workflow and is unchanged by the node-scoped contract.
 
