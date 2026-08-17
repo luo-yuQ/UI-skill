@@ -9,6 +9,10 @@ Analyze reusable visual assets in a deterministic analysis image while leaving r
 
 ## Workflow
 
+For an already-selected recursive-tree node whose role is `component` or `component_instance` and whose assigned strategy is `semantic_decompose`, use [references/semantic-decompose-v0.1.md](references/semantic-decompose-v0.1.md), emit `schemas/semantic-decomposition.schema.json`, and run `scripts/validate_semantic_decomposition.py` against the actual Analysis Image. That scoped contract identifies direct visual-asset children only. It does not classify the node, route prompts, traverse the tree, schedule branches, or extract pixels.
+
+The workflow below remains the existing full-screen flat asset-analysis workflow and is unchanged by the node-scoped contract.
+
 1. Receive the original source image, such as `input/preview.png`.
 2. Run `scripts/prepare_analysis_input.py` with the source image. Create `analysis/analysis-input.png` at a maximum width of 1024 pixels without upscaling, cropping, or padding, and create `analysis/analysis-input-meta.json` from real image dimensions.
 3. Inspect only `analysis-input.png`. Treat its top-left corner as `(0, 0)`, with `x` increasing rightward and `y` downward. Record integer analysis-image pixel bounds only as `x`, `y`, `width`, and `height`.

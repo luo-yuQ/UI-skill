@@ -32,6 +32,18 @@ For compatibility, omit `--analysis-image` to treat the source image as the anal
 
 See `examples/asset-candidates.json` for a compound-card candidate document with an overlapping reusable parent, independent children, and all four strategies: `direct_crop`, `foreground_extract`, `advanced_required`, and `do_not_extract`. The final document always contains runtime-generated `schema_version`, `source_image`, `source_size`, `taxonomy_version`, and asset IDs. Strategy Contract v0.3 extends the v0.1 schema enum without changing its fields or the taxonomy enum.
 
+## Recursive Stage2-A: `semantic_decompose` v0.1
+
+For an already-selected `component` or `component_instance`, use the production prompt and behavior contract in `references/semantic-decompose-v0.1.md`. Its VLM JSON must conform to `schemas/semantic-decomposition.schema.json`; all child bboxes are complete visible extents in the deterministic 1024-pixel-wide Analysis Image coordinate space.
+
+Validate the immutable VLM output against the actual Analysis Image:
+
+```powershell
+python scripts/validate_semantic_decomposition.py path\to\semantic-decomposition.json --analysis-image path\to\analysis-image.png
+```
+
+This validator checks only schema, enums, decision consistency, required fields, unique child IDs, declared/actual Analysis Image size, confidence, and bbox bounds. It never calls a VLM, changes a bbox, rejects overlap, or judges baked-in text, coherent artwork, or frame semantics. Coordinate preparation and Analysis Image-to-Node Crop mapping remain in the existing Coordinate Contract implementation.
+
 ## Optional icon bbox refinement
 
 After validating `asset-analysis.json`, run:
