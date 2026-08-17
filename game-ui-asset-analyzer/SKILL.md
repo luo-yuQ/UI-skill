@@ -1,6 +1,6 @@
 ---
 name: game-ui-asset-analyzer
-description: Classify recursive UI nodes with the Stage2-A Node Router v0.1 contract, split structural groups into stable direct regions, expand repeated groups into peer component instances, decompose selected components into reusable visual asset candidates, assign the v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A node routing, structural splitting, repeated-instance expansion, UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for recursive traversal, image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
+description: Classify recursive UI nodes with the Stage2-A Node Router v0.1 contract, split structural groups into stable direct regions, expand repeated groups into peer component instances, decompose selected components into reusable visual asset candidates, deterministically resolve terminal asset/stop state, assign the v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A node routing, structural splitting, repeated-instance expansion, terminal-state resolution, UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for recursive runtime or traversal, image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
 ---
 
 # Game UI Asset Analyzer
@@ -17,7 +17,9 @@ When the resolved action is `expand_instances`, use [references/expand-instances
 
 When the resolved action is `semantic_decompose`, use [references/semantic-decompose-v0.1.md](references/semantic-decompose-v0.1.md), emit `schemas/semantic-decomposition.schema.json`, and run `scripts/validate_semantic_decomposition.py` against the actual Analysis Image. That frozen scoped contract identifies direct visual-asset children only; do not change its taxonomy or behavior.
 
-Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, `semantic_decompose` v0.1, `structural_split` v0.1, and `expand_instances` v0.1 are **FROZEN**; Node Router v0.1 is **contract implemented / behavior validated**; the recursive engine is **not implemented**.
+Use [references/asset-stop-contract-v0.1.md](references/asset-stop-contract-v0.1.md) and `scripts/resolve_terminal_state.py` to resolve terminal state without an image or VLM call. Stop Router `asset` nodes and valid `semantic_decompose` children; shortcut `expand_instances` children to `component_instance -> semantic_decompose`; send unclassified `structural_split` children back to the Router. Do not execute the returned action or implement traversal.
+
+Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, Node Router v0.1, `semantic_decompose` v0.1, `structural_split` v0.1, `expand_instances` v0.1, and Asset / Stop Contract v0.1 are **FROZEN**; Recursive Runtime is **not implemented**.
 
 The workflow below remains the existing full-screen flat asset-analysis workflow and is unchanged by the node-scoped contract.
 

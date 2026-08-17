@@ -7,10 +7,11 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 - Level-1 Region Decomposition v0.1 — **FROZEN**
 - Coordinate Contract v0.1 — **FROZEN**
 - `semantic_decompose` v0.1 — **FROZEN**
-- Node Router v0.1 — **contract implemented / behavior validated**
+- Node Router v0.1 — **FROZEN**
 - `structural_split` v0.1 — **FROZEN**
 - `expand_instances` v0.1 — **FROZEN**
-- recursive engine — **not implemented**
+- Asset / Stop Contract v0.1 — **FROZEN**
+- Recursive Runtime — **not implemented**
 
 ## Requirements
 
@@ -101,6 +102,21 @@ python scripts/validate_semantic_decomposition.py path\to\semantic-decomposition
 ```
 
 This validator checks only schema, enums, decision consistency, required fields, unique child IDs, declared/actual Analysis Image size, confidence, and bbox bounds. It never calls a VLM, changes a bbox, rejects overlap, or judges baked-in text, coherent artwork, or frame semantics. Coordinate preparation and Analysis Image-to-Node Crop mapping remain in the existing Coordinate Contract implementation.
+
+## Recursive Stage2-A: Asset / Stop Contract v0.1
+
+Use the deterministic contract in `references/asset-stop-contract-v0.1.md` to decide whether a node is terminal. It adds no stop prompt or VLM call. The resolver reuses the existing Router role-to-action mapping and reads the frozen taxonomy from the semantic-decomposition schema:
+
+```powershell
+python scripts/resolve_terminal_state.py --node-role asset
+python scripts/resolve_terminal_state.py --produced-by semantic_decompose --taxonomy illustration
+python scripts/resolve_terminal_state.py --produced-by expand_instances
+python scripts/resolve_terminal_state.py --produced-by structural_split
+```
+
+Outputs conform to `schemas/asset-stop-result.schema.json`. Valid semantic-decomposition children stop directly, expanded instances continue directly to semantic decomposition, and unclassified structural children return `requires_router: true`. Conflicting provenance and roles fail explicitly. The resolver does not read images, execute actions, traverse nodes, or implement Recursive Runtime.
+
+Deferred: `retain_composite` and composite asset retention policy.
 
 ## Optional icon bbox refinement
 
