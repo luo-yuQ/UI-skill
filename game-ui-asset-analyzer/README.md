@@ -4,12 +4,12 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 
 ## Recursive Stage2-A status
 
-- Level-1 Region Decomposition — **FROZEN**
+- Level-1 Region Decomposition v0.1 — **FROZEN**
 - Coordinate Contract v0.1 — **FROZEN**
 - `semantic_decompose` v0.1 — **FROZEN**
 - Node Router v0.1 — **contract implemented / behavior validated**
-- `structural_split` — **prototype**
-- `expand_instances` — **prototype**
+- `structural_split` v0.1 — **FROZEN**
+- `expand_instances` — **prototype / not frozen**
 - recursive engine — **not implemented**
 
 ## Requirements
@@ -51,6 +51,25 @@ python scripts/validate_node_route.py path\to\node-route.json
 ```
 
 The VLM returns only `node_role`, diagnostic `confidence`, and a non-empty `reason`. It never emits `next_action`; `scripts/validate_node_route.py` owns the deterministic mapping and rejects unknown roles. It does not execute `structural_split`, `expand_instances`, `semantic_decompose`, or tree recursion.
+
+## Recursive Stage2-A: `structural_split` v0.1
+
+For an already-selected `structural_group`, use the production prompt and behavior contract in `references/structural-split-v0.1.md`. It emits only stable Direct Children, preserves a repeated collection as one structural child, and supports `no_useful_structural_split: true` instead of manufacturing an ineffective near-parent-sized child.
+
+Prepare the shared deterministic 1024-pixel-wide Node Crop Analysis Image, then validate the immutable VLM output against that real image:
+
+```powershell
+python scripts/prepare_analysis_input.py --source-image path\to\node-crop.png --output-image path\to\analysis-image.png --metadata-output path\to\analysis-image-meta.json --max-width 1024 --force-width
+python scripts/validate_structural_split.py path\to\structural-split.json --analysis-image path\to\analysis-image.png
+```
+
+For optional human review, render the validated bboxes directly in Analysis Image coordinates:
+
+```powershell
+python scripts/render_structural_overlay.py --analysis-image path\to\analysis-image.png --structural-split path\to\structural-split.json --output-image path\to\structural-overlay.png
+```
+
+The validator checks only schema, decision consistency, required fields, unique child IDs, numeric ranges, and real-image bbox bounds. The overlay does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Child nodes are intended to re-enter the Router only when a future orchestration layer exists; recursive traversal is not implemented.
 
 ## Recursive Stage2-A: `semantic_decompose` v0.1
 

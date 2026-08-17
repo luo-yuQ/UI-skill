@@ -19,15 +19,16 @@ PNG_COMPRESS_LEVEL = 9
 def calculate_analysis_size(
     source_size: tuple[int, int],
     max_width: int = DEFAULT_MAX_WIDTH,
+    force_width: bool = False,
 ) -> tuple[int, int]:
-    """Return a proportional size capped by max_width without upscaling."""
+    """Return a proportional width-capped or exact-width analysis size."""
 
     source_width, source_height = source_size
     if source_width <= 0 or source_height <= 0:
         raise ValueError(f"source image has invalid dimensions: {source_width}x{source_height}")
     if max_width <= 0:
         raise ValueError("max width must be greater than zero")
-    if source_width <= max_width:
+    if source_width <= max_width and not force_width:
         return source_width, source_height
     analysis_height = max(1, round(source_height * max_width / source_width))
     return max_width, analysis_height
@@ -74,8 +75,9 @@ def prepare_analysis_input(
     output_image: Path,
     metadata_output: Path,
     max_width: int = DEFAULT_MAX_WIDTH,
+    force_width: bool = False,
 ) -> dict[str, Any]:
-    """Read the real source image, write the capped PNG, and return metadata."""
+    """Read the source, write a proportional PNG, and return real-size metadata."""
 
     if not source_image.is_file():
         raise ValueError(f"source image does not exist or is not a file: {source_image}")
@@ -83,7 +85,11 @@ def prepare_analysis_input(
         with Image.open(source_image) as opened:
             opened.load()
             source_size = opened.size
-            analysis_size = calculate_analysis_size(source_size, max_width)
+            analysis_size = calculate_analysis_size(
+                source_size,
+                max_width,
+                force_width=force_width,
+            )
             if analysis_size != source_size:
                 prepared = _resize_ready(opened).resize(
                     analysis_size,
@@ -124,6 +130,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-image", required=True, type=Path)
     parser.add_argument("--metadata-output", required=True, type=Path)
     parser.add_argument("--max-width", type=int, default=DEFAULT_MAX_WIDTH)
+    parser.add_argument(
+        "--force-width",
+        action="store_true",
+        help="resize to exactly --max-width, including deterministic upscaling",
+    )
     return parser
 
 
@@ -135,6 +146,7 @@ def main(argv: list[str] | None = None) -> int:
             args.output_image,
             args.metadata_output,
             args.max_width,
+            force_width=args.force_width,
         )
     except (OSError, UnicodeError, ValueError) as exc:
         print(f"Preparation failed: {exc}", file=sys.stderr)

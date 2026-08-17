@@ -1,4 +1,4 @@
 interface:
   display_name: "Game UI Asset Analyzer"
-  short_description: "Route UI nodes and analyze reusable visual assets"
-  default_prompt: "Use $game-ui-asset-analyzer to route this UI node, then analyze reusable visual assets when the deterministic action selects semantic decomposition."
+  short_description: "Route, structurally split, and analyze game UI nodes"
+  default_prompt: "Use $game-ui-asset-analyzer to route this UI node and apply the selected frozen structural-split or semantic-decomposition contract."
