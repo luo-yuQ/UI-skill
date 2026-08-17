@@ -9,7 +9,7 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 - `semantic_decompose` v0.1 — **FROZEN**
 - Node Router v0.1 — **contract implemented / behavior validated**
 - `structural_split` v0.1 — **FROZEN**
-- `expand_instances` — **prototype / not frozen**
+- `expand_instances` v0.1 — **FROZEN**
 - recursive engine — **not implemented**
 
 ## Requirements
@@ -70,6 +70,25 @@ python scripts/render_structural_overlay.py --analysis-image path\to\analysis-im
 ```
 
 The validator checks only schema, decision consistency, required fields, unique child IDs, numeric ranges, and real-image bbox bounds. The overlay does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Child nodes are intended to re-enter the Router only when a future orchestration layer exists; recursive traversal is not implemented.
+
+## Recursive Stage2-A: `expand_instances` v0.1
+
+For an already-selected `repeated_group`, use the production prompt and behavior contract in `references/expand-instances-v0.1.md`. It emits only Direct Child Instances of one shared component template, keeps instance internals intact, and records visibility limits with `partial_instance`.
+
+Reuse the shared deterministic 1024-pixel-wide Node Crop Analysis Image preparation, then validate the immutable VLM output against that real image:
+
+```powershell
+python scripts/prepare_analysis_input.py --source-image path\to\node-crop.png --output-image path\to\analysis-image.png --metadata-output path\to\analysis-image-meta.json --max-width 1024 --force-width
+python scripts/validate_expand_instances.py path\to\instances.json --analysis-image path\to\analysis-image.png
+```
+
+For optional human review, render instance IDs, the shared `instance_type`, and partial markers directly in Analysis Image coordinates:
+
+```powershell
+python scripts/render_instances_overlay.py --analysis-image path\to\analysis-image.png --instances path\to\instances.json --output-image path\to\instances-overlay.png
+```
+
+The validator checks only schema, exact `repeat_count`, required fields, unique instance IDs, numeric ranges, `partial_instance`, and real-image bbox bounds. The renderer reuses the existing deterministic overlay layout utilities; it does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Instances may re-enter the Router only when a future orchestration layer exists; recursive traversal is not implemented.
 
 ## Recursive Stage2-A: `semantic_decompose` v0.1
 

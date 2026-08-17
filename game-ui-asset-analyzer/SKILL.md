@@ -1,6 +1,6 @@
 ---
 name: game-ui-asset-analyzer
-description: Classify recursive UI nodes with the Stage2-A Node Router v0.1 contract, split structural groups into stable direct regions, decompose selected components into reusable visual asset candidates, assign the v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A node routing, structural splitting, UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for recursive traversal, repeated-instance expansion, image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
+description: Classify recursive UI nodes with the Stage2-A Node Router v0.1 contract, split structural groups into stable direct regions, expand repeated groups into peer component instances, decompose selected components into reusable visual asset candidates, assign the v0.3 four-state extraction strategy contract, map candidate bounding boxes back to original-image pixels, and optionally generate deterministic local bbox-refinement suggestions for direct-crop icons. Use for Stage2-A node routing, structural splitting, repeated-instance expansion, UI asset decomposition, strategy analysis, and icon bbox QA with reproducible coordinate spaces; do not use for recursive traversal, image extraction, segmentation models, alpha matting, pixel generation, engine assembly, or final PNG manifests.
 ---
 
 # Game UI Asset Analyzer
@@ -13,9 +13,11 @@ For one Current Node, use [references/node-router-v0.1.md](references/node-route
 
 When the resolved action is `structural_split`, use [references/structural-split-v0.1.md](references/structural-split-v0.1.md), emit `schemas/structural-split.schema.json`, and run `scripts/validate_structural_split.py` against the actual Analysis Image. Keep repeated collections whole, emit only direct structural children, and optionally create a human-review overlay with `scripts/render_structural_overlay.py`. Do not feed the overlay back into the model or change the result from it.
 
+When the resolved action is `expand_instances`, use [references/expand-instances-v0.1.md](references/expand-instances-v0.1.md), emit `schemas/expand-instances.schema.json`, and run `scripts/validate_expand_instances.py` against the actual Analysis Image. Emit only peer component instances of the repeated template, keep instance internals intact, and optionally create a human-review overlay with `scripts/render_instances_overlay.py`. Do not feed the overlay back into the model or change the result from it.
+
 When the resolved action is `semantic_decompose`, use [references/semantic-decompose-v0.1.md](references/semantic-decompose-v0.1.md), emit `schemas/semantic-decomposition.schema.json`, and run `scripts/validate_semantic_decomposition.py` against the actual Analysis Image. That frozen scoped contract identifies direct visual-asset children only; do not change its taxonomy or behavior.
 
-Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, `semantic_decompose` v0.1, and `structural_split` v0.1 are **FROZEN**; Node Router v0.1 is **contract implemented / behavior validated**; `expand_instances` is a **prototype / not frozen**; the recursive engine is **not implemented**.
+Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, `semantic_decompose` v0.1, `structural_split` v0.1, and `expand_instances` v0.1 are **FROZEN**; Node Router v0.1 is **contract implemented / behavior validated**; the recursive engine is **not implemented**.
 
 The workflow below remains the existing full-screen flat asset-analysis workflow and is unchanged by the node-scoped contract.
 
