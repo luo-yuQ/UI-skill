@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Start or resume Recursive Runtime with interactive file adapters."""
+"""Start or resume Recursive Runtime with a selected visual adapter."""
 
 from __future__ import annotations
 
@@ -8,11 +8,16 @@ import sys
 from pathlib import Path
 
 from interactive_file_adapter import InteractiveFileAdapter
+from production_visual_adapter import (
+    ProductionVisualAdapter,
+    build_production_runtime_adapters,
+)
 from recursive_runtime import (
     RecursiveRuntime,
     RuntimeAdapters,
     RuntimeConfig,
 )
+from vlm_client import VLMClientConfig, create_configured_vlm_client
 
 
 def build_interactive_adapters(run_dir: Path) -> RuntimeAdapters:
@@ -24,14 +29,27 @@ def build_interactive_adapters(run_dir: Path) -> RuntimeAdapters:
     )
 
 
+def build_adapters(adapter: str, run_dir: Path) -> RuntimeAdapters:
+    if adapter == "interactive":
+        return build_interactive_adapters(run_dir)
+    config = VLMClientConfig.from_env()
+    client = create_configured_vlm_client(config)
+    return build_production_runtime_adapters(ProductionVisualAdapter(client))
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Start or resume Stage2-A Recursive Runtime via JSON files."
+        description="Start or resume Stage2-A Recursive Runtime with a visual adapter."
     )
     parser.add_argument("--run-dir", required=True, type=Path)
     parser.add_argument("--root-node-crop", type=Path)
     parser.add_argument("--root-id", default="root")
     parser.add_argument("--resume", action="store_true")
+    parser.add_argument(
+        "--adapter",
+        choices=("interactive", "production"),
+        default="interactive",
+    )
     parser.add_argument(
         "--validation-mode",
         choices=("mechanics", "real_image"),
@@ -57,8 +75,8 @@ def _print_result(runtime: RecursiveRuntime, result: str) -> None:
 
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
-    adapters = build_interactive_adapters(args.run_dir)
     try:
+        adapters = build_adapters(args.adapter, args.run_dir)
         if args.resume:
             runtime = RecursiveRuntime.load(
                 run_dir=args.run_dir,
@@ -89,4 +107,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

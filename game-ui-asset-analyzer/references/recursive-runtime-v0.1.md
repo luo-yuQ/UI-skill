@@ -1,10 +1,39 @@
 # Recursive Runtime v0.1
 
-Status: **IMPLEMENTED / mechanics validated / real-image R5 pending Interactive Adapter rerun**
+Status: **IMPLEMENTED / mechanics validated**
+
+Production Visual Adapter: **IMPLEMENTED**
+
+Responses API VLM Client: **IMPLEMENTED / real API smoke test pending**
+
+Real-image R5: **PENDING**
 
 Freeze status: not frozen. The earlier hard-coded Backpack run validated Runtime mechanics only; it is not real-image evidence. Real-image R5 must be rerun through an Interactive or Production Visual Adapter.
 
 ## Responsibility boundary
+
+The architecture is intentionally layered as follows:
+
+```text
+Stage2-A Workflow
+        |
+        v
+RecursiveRuntime / Workflow Runtime
+        |
+        v
+Visual Adapter Boundary
+        |
+        v
+ProductionVisualAdapter
+        |
+        v
+VLMClient
+        |
+        v
+Visual Model
+```
+
+Router is a Stage2-A Workflow capability alongside `structural_split`, `expand_instances`, and `semantic_decompose`. `ProductionVisualAdapter` is not a fifth peer strategy: it is the one shared model-call implementation for those four capabilities. The existing four Adapter Protocols remain separate Runtime contracts.
 
 The Runtime owns Node state, per-level queues, adapter call order, deterministic provenance shortcuts, bbox transforms, recursive child crops and Analysis Images, parent-child relations, depth, tree persistence, terminal scheduling, and the repeated-instance cost policy. It does not infer visual semantics from filenames, labels, grids, item counts, or domain terms.
 
@@ -16,6 +45,10 @@ The VLM-facing adapters own only their frozen scoped outputs:
 - `SemanticDecomposeAdapter.run(analysis_image)` returns a frozen `semantic_decompose` document.
 
 Every result is passed to its existing frozen validator. The Runtime contains no prompt text, provider code, workspace search, retry framework, verifier, or visual fallback guessing. `scripts/fake_runtime_adapters.py` provides deterministic fixtures only.
+
+`scripts/production_visual_adapter.py` maps each visual call to exactly one frozen reference and schema, sends only that reference, the stable Stage2-A system prompt, and the current Analysis Image through the shared `VLMClient`, then applies the existing frozen validator. The three small `run()` compatibility views only preserve the existing Protocol method names; all four views delegate to one `ProductionVisualAdapter` and one client. The adapter does not resolve `next_action`, mutate Runtime state, create children, crop images, or schedule queues.
+
+`scripts/vlm_client.py` defines the provider-neutral `VLMClient.infer_json(...)` interface and implements `ResponsesAPIVLMClient` for the verified `POST /v1/responses` contract. Configuration comes from `STAGE2A_VLM_BASE_URL`, `STAGE2A_VLM_API_KEY`, `STAGE2A_VLM_MODEL`, and optional `STAGE2A_VLM_TIMEOUT`. The client sends Bearer authentication, a local PNG/JPEG data URL, `instructions`, user `input_text`, `input_image`, and `max_output_tokens: 4000`; it deliberately ignores `response_schema` because no structured-output field was verified. It traverses response messages/content for `output_text` and applies strict `json.loads` without fence removal, repair, extraction heuristics, or retry. It never falls back to Fake or Fixture adapters. The API key is excluded from repr, safe metadata, manifests, logs, provider diagnostics, and exception text.
 
 Adapter is required; a specific provider is optional. Runtime Core needs a contract-compatible Strategy Adapter for the action it is about to execute, but that adapter may be backed by a production VLM provider, TRAE test integration, fake, fixture, or a future provider. Autonomous production execution may require a concrete production implementation, but the absence of one is not a Runtime-wide blocked condition. If the current action has no injected adapter, the current Node records `adapter_unavailable` as a failure under the existing error model.
 
@@ -32,8 +65,8 @@ Response envelopes conform to `schemas/interactive-adapter-response.schema.json`
 Use the minimal entrypoint:
 
 ```powershell
-python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --root-node-crop path/to/node-crop.png --validation-mode real_image
-python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --resume
+python scripts/run_recursive_runtime.py --adapter interactive --run-dir runs/my-r5 --root-node-crop path/to/node-crop.png --validation-mode real_image
+python scripts/run_recursive_runtime.py --adapter interactive --run-dir runs/my-r5 --resume
 ```
 
 Between calls, the visual operator writes only `adapter-responses/<request-id>.json`. The operator must not modify Runtime state or tree artifacts.
@@ -116,7 +149,7 @@ The terminal run result is `complete`, `complete_with_deferred`, `failed`, or `b
 
 `RuntimeConfig.validation_mode` is `mechanics` or `real_image`. Fake and fixture adapters are valid mechanics tools, but Runtime rejects a `real_image` configuration containing either type. Interactive visual and production visual adapters are eligible for real-image runs.
 
-Every manifest records `validation_mode`, `adapter_types` for all four Adapter slots, and `real_visual_inference_used`. A mechanics fake/fixture run records false. An interactive run records true only after at least one response passes both envelope and frozen-result validation and is consumed. Merely creating a request or entering `waiting_for_adapter` does not count as real visual inference.
+Every manifest records `validation_mode`, `adapter_types` for all four Adapter slots, and `real_visual_inference_used`. The unified production implementation is recorded as `production_visual` in every slot. A mechanics fake/fixture run records false. Interactive execution records true only after at least one response passes both envelope and frozen-result validation and is consumed; production execution records true only after a real client response passes the frozen strategy validation and is consumed by Runtime. Merely constructing an adapter, creating an interactive request, or entering `waiting_for_adapter` does not count as real visual inference.
 
 ## Runtime failures and semantic warnings
 
