@@ -1,8 +1,8 @@
 # Recursive Runtime v0.1
 
-Status: **IMPLEMENTED / R5 real-image validated / awaiting R6 generalization**
+Status: **IMPLEMENTED / mechanics validated / real-image R5 pending Interactive Adapter rerun**
 
-Freeze status: not frozen. R5 Backpack integration validated the Runtime mechanics; R6 generalization remains pending.
+Freeze status: not frozen. The earlier hard-coded Backpack run validated Runtime mechanics only; it is not real-image evidence. Real-image R5 must be rerun through an Interactive or Production Visual Adapter.
 
 ## Responsibility boundary
 
@@ -18,6 +18,25 @@ The VLM-facing adapters own only their frozen scoped outputs:
 Every result is passed to its existing frozen validator. The Runtime contains no prompt text, provider code, workspace search, retry framework, verifier, or visual fallback guessing. `scripts/fake_runtime_adapters.py` provides deterministic fixtures only.
 
 Adapter is required; a specific provider is optional. Runtime Core needs a contract-compatible Strategy Adapter for the action it is about to execute, but that adapter may be backed by a production VLM provider, TRAE test integration, fake, fixture, or a future provider. Autonomous production execution may require a concrete production implementation, but the absence of one is not a Runtime-wide blocked condition. If the current action has no injected adapter, the current Node records `adapter_unavailable` as a failure under the existing error model.
+
+## Interactive File Adapter bridge
+
+`scripts/interactive_file_adapter.py` implements Router and strategy Adapter calls through durable files while retaining the existing synchronous Protocol signatures. It does not add a VLM output contract. Requests identify the existing frozen contract, and response `result` objects must validate unchanged against that contract.
+
+When no response exists, the adapter writes `adapter-requests/<request-id>.json` and raises the Runtime's normal waiting control signal. Runtime persists `pending_adapter_request` in `runtime-state.json`, restores the current Node to `pending` or `ready`, reinserts it at the head of `current_level_queue`, writes a waiting manifest, and returns `waiting_for_adapter`. This state is neither failed, blocked, done, nor active completion.
+
+`pending_adapter_request` records `request_id`, `node_id`, `adapter_kind`, `analysis_image`, `request_path`, and `response_path`. The request counter is also persisted. Resume loads `tree.json` and `runtime-state.json`; an unanswered request reuses the same ID and request file. Once a response exists, the bridge validates its envelope, Runtime validates the contained frozen result, marks the request consumed, clears pending state, and continues the original Node action. Queue mutation, bbox transforms, crops, children, depth, and deferred decisions remain Runtime-owned.
+
+Response envelopes conform to `schemas/interactive-adapter-response.schema.json`. Request ID and adapter kind must match, and `result` must exist. Invalid envelopes produce `adapter_response_invalid`; invalid results fail their existing frozen validator. Neither is automatically repaired or retried.
+
+Use the minimal entrypoint:
+
+```powershell
+python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --root-node-crop path/to/node-crop.png --validation-mode real_image
+python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --resume
+```
+
+Between calls, the visual operator writes only `adapter-responses/<request-id>.json`. The operator must not modify Runtime state or tree artifacts.
 
 ## Level-by-level execution
 
@@ -74,13 +93,15 @@ For `semantic_decompose` decision `decompose`, each valid visual child becomes a
 
 ## Store, state, and run result
 
-`NodeStore` rejects duplicate IDs, reads and updates nodes by ID, preserves ordered parent-child relations, and writes the complete tree snapshot. A run persists:
+`NodeStore` rejects duplicate IDs, reads and updates nodes by ID, preserves ordered parent-child relations, writes the complete tree snapshot, and reloads it for Interactive Adapter resume. A run persists:
 
 ```text
 runs/<run-id>/
 |-- run-manifest.json
 |-- runtime-state.json
 |-- tree.json
+|-- adapter-requests/<request-id>.json
+|-- adapter-responses/<request-id>.json
 `-- nodes/<node-id>/
     |-- node.json
     |-- node-crop.png             # root/recursive input nodes, not asset children
@@ -89,7 +110,13 @@ runs/<run-id>/
     `-- strategy-result.json      # when a strategy ran
 ```
 
-The run result is `complete`, `complete_with_deferred`, `failed`, or `blocked`. `run-manifest.json` separately records `active_execution_complete`, `fully_decomposed`, `runtime_failures`, and `semantic_warnings`.
+The terminal run result is `complete`, `complete_with_deferred`, `failed`, or `blocked`. Interactive execution may instead return the non-terminal `waiting_for_adapter`. `run-manifest.json` separately records `active_execution_complete`, `fully_decomposed`, `pending_adapter_request`, `runtime_failures`, and `semantic_warnings`.
+
+## Validation provenance
+
+`RuntimeConfig.validation_mode` is `mechanics` or `real_image`. Fake and fixture adapters are valid mechanics tools, but Runtime rejects a `real_image` configuration containing either type. Interactive visual and production visual adapters are eligible for real-image runs.
+
+Every manifest records `validation_mode`, `adapter_types` for all four Adapter slots, and `real_visual_inference_used`. A mechanics fake/fixture run records false. An interactive run records true only after at least one response passes both envelope and frozen-result validation and is consumed. Merely creating a request or entering `waiting_for_adapter` does not count as real visual inference.
 
 ## Runtime failures and semantic warnings
 

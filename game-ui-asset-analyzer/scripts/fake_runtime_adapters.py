@@ -14,8 +14,13 @@ class FixtureResultAdapter:
     def __init__(
         self,
         results: Mapping[str, dict[str, Any]] | list[dict[str, Any]],
+        *,
+        adapter_type: str = "fixture",
     ) -> None:
+        if adapter_type not in {"fake", "fixture"}:
+            raise ValueError("fixture adapter_type must be 'fake' or 'fixture'")
         self._results = copy.deepcopy(results)
+        self.adapter_type = adapter_type
         self.calls: list[str] = []
 
     def _lookup(self, analysis_image: Path) -> dict[str, Any]:
@@ -65,4 +70,3 @@ class FixtureExpandInstancesAdapter(FixtureResultAdapter):
 class FixtureSemanticDecomposeAdapter(FixtureResultAdapter):
     def run(self, analysis_image: Path) -> dict[str, Any]:
         return self._run(analysis_image)
-

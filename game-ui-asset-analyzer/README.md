@@ -11,7 +11,7 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 - `structural_split` v0.1 — **FROZEN**
 - `expand_instances` v0.1 — **FROZEN**
 - Asset / Stop Contract v0.1 — **FROZEN**
-- Recursive Runtime v0.1 — **IMPLEMENTED / R5 real-image validated / awaiting R6 generalization**
+- Recursive Runtime v0.1 — **IMPLEMENTED / mechanics validated / real-image R5 pending Interactive Adapter rerun**
 
 ## Requirements
 
@@ -127,6 +127,22 @@ The Runtime Core requires injected `RouterAdapter`, `StructuralSplitAdapter`, `E
 `RuntimeConfig.repeated_instance_semantic_limit` defaults to `2`; use `None` for all instances. Extra instances remain complete non-terminal Node Records with `status: deferred` and `deferred_reason: repeated_instance_semantic_limit`, but are not scheduled. `restore_deferred(...)` provides the minimal deterministic `deferred -> pending` transition. A run with idle active queues and preserved deferred branches reports `complete_with_deferred`, not fully decomposed.
 
 Creation provenance is only a shortcut for unresolved state. An already consistent `node_role` / `terminal` / `next_action` state takes priority, including an `expand_instances` child that later became an asset through `stop_as_asset`. `add_semantic_warning(...)` records non-operative review metadata in runtime state and the run manifest; it never changes a Node, retries an adapter, or changes `complete` / `complete_with_deferred` into failure.
+
+For real-image interactive execution, `scripts/interactive_file_adapter.py` implements the same synchronous Adapter interfaces through durable JSON request/response files. Start with:
+
+```powershell
+python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --root-node-crop path\to\node-crop.png --validation-mode real_image
+```
+
+When the command prints `WAITING_FOR_ADAPTER`, inspect the reported Analysis Image and write the frozen contract result inside `adapter-responses/<request-id>.json`. Then continue without editing Python:
+
+```powershell
+python scripts/run_recursive_runtime.py --run-dir runs/my-r5 --resume
+```
+
+Waiting is a normal persisted state, not `failed`, `blocked`, or completed. The same unanswered request retains its request ID across resumes. Response envelopes are validated by `schemas/interactive-adapter-response.schema.json`; the contained `result` is still validated by its existing frozen Router/strategy validator. Runtime remains responsible for queues, transforms, crops, children, depth, and deferred policy.
+
+Run manifests record `validation_mode`, per-strategy `adapter_types`, and `real_visual_inference_used`. Fake/fixture runs are valid only as mechanics evidence and cannot be configured as `real_image`; interactive/production visual adapters may be used for real-image validation. `real_visual_inference_used` becomes true only after a valid interactive response is consumed (or a production visual adapter successfully returns). The earlier hard-coded Backpack debug run is mechanics evidence only; real-image R5 remains pending an Interactive Adapter rerun.
 
 See `references/recursive-runtime-v0.1.md` for the complete engineering contract and the Runtime/VLM responsibility boundary.
 

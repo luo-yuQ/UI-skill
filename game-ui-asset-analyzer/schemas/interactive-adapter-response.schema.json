@@ -1,0 +1,22 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/interactive-adapter-response.schema.json",
+  "title": "Recursive Runtime Interactive Adapter Response v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "request_id", "adapter_kind", "result"],
+  "properties": {
+    "schema_version": { "const": "0.1" },
+    "request_id": { "type": "string", "pattern": "^req_[0-9]{6}$" },
+    "adapter_kind": {
+      "type": "string",
+      "enum": [
+        "router",
+        "structural_split",
+        "expand_instances",
+        "semantic_decompose"
+      ]
+    },
+    "result": { "type": "object" }
+  }
+}

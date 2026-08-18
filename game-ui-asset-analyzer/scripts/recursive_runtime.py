@@ -16,6 +16,7 @@ import validate_expand_instances
 import validate_node_route
 import validate_semantic_decomposition
 import validate_structural_split
+from interactive_file_adapter import WaitingForAdapter
 from prepare_analysis_input import DEFAULT_MAX_WIDTH, prepare_analysis_input
 from runtime_geometry import (
     analysis_bbox_to_crop_bbox,
@@ -30,6 +31,8 @@ NODE_STATUSES = frozenset(
 )
 ACTIONS = frozenset({"structural_split", "expand_instances", "semantic_decompose", "stop"})
 DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT = 2
+VALIDATION_MODES = frozenset({"mechanics", "real_image"})
+REAL_IMAGE_ADAPTER_TYPES = frozenset({"interactive_visual", "production_visual"})
 
 
 class RouterAdapter(Protocol):
@@ -80,12 +83,17 @@ class RuntimeConfig:
     repeated_instance_semantic_limit: int | None = (
         DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT
     )
+    validation_mode: str = "mechanics"
 
     def __post_init__(self) -> None:
         value = self.repeated_instance_semantic_limit
         if value is not None and (type(value) is not int or value < 0):
             raise ValueError(
                 "repeated_instance_semantic_limit must be an integer >= 0 or None"
+            )
+        if self.validation_mode not in VALIDATION_MODES:
+            raise ValueError(
+                f"validation_mode must be one of {sorted(VALIDATION_MODES)}"
             )
 
 
@@ -132,7 +140,8 @@ class NodeRecord:
         unknown = set(value) - allowed
         if unknown:
             raise ValueError(f"unsupported Node Record fields: {sorted(unknown)}")
-        return cls(**value)
+        restored = {"parent_id": None, "produced_by": None, **value}
+        return cls(**restored)
 
 
 @dataclass
@@ -144,6 +153,9 @@ class RuntimeState:
     deferred_nodes: list[str] | None = None
     failed_nodes: list[str] | None = None
     semantic_warnings: list[dict[str, str]] | None = None
+    pending_adapter_request: dict[str, str] | None = None
+    next_request_number: int = 1
+    real_visual_inference_used: bool = False
 
     def __post_init__(self) -> None:
         self.current_level_queue = list(self.current_level_queue or [])
@@ -152,11 +164,24 @@ class RuntimeState:
         self.deferred_nodes = list(self.deferred_nodes or [])
         self.failed_nodes = list(self.failed_nodes or [])
         self.semantic_warnings = copy.deepcopy(self.semantic_warnings or [])
+        self.pending_adapter_request = copy.deepcopy(self.pending_adapter_request)
         if type(self.current_depth) is not int or self.current_depth < 0:
             raise ValueError("current_depth must be an integer >= 0")
+        if type(self.next_request_number) is not int or self.next_request_number < 1:
+            raise ValueError("next_request_number must be an integer >= 1")
+        if type(self.real_visual_inference_used) is not bool:
+            raise ValueError("real_visual_inference_used must be a boolean")
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
+
+    @classmethod
+    def from_dict(cls, value: dict[str, Any]) -> "RuntimeState":
+        allowed = {field.name for field in fields(cls)}
+        unknown = set(value) - allowed
+        if unknown:
+            raise ValueError(f"unsupported Runtime State fields: {sorted(unknown)}")
+        return cls(**value)
 
 
 class NodeStore:
@@ -229,6 +254,24 @@ class NodeStore:
                 encoding="utf-8",
             )
 
+    @classmethod
+    def load(cls, tree_path: Path, nodes_root: Path) -> "NodeStore":
+        try:
+            snapshot = json.loads(Path(tree_path).read_text(encoding="utf-8"))
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"unable to load tree snapshot {tree_path}: {exc}") from exc
+        if not isinstance(snapshot, dict) or not isinstance(snapshot.get("nodes"), list):
+            raise ValueError("invalid tree snapshot: nodes must be an array")
+        store = cls(tree_path, nodes_root)
+        for value in snapshot["nodes"]:
+            if not isinstance(value, dict):
+                raise ValueError("invalid tree snapshot: Node Record must be an object")
+            store.add(NodeRecord.from_dict(value))
+        persisted_children = snapshot.get("children")
+        if persisted_children != store._children:
+            raise ValueError("invalid tree snapshot: parent-child relations are inconsistent")
+        return store
+
 
 class RecursiveRuntime:
     """Execute frozen Stage2-A actions serially behind a per-level barrier."""
@@ -246,6 +289,36 @@ class RecursiveRuntime:
         self.manifest_path = self.run_dir / "run-manifest.json"
         self.store = NodeStore(self.run_dir / "tree.json", self.run_dir / "nodes")
         self.state = RuntimeState()
+        self._validate_adapter_types()
+
+    def _adapter_types(self) -> dict[str, str]:
+        return {
+            name: (
+                "unavailable"
+                if getattr(self.adapters, name) is None
+                else str(getattr(getattr(self.adapters, name), "adapter_type", "custom"))
+            )
+            for name in (
+                "router",
+                "structural_split",
+                "expand_instances",
+                "semantic_decompose",
+            )
+        }
+
+    def _validate_adapter_types(self) -> None:
+        if self.config.validation_mode != "real_image":
+            return
+        invalid = {
+            name: adapter_type
+            for name, adapter_type in self._adapter_types().items()
+            if adapter_type in {"fake", "fixture"}
+        }
+        if invalid:
+            raise ValueError(
+                "real_image validation rejects non-visual adapters: "
+                + ", ".join(f"{name}={kind}" for name, kind in invalid.items())
+            )
 
     @classmethod
     def create(
@@ -288,6 +361,36 @@ class RecursiveRuntime:
         runtime._persist()
         return runtime
 
+    @classmethod
+    def load(
+        cls,
+        *,
+        run_dir: Path,
+        adapters: RuntimeAdapters,
+        config: RuntimeConfig | None = None,
+    ) -> "RecursiveRuntime":
+        run_dir = Path(run_dir)
+        if config is None:
+            try:
+                manifest = json.loads(
+                    (run_dir / "run-manifest.json").read_text(encoding="utf-8")
+                )
+                config = RuntimeConfig(**manifest["config"])
+            except (OSError, UnicodeError, json.JSONDecodeError, KeyError, TypeError) as exc:
+                raise ValueError(f"unable to load Runtime config: {exc}") from exc
+        runtime = cls(run_dir, adapters, config)
+        runtime.store = NodeStore.load(run_dir / "tree.json", run_dir / "nodes")
+        try:
+            state_data = json.loads(
+                (run_dir / "runtime-state.json").read_text(encoding="utf-8")
+            )
+        except (OSError, UnicodeError, json.JSONDecodeError) as exc:
+            raise ValueError(f"unable to load Runtime State: {exc}") from exc
+        if not isinstance(state_data, dict):
+            raise ValueError("invalid Runtime State: root must be an object")
+        runtime.state = RuntimeState.from_dict(state_data)
+        return runtime
+
     def _relative(self, path: Path) -> str:
         return path.resolve().relative_to(self.run_dir.resolve()).as_posix()
 
@@ -326,7 +429,54 @@ class RecursiveRuntime:
             raise RuntimeError(
                 f"adapter_unavailable: {name} adapter was not injected"
             )
+        adapter_type = getattr(adapter, "adapter_type", "custom")
+        if (
+            self.config.validation_mode == "real_image"
+            and adapter_type not in REAL_IMAGE_ADAPTER_TYPES
+        ):
+            raise RuntimeError(
+                "real_image validation requires an interactive_visual or "
+                f"production_visual adapter for {name}, got {adapter_type!r}"
+            )
         return adapter
+
+    def _bind_adapter_request(
+        self,
+        adapter: Any,
+        *,
+        node: NodeRecord,
+        adapter_kind: str,
+        analysis_image: Path,
+    ) -> None:
+        bind = getattr(adapter, "bind_request", None)
+        if bind is None:
+            return
+        pending = self.state.pending_adapter_request
+        if pending is not None:
+            if (
+                pending.get("node_id") != node.node_id
+                or pending.get("adapter_kind") != adapter_kind
+            ):
+                raise ValueError(
+                    "pending adapter request does not match the current Node/action"
+                )
+            request_id = pending["request_id"]
+        else:
+            request_id = f"req_{self.state.next_request_number:06d}"
+        bind(
+            request_id=request_id,
+            node_id=node.node_id,
+            analysis_image=self._relative(analysis_image),
+        )
+
+    def _adapter_result_valid(self, adapter: Any) -> None:
+        mark_consumed = getattr(adapter, "mark_consumed", None)
+        if mark_consumed is not None:
+            mark_consumed()
+            self.state.pending_adapter_request = None
+            self.state.real_visual_inference_used = True
+        elif getattr(adapter, "adapter_type", None) == "production_visual":
+            self.state.real_visual_inference_used = True
 
     def _deterministic_resolve(self, node: NodeRecord) -> None:
         # Current semantic state outranks creation provenance. This matters when
@@ -370,11 +520,16 @@ class RecursiveRuntime:
         node.next_action = resolved.get("next_action")
 
     def _route(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self._require_adapter("router").route(analysis_image)
+        adapter = self._require_adapter("router")
+        self._bind_adapter_request(
+            adapter, node=node, adapter_kind="router", analysis_image=analysis_image
+        )
+        result = adapter.route(analysis_image)
         self._save_adapter_result(node, result, "router-result.json")
         self._raise_validation_errors(
             "Router", validate_node_route.validate_document(result)
         )
+        self._adapter_result_valid(adapter)
         resolved = terminal_resolver.resolve_terminal_state(
             node_role=result["node_role"]
         )
@@ -479,12 +634,20 @@ class RecursiveRuntime:
         return child
 
     def _run_structural_split(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self._require_adapter("structural_split").run(analysis_image)
+        adapter = self._require_adapter("structural_split")
+        self._bind_adapter_request(
+            adapter,
+            node=node,
+            adapter_kind="structural_split",
+            analysis_image=analysis_image,
+        )
+        result = adapter.run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "structural_split",
             validate_structural_split.validate_document(result, analysis_image),
         )
+        self._adapter_result_valid(adapter)
         for source in result["children"]:
             child = self._create_recursive_child(
                 parent=node,
@@ -497,12 +660,20 @@ class RecursiveRuntime:
             self.state.next_level_queue.append(child.node_id)
 
     def _run_expand_instances(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self._require_adapter("expand_instances").run(analysis_image)
+        adapter = self._require_adapter("expand_instances")
+        self._bind_adapter_request(
+            adapter,
+            node=node,
+            adapter_kind="expand_instances",
+            analysis_image=analysis_image,
+        )
+        result = adapter.run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "expand_instances",
             validate_expand_instances.validate_document(result, analysis_image),
         )
+        self._adapter_result_valid(adapter)
         limit = self.config.repeated_instance_semantic_limit
         for index, source in enumerate(result["instances"]):
             child = self._create_recursive_child(
@@ -524,12 +695,20 @@ class RecursiveRuntime:
                 self.state.next_level_queue.append(child.node_id)
 
     def _run_semantic_decompose(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self._require_adapter("semantic_decompose").run(analysis_image)
+        adapter = self._require_adapter("semantic_decompose")
+        self._bind_adapter_request(
+            adapter,
+            node=node,
+            adapter_kind="semantic_decompose",
+            analysis_image=analysis_image,
+        )
+        result = adapter.run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "semantic_decompose",
             validate_semantic_decomposition.validate_document(result, analysis_image),
         )
+        self._adapter_result_valid(adapter)
         if result["decision"] == "stop_as_asset":
             resolved = terminal_resolver.resolve_terminal_state(
                 produced_by="semantic_decompose",
@@ -544,16 +723,17 @@ class RecursiveRuntime:
         for source in result["children"]:
             self._create_asset_child(parent=node, source=source)
 
-    def process_node(self, node_id: str) -> None:
+    def process_node(self, node_id: str) -> str:
         """Process one queued node; newly discovered nodes only enter next-level state."""
 
         node = self.store.get(node_id)
         if node.status == "done":
-            return
+            return "done"
         if node.status not in {"pending", "ready"}:
             raise ValueError(
                 f"node {node_id!r} cannot run from status {node.status!r}"
             )
+        original_status = node.status
         node.status = "running"
         node.error = None
         self.store.update(node)
@@ -578,6 +758,18 @@ class RecursiveRuntime:
                 self._run_semantic_decompose(node, analysis_image)
             else:
                 raise ValueError(f"unsupported action: {node.next_action!r}")
+        except WaitingForAdapter as exc:
+            existing = self.state.pending_adapter_request
+            if existing is not None and existing != exc.pending_request:
+                raise ValueError("interactive adapter changed the pending request identity")
+            if existing is None:
+                self.state.next_request_number += 1
+            self.state.pending_adapter_request = copy.deepcopy(exc.pending_request)
+            node.status = "ready" if node.next_action is not None else original_status
+            node.error = None
+            self.store.update(node)
+            self._persist()
+            return "waiting_for_adapter"
         except Exception as exc:
             node.status = "failed"
             node.error = str(exc)
@@ -585,13 +777,14 @@ class RecursiveRuntime:
                 self.state.failed_nodes.append(node.node_id)
             self.store.update(node)
             self._persist()
-            return
+            return "failed"
 
         node.status = "done"
         if node.node_id not in self.state.processed_nodes:
             self.state.processed_nodes.append(node.node_id)
         self.store.update(node)
         self._persist()
+        return "done"
 
     def advance_level(self) -> bool:
         """Advance only after the current per-level queue is fully consumed."""
@@ -652,16 +845,7 @@ class RecursiveRuntime:
             return "complete_with_deferred"
         return "complete"
 
-    def run(self) -> str:
-        """Run serially with a strict barrier between each node depth."""
-
-        while self.state.current_level_queue or self.state.next_level_queue:
-            while self.state.current_level_queue:
-                node_id = self.state.current_level_queue.pop(0)
-                self._persist()
-                self.process_node(node_id)
-            self.advance_level()
-        result = self._run_result()
+    def _write_manifest(self, result: str, *, active_execution_complete: bool) -> None:
         fully_decomposed = result == "complete"
         runtime_failures = [
             {
@@ -674,9 +858,15 @@ class RecursiveRuntime:
             "schema_version": RUNTIME_VERSION,
             "runtime": "recursive-runtime-v0.1",
             "config": asdict(self.config),
+            "validation_mode": self.config.validation_mode,
+            "adapter_types": self._adapter_types(),
+            "real_visual_inference_used": self.state.real_visual_inference_used,
             "result": result,
-            "active_execution_complete": True,
+            "active_execution_complete": active_execution_complete,
             "fully_decomposed": fully_decomposed,
+            "pending_adapter_request": copy.deepcopy(
+                self.state.pending_adapter_request
+            ),
             "runtime_failures": runtime_failures,
             "semantic_warnings": copy.deepcopy(self.state.semantic_warnings),
         }
@@ -685,4 +875,23 @@ class RecursiveRuntime:
             encoding="utf-8",
         )
         self._persist()
+
+    def run(self) -> str:
+        """Run serially with a strict barrier between each node depth."""
+
+        while self.state.current_level_queue or self.state.next_level_queue:
+            while self.state.current_level_queue:
+                node_id = self.state.current_level_queue.pop(0)
+                self._persist()
+                outcome = self.process_node(node_id)
+                if outcome == "waiting_for_adapter":
+                    self.state.current_level_queue.insert(0, node_id)
+                    self._persist()
+                    self._write_manifest(
+                        "waiting_for_adapter", active_execution_complete=False
+                    )
+                    return "waiting_for_adapter"
+            self.advance_level()
+        result = self._run_result()
+        self._write_manifest(result, active_execution_complete=True)
         return result
