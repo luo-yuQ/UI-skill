@@ -39,9 +39,15 @@ from vlm_client import (  # noqa: E402
 
 
 class FakeResponse:
-    def __init__(self, status_code: int, body: Any) -> None:
+    def __init__(
+        self,
+        status_code: int,
+        body: Any,
+        headers: dict[str, str] | None = None,
+    ) -> None:
         self.status_code = status_code
         self.text = body if isinstance(body, str) else json.dumps(body)
+        self.headers = headers or {}
 
 
 class FakeSession:
@@ -143,6 +149,18 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         client, session = self.client()
         self.infer(client)
         self.assertEqual("application/json", session.calls[0]["headers"]["Content-Type"])
+
+    def test_request_accepts_application_json(self):
+        client, session = self.client()
+        self.infer(client)
+        self.assertEqual("application/json", session.calls[0]["headers"]["Accept"])
+
+    def test_request_uses_stable_stage2a_user_agent(self):
+        client, session = self.client()
+        self.infer(client)
+        self.assertEqual(
+            "Stage2A-VLMClient/0.1", session.calls[0]["headers"]["User-Agent"]
+        )
 
     def test_t06_model_comes_from_config(self):
         client, session = self.client()
@@ -246,6 +264,30 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         client, _ = self.client(status=500, body="provider unavailable")
         with self.assertRaisesRegex(VLMTransportError, "HTTP 500"):
             self.infer(client)
+
+    def test_http_204_empty_body_is_transport_error(self):
+        client, _ = self.client(status=204, body="")
+        with self.assertRaisesRegex(
+            VLMTransportError, "Provider returned HTTP 204 with no response body"
+        ):
+            self.infer(client)
+
+    def test_http_200_empty_body_is_transport_error(self):
+        client, _ = self.client(status=200, body="  \r\n")
+        with self.assertRaisesRegex(
+            VLMTransportError, "Provider returned an empty response body"
+        ):
+            self.infer(client)
+
+    def test_http_200_application_json_response_passes(self):
+        response = FakeResponse(
+            200,
+            responses_body('{"ok": true}'),
+            headers={"Content-Type": "application/json"},
+        )
+        session = FakeSession(response)
+        client = ResponsesAPIVLMClient(self.config, session=session)
+        self.assertEqual({"ok": True}, self.infer(client))
 
     def test_t23_secret_is_absent_from_repr_exception_and_output(self):
         secret = self.config.api_key

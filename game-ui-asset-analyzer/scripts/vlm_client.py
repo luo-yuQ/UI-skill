@@ -237,6 +237,8 @@ class ResponsesAPIVLMClient:
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Stage2A-VLMClient/0.1",
         }
         try:
             response = self.session.post(
@@ -257,8 +259,15 @@ class ResponsesAPIVLMClient:
             if body:
                 detail += f": {body}"
             raise VLMTransportError(detail)
+        response_text = getattr(response, "text", "")
+        if status_code == 204:
+            raise VLMTransportError(
+                "Provider returned HTTP 204 with no response body"
+            )
+        if not isinstance(response_text, str) or not response_text.strip():
+            raise VLMTransportError("Provider returned an empty response body")
         try:
-            provider_response = json.loads(getattr(response, "text", ""))
+            provider_response = json.loads(response_text)
         except (TypeError, json.JSONDecodeError) as exc:
             raise VLMResponseParseError(
                 "Responses API response body is not valid JSON"
