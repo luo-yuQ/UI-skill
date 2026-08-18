@@ -13,6 +13,7 @@ import validate_expand_instances
 import validate_node_route
 import validate_semantic_decomposition
 import validate_structural_split
+from runtime_geometry import read_image_size
 from vlm_client import VLMClient, VLMError, VLMResponseParseError, VLMTransportError
 
 
@@ -63,6 +64,20 @@ class StrategySchemaValidationError(ValueError):
         super().__init__(
             f"strategy_schema_validation_error: {strategy}: " + "; ".join(errors)
         )
+
+
+def canonicalize_analysis_image_size(
+    result: dict[str, Any],
+    response_schema: dict[str, Any],
+    analysis_image: Path,
+) -> None:
+    """Canonicalize schema-declared image dimensions from the actual image file."""
+
+    properties = response_schema.get("properties")
+    if not isinstance(properties, dict) or "analysis_image_size" not in properties:
+        return
+    width, height = read_image_size(analysis_image)
+    result["analysis_image_size"] = {"width": width, "height": height}
 
 
 class ProductionVisualAdapter:
@@ -124,11 +139,15 @@ class ProductionVisualAdapter:
             raise VLMTransportError(type(exc).__name__) from exc
         if not isinstance(result, dict):
             raise VLMResponseParseError("VLMClient returned a non-object result")
-        errors = contract.validator(result, image_path)
+        canonical_result = copy.deepcopy(result)
+        canonicalize_analysis_image_size(
+            canonical_result, response_schema, image_path
+        )
+        errors = contract.validator(canonical_result, image_path)
         if errors:
             raise StrategySchemaValidationError(strategy, errors)
         self.consumed_response_count += 1
-        return copy.deepcopy(result)
+        return canonical_result
 
     def route(self, analysis_image: Path) -> dict[str, Any]:
         return self._infer("router", analysis_image)

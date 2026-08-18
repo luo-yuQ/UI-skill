@@ -256,6 +256,88 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         self.assertEqual("interactive_visual", adapter.adapter_type)
         self.assertTrue(callable(adapter.route))
 
+    def test_analysis_size_t01_canonicalizes_one_pixel_height_mismatch(self):
+        image = self.base / "analysis-1039-a.png"
+        Image.new("RGB", (1024, 1039), "navy").save(image)
+        response = semantic_result()
+        response["analysis_image_size"] = {"width": 1024, "height": 1040}
+        adapter, _ = self.adapter(response)
+        result = adapter.semantic_decompose(image)
+        self.assertEqual(
+            {"width": 1024, "height": 1039}, result["analysis_image_size"]
+        )
+
+    def test_analysis_size_t02_canonicalizes_larger_height_mismatch(self):
+        image = self.base / "analysis-1039-b.png"
+        Image.new("RGB", (1024, 1039), "navy").save(image)
+        response = semantic_result()
+        response["analysis_image_size"] = {"width": 1024, "height": 1031}
+        adapter, _ = self.adapter(response)
+        result = adapter.semantic_decompose(image)
+        self.assertEqual(
+            {"width": 1024, "height": 1039}, result["analysis_image_size"]
+        )
+
+    def test_analysis_size_t03_real_bbox_bounds_remain_strict(self):
+        image = self.base / "analysis-1039-overflow.png"
+        Image.new("RGB", (1024, 1039), "navy").save(image)
+        response = semantic_result()
+        response.update(
+            {
+                "analysis_image_size": {"width": 1024, "height": 1040},
+                "decision": "decompose",
+                "children": [
+                    {
+                        "id": "overflow",
+                        "label": "overflow",
+                        "taxonomy": "icon",
+                        "bbox": {"x": 1000, "y": 100, "width": 25, "height": 25},
+                        "partial": False,
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        )
+        response.pop("asset_taxonomy")
+        adapter, _ = self.adapter(response)
+        with self.assertRaisesRegex(
+            StrategySchemaValidationError, "right edge 1025 exceeds"
+        ):
+            adapter.semantic_decompose(image)
+
+    def test_analysis_size_t04_preserves_semantics_and_bbox(self):
+        image = self.base / "analysis-1039-preserve.png"
+        Image.new("RGB", (1024, 1039), "navy").save(image)
+        response = semantic_result()
+        response.update(
+            {
+                "analysis_image_size": {"width": 1024, "height": 1040},
+                "decision": "decompose",
+                "children": [
+                    {
+                        "id": "icon_001",
+                        "label": "preserved icon",
+                        "taxonomy": "icon",
+                        "bbox": {"x": 11, "y": 13, "width": 17, "height": 19},
+                        "partial": False,
+                        "confidence": 0.87,
+                    }
+                ],
+                "reason": "preserve every semantic field",
+            }
+        )
+        response.pop("asset_taxonomy")
+        expected_semantics = copy.deepcopy(response)
+        expected_semantics.pop("analysis_image_size")
+        adapter, _ = self.adapter(response)
+        result = adapter.semantic_decompose(image)
+        actual_semantics = copy.deepcopy(result)
+        actual_semantics.pop("analysis_image_size")
+        self.assertEqual(expected_semantics, actual_semantics)
+        self.assertEqual(
+            {"width": 1024, "height": 1039}, result["analysis_image_size"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()
