@@ -239,6 +239,7 @@ class ResponsesAPIVLMClient:
             "Content-Type": "application/json",
             "Accept": "application/json",
             "User-Agent": "Stage2A-VLMClient/0.1",
+            "Accept-Encoding": "identity",
         }
         try:
             response = self.session.post(

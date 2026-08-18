@@ -162,6 +162,11 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
             "Stage2A-VLMClient/0.1", session.calls[0]["headers"]["User-Agent"]
         )
 
+    def test_request_disables_compressed_provider_responses(self):
+        client, session = self.client()
+        self.infer(client)
+        self.assertEqual("identity", session.calls[0]["headers"]["Accept-Encoding"])
+
     def test_t06_model_comes_from_config(self):
         client, session = self.client()
         self.infer(client)
@@ -263,6 +268,11 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
     def test_t22_http_500_is_transport_error(self):
         client, _ = self.client(status=500, body="provider unavailable")
         with self.assertRaisesRegex(VLMTransportError, "HTTP 500"):
+            self.infer(client)
+
+    def test_http_502_is_transport_error(self):
+        client, _ = self.client(status=502, body="Proxy request failed")
+        with self.assertRaisesRegex(VLMTransportError, "HTTP 502"):
             self.infer(client)
 
     def test_http_204_empty_body_is_transport_error(self):
