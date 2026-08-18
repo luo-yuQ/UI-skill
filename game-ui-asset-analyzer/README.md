@@ -11,7 +11,7 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 - `structural_split` v0.1 — **FROZEN**
 - `expand_instances` v0.1 — **FROZEN**
 - Asset / Stop Contract v0.1 — **FROZEN**
-- Recursive Runtime — **not implemented**
+- Recursive Runtime v0.1 — **IMPLEMENTED / awaiting R5 real-image validation**
 
 ## Requirements
 
@@ -70,7 +70,7 @@ For optional human review, render the validated bboxes directly in Analysis Imag
 python scripts/render_structural_overlay.py --analysis-image path\to\analysis-image.png --structural-split path\to\structural-split.json --output-image path\to\structural-overlay.png
 ```
 
-The validator checks only schema, decision consistency, required fields, unique child IDs, numeric ranges, and real-image bbox bounds. The overlay does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Child nodes are intended to re-enter the Router only when a future orchestration layer exists; recursive traversal is not implemented.
+The validator checks only schema, decision consistency, required fields, unique child IDs, numeric ranges, and real-image bbox bounds. The overlay does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Recursive Runtime v0.1 sends these unclassified Direct Children to the next level and then back through the Router.
 
 ## Recursive Stage2-A: `expand_instances` v0.1
 
@@ -89,7 +89,7 @@ For optional human review, render instance IDs, the shared `instance_type`, and 
 python scripts/render_instances_overlay.py --analysis-image path\to\analysis-image.png --instances path\to\instances.json --output-image path\to\instances-overlay.png
 ```
 
-The validator checks only schema, exact `repeat_count`, required fields, unique instance IDs, numeric ranges, `partial_instance`, and real-image bbox bounds. The renderer reuses the existing deterministic overlay layout utilities; it does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Instances may re-enter the Router only when a future orchestration layer exists; recursive traversal is not implemented.
+The validator checks only schema, exact `repeat_count`, required fields, unique instance IDs, numeric ranges, `partial_instance`, and real-image bbox bounds. The renderer reuses the existing deterministic overlay layout utilities; it does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Recursive Runtime v0.1 uses provenance to schedule selected instances directly for `semantic_decompose`, without another Router call.
 
 ## Recursive Stage2-A: `semantic_decompose` v0.1
 
@@ -114,9 +114,19 @@ python scripts/resolve_terminal_state.py --produced-by expand_instances
 python scripts/resolve_terminal_state.py --produced-by structural_split
 ```
 
-Outputs conform to `schemas/asset-stop-result.schema.json`. Valid semantic-decomposition children stop directly, expanded instances continue directly to semantic decomposition, and unclassified structural children return `requires_router: true`. Conflicting provenance and roles fail explicitly. The resolver does not read images, execute actions, traverse nodes, or implement Recursive Runtime.
+Outputs conform to `schemas/asset-stop-result.schema.json`. Valid semantic-decomposition children stop directly, expanded instances continue directly to semantic decomposition, and unclassified structural children return `requires_router: true`. Conflicting provenance and roles fail explicitly. The resolver itself remains traversal-free; Recursive Runtime v0.1 calls it as a frozen deterministic dependency.
 
 Deferred: `retain_composite` and composite asset retention policy.
+
+## Recursive Stage2-A: Recursive Runtime v0.1
+
+`scripts/recursive_runtime.py` implements the single-process, level-by-level runtime. `RecursiveRuntime.create(...)` initializes the root Node Crop and deterministic Analysis Image; `run()` consumes `current_level_queue`, places all non-terminal children in `next_level_queue`, and advances only after the current level is exhausted. The runtime persists `run-manifest.json`, `runtime-state.json`, the complete `tree.json`, and per-node metadata under `nodes/`.
+
+The runtime depends only on the `RouterAdapter`, `StructuralSplitAdapter`, `ExpandInstancesAdapter`, and `SemanticDecomposeAdapter` interfaces. Production VLM/provider wiring is intentionally absent. `scripts/fake_runtime_adapters.py` supplies deterministic fixture implementations for tests. Every adapter result is validated by the existing frozen validator before it may affect the tree.
+
+`RuntimeConfig.repeated_instance_semantic_limit` defaults to `2`; use `None` for all instances. Extra instances remain complete non-terminal Node Records with `status: deferred` and `deferred_reason: repeated_instance_semantic_limit`, but are not scheduled. `restore_deferred(...)` provides the minimal deterministic `deferred -> pending` transition. A run with idle active queues and preserved deferred branches reports `complete_with_deferred`, not fully decomposed.
+
+See `references/recursive-runtime-v0.1.md` for the complete engineering contract and the Runtime/VLM responsibility boundary.
 
 ## Optional icon bbox refinement
 
