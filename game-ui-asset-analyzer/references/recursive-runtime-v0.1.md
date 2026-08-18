@@ -1,8 +1,8 @@
 # Recursive Runtime v0.1
 
-Status: **IMPLEMENTED / TDD VALIDATED**
+Status: **IMPLEMENTED / R5 real-image validated / awaiting R6 generalization**
 
-Freeze status: not frozen. R5 real-image Backpack validation must complete on the experiment host before this runtime can be frozen.
+Freeze status: not frozen. R5 Backpack integration validated the Runtime mechanics; R6 generalization remains pending.
 
 ## Responsibility boundary
 
@@ -16,6 +16,8 @@ The VLM-facing adapters own only their frozen scoped outputs:
 - `SemanticDecomposeAdapter.run(analysis_image)` returns a frozen `semantic_decompose` document.
 
 Every result is passed to its existing frozen validator. The Runtime contains no prompt text, provider code, workspace search, retry framework, verifier, or visual fallback guessing. `scripts/fake_runtime_adapters.py` provides deterministic fixtures only.
+
+Adapter is required; a specific provider is optional. Runtime Core needs a contract-compatible Strategy Adapter for the action it is about to execute, but that adapter may be backed by a production VLM provider, TRAE test integration, fake, fixture, or a future provider. Autonomous production execution may require a concrete production implementation, but the absence of one is not a Runtime-wide blocked condition. If the current action has no injected adapter, the current Node records `adapter_unavailable` as a failure under the existing error model.
 
 ## Level-by-level execution
 
@@ -45,14 +47,18 @@ Supported statuses are:
 
 `terminal` and `status` are independent. For example, a non-terminal component instance becomes `done` after successful semantic decomposition.
 
-## Provenance shortcuts and actions
+## Current state and provenance shortcuts
 
-The Runtime delegates deterministic resolution to the frozen Asset / Stop resolver:
+Current semantic state has higher priority than creation provenance. If `node_role`, `terminal`, and `next_action` already form a complete consistent state, the Runtime validates and preserves them without applying a provenance shortcut. Thus an `expand_instances` child that later became `asset -> stop` through `stop_as_asset` remains an asset during later processing or resume. Provenance describes how the Node was created; the current fields describe what it is now.
+
+If current state is unresolved, the Runtime delegates deterministic inference to the frozen Asset / Stop resolver:
 
 - Valid `semantic_decompose` taxonomy -> `asset`, terminal, `stop`, no Router.
 - `expand_instances` provenance -> `component_instance`, non-terminal, `semantic_decompose`, no Router.
 - Unclassified `structural_split` provenance -> non-terminal and Router required.
 - An unknown node without a reliable shortcut -> Router required.
+
+An explicit but inconsistent state, such as `node_role: asset`, `terminal: false`, and `next_action: structural_split`, is a contract failure. Provenance never silently repairs it.
 
 The only executable actions are `structural_split`, `expand_instances`, `semantic_decompose`, and `stop`.
 
@@ -83,7 +89,15 @@ runs/<run-id>/
     `-- strategy-result.json      # when a strategy ran
 ```
 
-The run result is `complete`, `complete_with_deferred`, `failed`, or `blocked`. `run-manifest.json` separately records `active_execution_complete` and `fully_decomposed`.
+The run result is `complete`, `complete_with_deferred`, `failed`, or `blocked`. `run-manifest.json` separately records `active_execution_complete`, `fully_decomposed`, `runtime_failures`, and `semantic_warnings`.
+
+## Runtime failures and semantic warnings
+
+A `runtime_failure` is a mechanics or contract failure, such as a duplicate Node ID, orphan child, queue corruption, invalid action/state mapping, recursive continuation of an asset, unavailable required adapter, or coordinate-transform contract failure. These failures participate in `run_result`.
+
+A `semantic_warning` is non-operative quality metadata, such as a questionable Router classification, possible repeated-instance under-detection, or a visually disputed semantic decomposition. `RecursiveRuntime.add_semantic_warning(...)` stores `{node_id, source, type, message}` in `runtime-state.json` and copies the list into `run-manifest.json`.
+
+Semantic warnings never mutate Node fields or bboxes, trigger retry, call a VLM again, or alter the tree. When mechanics, queues, and tree integrity pass, warnings do not change `complete` or `complete_with_deferred` into `failed` or `blocked`. Runtime v0.1 does not automatically resolve semantic warnings.
 
 ## Repeated-instance cost policy
 

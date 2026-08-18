@@ -11,7 +11,7 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 - `structural_split` v0.1 — **FROZEN**
 - `expand_instances` v0.1 — **FROZEN**
 - Asset / Stop Contract v0.1 — **FROZEN**
-- Recursive Runtime v0.1 — **IMPLEMENTED / awaiting R5 real-image validation**
+- Recursive Runtime v0.1 — **IMPLEMENTED / R5 real-image validated / awaiting R6 generalization**
 
 ## Requirements
 
@@ -122,9 +122,11 @@ Deferred: `retain_composite` and composite asset retention policy.
 
 `scripts/recursive_runtime.py` implements the single-process, level-by-level runtime. `RecursiveRuntime.create(...)` initializes the root Node Crop and deterministic Analysis Image; `run()` consumes `current_level_queue`, places all non-terminal children in `next_level_queue`, and advances only after the current level is exhausted. The runtime persists `run-manifest.json`, `runtime-state.json`, the complete `tree.json`, and per-node metadata under `nodes/`.
 
-The runtime depends only on the `RouterAdapter`, `StructuralSplitAdapter`, `ExpandInstancesAdapter`, and `SemanticDecomposeAdapter` interfaces. Production VLM/provider wiring is intentionally absent. `scripts/fake_runtime_adapters.py` supplies deterministic fixture implementations for tests. Every adapter result is validated by the existing frozen validator before it may affect the tree.
+The Runtime Core requires injected `RouterAdapter`, `StructuralSplitAdapter`, `ExpandInstancesAdapter`, and `SemanticDecomposeAdapter` implementations; it does not require any specific production VLM provider. An adapter may be backed by a production provider, TRAE integration, a fake, a fixture, or another contract-compatible implementation. `scripts/fake_runtime_adapters.py` supplies deterministic fixtures for tests. If an action has no injected adapter, only that Node fails with `adapter_unavailable` under the existing error model; the absence of production provider wiring does not make the Runtime globally blocked. Every adapter result is validated by the existing frozen validator before it may affect the tree.
 
 `RuntimeConfig.repeated_instance_semantic_limit` defaults to `2`; use `None` for all instances. Extra instances remain complete non-terminal Node Records with `status: deferred` and `deferred_reason: repeated_instance_semantic_limit`, but are not scheduled. `restore_deferred(...)` provides the minimal deterministic `deferred -> pending` transition. A run with idle active queues and preserved deferred branches reports `complete_with_deferred`, not fully decomposed.
+
+Creation provenance is only a shortcut for unresolved state. An already consistent `node_role` / `terminal` / `next_action` state takes priority, including an `expand_instances` child that later became an asset through `stop_as_asset`. `add_semantic_warning(...)` records non-operative review metadata in runtime state and the run manifest; it never changes a Node, retries an adapter, or changes `complete` / `complete_with_deferred` into failure.
 
 See `references/recursive-runtime-v0.1.md` for the complete engineering contract and the Runtime/VLM responsibility boundary.
 

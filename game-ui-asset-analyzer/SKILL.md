@@ -19,7 +19,7 @@ When the resolved action is `semantic_decompose`, use [references/semantic-decom
 
 Use [references/asset-stop-contract-v0.1.md](references/asset-stop-contract-v0.1.md) and `scripts/resolve_terminal_state.py` to resolve terminal state without an image or VLM call. Stop Router `asset` nodes and valid `semantic_decompose` children; shortcut `expand_instances` children to `component_instance -> semantic_decompose`; send unclassified `structural_split` children back to the Router. For recursive orchestration, use `scripts/recursive_runtime.py` and [references/recursive-runtime-v0.1.md](references/recursive-runtime-v0.1.md); do not add traversal behavior to the frozen resolver.
 
-Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, Node Router v0.1, `semantic_decompose` v0.1, `structural_split` v0.1, `expand_instances` v0.1, and Asset / Stop Contract v0.1 are **FROZEN**. Recursive Runtime v0.1 is **IMPLEMENTED / awaiting R5 real-image validation**; it is not frozen.
+Current recursive Stage2-A status: Level-1 Region Decomposition v0.1, Coordinate Contract v0.1, Node Router v0.1, `semantic_decompose` v0.1, `structural_split` v0.1, `expand_instances` v0.1, and Asset / Stop Contract v0.1 are **FROZEN**. Recursive Runtime v0.1 is **IMPLEMENTED / R5 real-image validated / awaiting R6 generalization**; it is not frozen.
 
 The workflow below remains the existing full-screen flat asset-analysis workflow and is unchanged by the node-scoped contract.
 

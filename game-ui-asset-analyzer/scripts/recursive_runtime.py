@@ -56,6 +56,25 @@ class RuntimeAdapters:
     semantic_decompose: SemanticDecomposeAdapter
 
 
+@dataclass(frozen=True)
+class SemanticWarning:
+    """Non-operative semantic quality note attached to a run summary."""
+
+    node_id: str
+    source: str
+    type: str
+    message: str
+
+    def __post_init__(self) -> None:
+        for name in ("node_id", "source", "type", "message"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"semantic warning {name} must be a non-empty string")
+
+    def to_dict(self) -> dict[str, str]:
+        return asdict(self)
+
+
 @dataclass
 class RuntimeConfig:
     repeated_instance_semantic_limit: int | None = (
@@ -124,6 +143,7 @@ class RuntimeState:
     processed_nodes: list[str] | None = None
     deferred_nodes: list[str] | None = None
     failed_nodes: list[str] | None = None
+    semantic_warnings: list[dict[str, str]] | None = None
 
     def __post_init__(self) -> None:
         self.current_level_queue = list(self.current_level_queue or [])
@@ -131,6 +151,7 @@ class RuntimeState:
         self.processed_nodes = list(self.processed_nodes or [])
         self.deferred_nodes = list(self.deferred_nodes or [])
         self.failed_nodes = list(self.failed_nodes or [])
+        self.semantic_warnings = copy.deepcopy(self.semantic_warnings or [])
         if type(self.current_depth) is not int or self.current_depth < 0:
             raise ValueError("current_depth must be an integer >= 0")
 
@@ -299,11 +320,47 @@ class RecursiveRuntime:
         if errors:
             raise ValueError(f"invalid {kind} adapter result:\n- " + "\n- ".join(errors))
 
+    def _require_adapter(self, name: str) -> Any:
+        adapter = getattr(self.adapters, name)
+        if adapter is None:
+            raise RuntimeError(
+                f"adapter_unavailable: {name} adapter was not injected"
+            )
+        return adapter
+
     def _deterministic_resolve(self, node: NodeRecord) -> None:
+        # Current semantic state outranks creation provenance. This matters when
+        # an expand_instances child later becomes an asset via stop_as_asset.
+        if node.node_role is not None:
+            resolved = terminal_resolver.resolve_terminal_state(
+                node_role=node.node_role
+            )
+            if node.next_action is not None:
+                conflicts: list[str] = []
+                if node.next_action != resolved["next_action"]:
+                    conflicts.append(
+                        f"next_action {node.next_action!r} != {resolved['next_action']!r}"
+                    )
+                if node.terminal is not resolved["terminal"]:
+                    conflicts.append(
+                        f"terminal {node.terminal!r} != {resolved['terminal']!r}"
+                    )
+                if node.requires_router is not resolved["requires_router"]:
+                    conflicts.append(
+                        "requires_router "
+                        f"{node.requires_router!r} != {resolved['requires_router']!r}"
+                    )
+                if conflicts:
+                    raise ValueError(
+                        "current node state contract conflict: " + "; ".join(conflicts)
+                    )
+            node.terminal = resolved["terminal"]
+            node.requires_router = resolved["requires_router"]
+            node.next_action = resolved["next_action"]
+            return
         if node.requires_router:
             return
         resolved = terminal_resolver.resolve_terminal_state(
-            node_role=node.node_role,
             produced_by=node.produced_by,
             taxonomy=node.taxonomy,
         )
@@ -313,7 +370,7 @@ class RecursiveRuntime:
         node.next_action = resolved.get("next_action")
 
     def _route(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self.adapters.router.route(analysis_image)
+        result = self._require_adapter("router").route(analysis_image)
         self._save_adapter_result(node, result, "router-result.json")
         self._raise_validation_errors(
             "Router", validate_node_route.validate_document(result)
@@ -422,7 +479,7 @@ class RecursiveRuntime:
         return child
 
     def _run_structural_split(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self.adapters.structural_split.run(analysis_image)
+        result = self._require_adapter("structural_split").run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "structural_split",
@@ -440,7 +497,7 @@ class RecursiveRuntime:
             self.state.next_level_queue.append(child.node_id)
 
     def _run_expand_instances(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self.adapters.expand_instances.run(analysis_image)
+        result = self._require_adapter("expand_instances").run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "expand_instances",
@@ -467,7 +524,7 @@ class RecursiveRuntime:
                 self.state.next_level_queue.append(child.node_id)
 
     def _run_semantic_decompose(self, node: NodeRecord, analysis_image: Path) -> None:
-        result = self.adapters.semantic_decompose.run(analysis_image)
+        result = self._require_adapter("semantic_decompose").run(analysis_image)
         self._save_adapter_result(node, result, "strategy-result.json")
         self._raise_validation_errors(
             "semantic_decompose",
@@ -564,6 +621,27 @@ class RecursiveRuntime:
         self._persist()
         return node
 
+    def add_semantic_warning(
+        self,
+        *,
+        node_id: str,
+        source: str,
+        warning_type: str,
+        message: str,
+    ) -> dict[str, str]:
+        """Record semantic review metadata without mutating or rescheduling a node."""
+
+        self.store.get(node_id)
+        warning = SemanticWarning(
+            node_id=node_id,
+            source=source,
+            type=warning_type,
+            message=message,
+        ).to_dict()
+        self.state.semantic_warnings.append(warning)
+        self._persist()
+        return copy.deepcopy(warning)
+
     def _run_result(self) -> str:
         nodes = self.store.snapshot()["nodes"]
         if any(node["status"] == "blocked" for node in nodes):
@@ -585,6 +663,13 @@ class RecursiveRuntime:
             self.advance_level()
         result = self._run_result()
         fully_decomposed = result == "complete"
+        runtime_failures = [
+            {
+                "node_id": node_id,
+                "message": self.store.get(node_id).error or "runtime failure",
+            }
+            for node_id in self.state.failed_nodes
+        ]
         manifest = {
             "schema_version": RUNTIME_VERSION,
             "runtime": "recursive-runtime-v0.1",
@@ -592,6 +677,8 @@ class RecursiveRuntime:
             "result": result,
             "active_execution_complete": True,
             "fully_decomposed": fully_decomposed,
+            "runtime_failures": runtime_failures,
+            "semantic_warnings": copy.deepcopy(self.state.semantic_warnings),
         }
         self.manifest_path.write_text(
             json.dumps(manifest, ensure_ascii=False, indent=2) + "\n",
