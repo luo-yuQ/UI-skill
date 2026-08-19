@@ -165,8 +165,8 @@ class BBoxBoundaryToleranceIntegrationTests(unittest.TestCase):
         ):
             self.adapter(response).semantic_decompose(image)
 
-    def test_left_minus_one_and_minus_four_are_canonicalized(self):
-        for x in (-1, -4):
+    def test_horizontal_relative_tolerance_is_canonicalized(self):
+        for x in (-1, -4, -5, -16):
             with self.subTest(x=x):
                 image = self.image(f"left-{abs(x)}.png", 78)
                 result = self.adapter(
@@ -174,14 +174,53 @@ class BBoxBoundaryToleranceIntegrationTests(unittest.TestCase):
                 ).expand_instances(image)
                 self.assertEqual(0, result["instances"][0]["bbox"]["x"])
 
-    def test_left_minus_five_remains_a_strategy_schema_validation_error(self):
-        image = self.image("left-five.png", 78)
+    def test_horizontal_cap_plus_one_remains_a_strategy_schema_validation_error(self):
+        image = self.image("left-seventeen.png", 78)
         with self.assertRaisesRegex(
             StrategySchemaValidationError, "strategy_schema_validation_error"
         ):
             self.adapter(
-                expand({"x": -5, "y": 10, "width": 20, "height": 20})
+                expand({"x": -17, "y": 10, "width": 20, "height": 20})
             ).expand_instances(image)
+
+    def test_lucky_wheel_case_a_305_to_320_passes_structural_validator(self):
+        image = self.image("lucky-wheel-case-a.png", 305)
+        raw_bbox = {"x": 100, "y": 100, "width": 300, "height": 220}
+        result = self.adapter(
+            structural([structural_child("child_003", raw_bbox)])
+        ).structural_split(image)
+
+        canonical_bbox = {"x": 100, "y": 100, "width": 300, "height": 205}
+        self.assertEqual(canonical_bbox, result["children"][0]["bbox"])
+        self.assertEqual([], validate_structural_split.validate_document(result, image))
+        diagnostic = self.diagnostic(image, "structural_split")
+        self.assertEqual("0.2", diagnostic["diagnostic_version"])
+        self.assertEqual("bbox-boundary-tolerance-v0.2", diagnostic["policy"])
+        record = diagnostic["canonicalizations"][0]
+        self.assertEqual(raw_bbox, record["raw_bbox"])
+        self.assertEqual(canonical_bbox, record["canonical_bbox"])
+        self.assertEqual(15, record["adjustments"]["bottom"]["overflow_px"])
+        self.assertEqual(
+            16, record["adjustments"]["bottom"]["edge_tolerance_px"]
+        )
+
+    def test_lucky_wheel_case_b_195_to_200_passes_structural_validator(self):
+        image = self.image("lucky-wheel-case-b.png", 195)
+        raw_bbox = {"x": 100, "y": 100, "width": 300, "height": 100}
+        result = self.adapter(
+            structural([structural_child("child_002", raw_bbox)])
+        ).structural_split(image)
+
+        canonical_bbox = {"x": 100, "y": 100, "width": 300, "height": 95}
+        self.assertEqual(canonical_bbox, result["children"][0]["bbox"])
+        self.assertEqual([], validate_structural_split.validate_document(result, image))
+        record = self.diagnostic(image, "structural_split")["canonicalizations"][0]
+        self.assertEqual(raw_bbox, record["raw_bbox"])
+        self.assertEqual(canonical_bbox, record["canonical_bbox"])
+        self.assertEqual(5, record["adjustments"]["bottom"]["overflow_px"])
+        self.assertEqual(
+            10, record["adjustments"]["bottom"]["edge_tolerance_px"]
+        )
 
     def test_multi_edge_canonicalization_passes_semantic_validator(self):
         image = self.image("multi-edge.png", 78)

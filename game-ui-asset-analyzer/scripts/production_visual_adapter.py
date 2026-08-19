@@ -15,7 +15,11 @@ import validate_node_route
 import validate_semantic_decomposition
 import validate_structural_split
 from bbox_boundary_canonicalizer import (
+    BBOX_BOUNDARY_TOLERANCE_CAP_PX,
+    BBOX_BOUNDARY_TOLERANCE_FLOOR_PX,
     BBOX_BOUNDARY_TOLERANCE_PX,
+    BBOX_BOUNDARY_TOLERANCE_RATIO,
+    BBOX_BOUNDARY_TOLERANCE_VERSION,
     STRATEGY_BBOX_COLLECTIONS,
     canonicalize_strategy_bboxes,
 )
@@ -126,12 +130,15 @@ def persist_bbox_boundary_diagnostic(
         return
     width, height = image_size
     diagnostic = {
-        "diagnostic_version": "0.1",
-        "policy": "bbox-boundary-tolerance-v0.1",
+        "diagnostic_version": BBOX_BOUNDARY_TOLERANCE_VERSION,
+        "policy": f"bbox-boundary-tolerance-v{BBOX_BOUNDARY_TOLERANCE_VERSION}",
         "strategy": strategy,
         "analysis_image": analysis_image.name,
         "analysis_image_size": {"width": width, "height": height},
         "bbox_boundary_tolerance_px": BBOX_BOUNDARY_TOLERANCE_PX,
+        "bbox_boundary_tolerance_floor_px": BBOX_BOUNDARY_TOLERANCE_FLOOR_PX,
+        "bbox_boundary_tolerance_cap_px": BBOX_BOUNDARY_TOLERANCE_CAP_PX,
+        "bbox_boundary_tolerance_ratio": BBOX_BOUNDARY_TOLERANCE_RATIO,
         "bbox_boundary_canonicalized": True,
         "canonicalizations": canonicalizations,
     }
