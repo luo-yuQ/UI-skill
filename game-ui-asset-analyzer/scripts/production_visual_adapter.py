@@ -104,6 +104,7 @@ def canonicalize_semantic_contract_metadata(
     result: dict[str, Any],
     *,
     request_context: ProductionRequestContext | None,
+    caller_node_id: str | None = None,
     analysis_image: Path,
 ) -> None:
     """Inject semantic fields owned by the contract or current Runtime node."""
@@ -112,9 +113,17 @@ def canonicalize_semantic_contract_metadata(
     result["bbox_constraint"] = "completeness"
     width, height = read_image_size(analysis_image)
     result["analysis_image_size"] = {"width": width, "height": height}
+    authoritative_node_id = caller_node_id
     if request_context is not None:
-        result["node_id"] = request_context.node_id
+        if (
+            authoritative_node_id is not None
+            and authoritative_node_id != request_context.node_id
+        ):
+            raise ValueError("caller-owned node_id conflicts with bound request context")
+        authoritative_node_id = request_context.node_id
         result["node_role"] = request_context.node_role
+    if authoritative_node_id is not None:
+        result["node_id"] = authoritative_node_id
 
 
 def persist_bbox_boundary_diagnostic(
@@ -219,6 +228,7 @@ class ProductionVisualAdapter:
             position
             for heading in (
                 "\n## Engineering contract",
+                "\n## v0.1.2 behavior summary",
                 "\n## v0.1.1 behavior summary",
                 "\n## v0.1 behavior summary",
                 "\n## Validation Evidence",
@@ -234,7 +244,13 @@ class ProductionVisualAdapter:
             + prompt.strip()
         )
 
-    def _infer(self, strategy: str, analysis_image: Path) -> dict[str, Any]:
+    def _infer(
+        self,
+        strategy: str,
+        analysis_image: Path,
+        *,
+        caller_node_id: str | None = None,
+    ) -> dict[str, Any]:
         image_path = Path(analysis_image)
         request_context = self._take_request_context(strategy)
         contract = CONTRACTS[strategy]
@@ -258,6 +274,7 @@ class ProductionVisualAdapter:
             canonicalize_semantic_contract_metadata(
                 canonical_result,
                 request_context=request_context,
+                caller_node_id=caller_node_id,
                 analysis_image=image_path,
             )
         else:
@@ -296,8 +313,14 @@ class ProductionVisualAdapter:
     def expand_instances(self, analysis_image: Path) -> dict[str, Any]:
         return self._infer("expand_instances", analysis_image)
 
-    def semantic_decompose(self, analysis_image: Path) -> dict[str, Any]:
-        return self._infer("semantic_decompose", analysis_image)
+    def semantic_decompose(
+        self, analysis_image: Path, *, node_id: str | None = None
+    ) -> dict[str, Any]:
+        if node_id is not None and (not isinstance(node_id, str) or not node_id):
+            raise ValueError("node_id must be a non-empty string")
+        return self._infer(
+            "semantic_decompose", analysis_image, caller_node_id=node_id
+        )
 
 
 class _ProductionStrategyAdapter:

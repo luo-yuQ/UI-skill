@@ -105,4 +105,4 @@ Router v0.1 has not completed a strict N-run reproducibility benchmark because p
 
 ## Scope boundary
 
-Node Router v0.1 classifies only. `structural_split` and `expand_instances` remain prototypes; the recursive engine is not implemented. This contract does not modify or execute `semantic_decompose` v0.1.1, its unchanged ten-category taxonomy, Stage2-B or later stages, extraction, FairyGUI, or XML.
+Node Router v0.1 classifies only. `structural_split` and `expand_instances` remain prototypes; the recursive engine is not implemented. This contract does not modify or execute `semantic_decompose` v0.1.2, its unchanged ten-category taxonomy enum, Stage2-B or later stages, extraction, FairyGUI, or XML.

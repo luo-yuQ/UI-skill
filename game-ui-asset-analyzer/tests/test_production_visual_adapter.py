@@ -177,7 +177,8 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         adapter.semantic_decompose(self.image)
         prompt = client.calls[0]["user_prompt"]
         example_start = prompt.index(
-            "A green rounded rectangular UI base with a potion/bottle illustration"
+            "A detailed sprouting potion bottle graphic is centered on top of a "
+            "green rounded panel."
         )
         example_end = prompt.find("\n### ", example_start)
         example = prompt[example_start : example_end if example_end >= 0 else None]
@@ -186,12 +187,47 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         self.assertIn("incorrect:", normalized)
         self.assertIn("stop_as_asset", normalized)
         self.assertIn("complete button", normalized)
-        self.assertIn("correct:", normalized)
+        self.assertIn("correct decomposition:", normalized)
         self.assertIn("decompose", normalized)
         self.assertIn("green rounded base", normalized)
         self.assertIn("panel", normalized)
         self.assertIn("potion/bottle graphic", normalized)
         self.assertIn("icon", normalized)
+        self.assertIn("highly rendered", normalized)
+        self.assertIn("do not classify it as `illustration`", normalized)
+
+    def test_semantic_prompt_uses_role_first_icon_illustration_boundary(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        prompt = client.calls[0]["user_prompt"]
+
+        for icon_case in (
+            "localized visual component that represents a discrete object, item, "
+            "action, status, resource, ability, category, or symbolic concept",
+            "potion bottle",
+            "sword or weapon graphic",
+            "detailed glowing coin graphic with particles is still an `icon`",
+            "character portrait used as an avatar",
+            "complex localized fire, lightning, or magic skill graphic is still "
+            "an `icon`",
+            "inventory item",
+        ):
+            self.assertIn(icon_case, prompt)
+
+        for illustration_case in (
+            "larger artwork-like visual region whose primary role is decorative, "
+            "narrative, scenic, promotional, or content presentation",
+            "Character-plus-environment promotional artwork",
+            "large fantasy scene on a card",
+            "multi-object decorative artwork",
+            "character, building, sky, and environment",
+        ):
+            self.assertIn(illustration_case, prompt)
+
+        self.assertIn("UI component role", prompt)
+        self.assertIn("Do not ask whether it is simple or highly rendered", prompt)
+        self.assertIn("Bbox size is only weak supporting evidence", prompt)
+        self.assertIn("Do not use a fixed bbox-area percentage threshold", prompt)
 
     def test_semantic_prompt_reserves_stop_for_atomic_components(self):
         adapter, client = self.adapter(semantic_result())
@@ -425,6 +461,17 @@ class ProductionVisualAdapterTests(unittest.TestCase):
                     {"width": 1024, "height": 512},
                     result["analysis_image_size"],
                 )
+
+    def test_semantic_explicit_caller_node_id_overrides_model_value(self):
+        response = semantic_result()
+        response["node_id"] = "current_node"
+        adapter, _ = self.adapter(response)
+
+        result = adapter.semantic_decompose(
+            self.image, node_id="test_component_001"
+        )
+
+        self.assertEqual("test_component_001", result["node_id"])
 
     def test_runtime_bind_hook_supplies_semantic_node_metadata(self):
         response = semantic_result()

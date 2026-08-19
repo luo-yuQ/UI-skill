@@ -1,8 +1,8 @@
-# Stage2-A `semantic_decompose` v0.1.1
+# Stage2-A `semantic_decompose` v0.1.2
 
-Status: **contract implemented / component-composition decision-boundary patch**.
+Status: **contract implemented / taxonomy and caller-identity closure**.
 
-`semantic_decompose` v0.1.1 retains the v0.1 output schema, frozen taxonomy, coordinate contract, and one-level scope. It changes only the boundary between `decompose` and `stop_as_asset`: decomposition is decided from foundational UI component composition rather than functional completeness.
+`semantic_decompose` v0.1.2 retains the v0.1 output schema, taxonomy enum, coordinate contract, one-level scope, and the v0.1.1 `decompose` / `stop_as_asset` boundary. It tightens only the role-based boundary between `icon` and `illustration`; caller-owned `node_id` is enforced by the engineering normalization layer.
 
 This file is the production visual-model prompt and short behavior reference for the already-selected Stage2-A strategy:
 
@@ -15,7 +15,7 @@ It does not select a strategy, classify `node_role`, traverse a tree, schedule a
 
 ## Production prompt
 
-You are performing Stage2-A `semantic_decompose` v0.1.1 on exactly one current node. The caller has already established that `node_role` is `component` or `component_instance`.
+You are performing Stage2-A `semantic_decompose` v0.1.2 on exactly one current node. The caller has already established that `node_role` is `component` or `component_instance`.
 
 Your job is to reason about **visual UI component composition**: decide whether the current node is one atomic foundational UI component or is composed of multiple visually distinguishable foundational UI components, then identify exactly one level of owned **Direct Children**. Foundational components include panels and background/base layers, button bases, icons, illustrations, independent text, badges or decorative overlays, frames, progress tracks or fills, and independent visual ornaments. Express them only with the frozen taxonomy below; for example, use `decoration` for a badge treatment and `progress_bar` for a distinguishable progress track or fill.
 
@@ -56,7 +56,44 @@ text
 unknown
 ```
 
-Do not add or rename categories. Map a badge treatment or decorative overlay to `decoration`, and a distinguishable progress track or fill to `progress_bar`. Prefer `icon` for a functional or symbolic visual and `illustration` for the component's principal complete pictorial content. Size alone does not decide between them; use the visual's primary role when the boundary is ambiguous. For a composite button whose rounded base is visually distinguishable from its content, classify the owned containing base with the closest existing base/container category, normally `panel`, and classify a compact symbolic graphic placed on it as `icon`; do not classify the unsplit composite as `button` merely because it is clickable.
+Do not add or rename categories. Map a badge treatment or decorative overlay to `decoration`, and a distinguishable progress track or fill to `progress_bar`. For a composite button whose rounded base is visually distinguishable from its content, classify the owned containing base with the closest existing base/container category, normally `panel`; do not classify the unsplit composite as `button` merely because it is clickable.
+
+### Icon versus illustration: component role first
+
+Classify `icon` versus `illustration` by the visual subject's **UI component role**, not by artwork complexity.
+
+- `icon` is a localized visual component that represents a discrete object, item, action, status, resource, ability, category, or symbolic concept inside a UI composition. It commonly appears inside a panel, button, slot, or card. A potion bottle, sword or weapon graphic, coin or gem, character portrait used as an avatar, skill symbol, and inventory item are `icon` components when they play that localized role.
+- Detailed rendering does not turn an icon into an illustration. Glow, particles, leaves, magic effects, highlights, small ornaments, and intricate painting may remain internal details of the same icon. A detailed glowing coin graphic with particles is still an `icon`; a complex localized fire, lightning, or magic skill graphic is still an `icon`.
+- `illustration` is a larger artwork-like visual region whose primary role is decorative, narrative, scenic, promotional, or content presentation rather than representing one localized UI symbol or object. Character-plus-environment promotional artwork, a large fantasy scene on a card, multi-object decorative artwork, and a narrative composition containing a character, building, sky, and environment are `illustration` components.
+- When both categories seem plausible, ask what component role the subject serves in the current UI. Do not ask whether it is simple or highly rendered. Bbox size is only weak supporting evidence: a large avatar can still be an `icon`, and a small artwork-like scene can still be an `illustration`. Do not use a fixed bbox-area percentage threshold.
+
+#### Role-boundary example
+
+Input:
+
+```text
+A detailed sprouting potion bottle graphic is centered on top of a green rounded panel.
+```
+
+Incorrect:
+
+```text
+stop_as_asset because it forms one complete button.
+```
+
+Correct decomposition:
+
+```text
+decompose
+
+children:
+- green rounded base -> panel
+- potion/bottle graphic -> icon
+```
+
+The potion graphic remains an `icon` even if it is highly rendered, glowing, decorative, or contains small leaves, particles, or effects, because it acts as a localized item/symbol component inside the UI. Do not classify it as `illustration` merely because of visual complexity.
+
+`Button` describes the complete control's function. `Panel + Icon` describes its visual UI component composition, which is the responsibility of this router. The panel child may cover approximately the whole parent while the icon child is nested inside it; that spatial overlap does not change the decision.
 
 ### Frame rule
 
@@ -70,32 +107,6 @@ Return exactly one decision:
 - `stop_as_asset`: the current node is already one atomic foundational UI component and cannot reasonably be separated into multiple component-level children. Return `children: []` and classify the current node itself with `asset_taxonomy`. A single bottle icon, a single plain rounded panel/base with no independent icon, text, badge, or overlay, and a single coherent decorative illustration are examples.
 
 Do not use functional completeness, shared button membership, semantic unity, or bbox overlap to justify `stop_as_asset`. Recursion is not an obligation for an atomic component, and you must never manufacture a child from incidental visual details merely to perform the strategy.
-
-### Component-composition decision example
-
-Input:
-
-```text
-A green rounded rectangular UI base with a potion/bottle illustration placed on top.
-```
-
-Incorrect:
-
-```text
-stop_as_asset because it forms one complete button.
-```
-
-Correct:
-
-```text
-decompose
-
-children:
-- green rounded base -> panel
-- potion/bottle graphic -> icon
-```
-
-`Button` describes the complete control's function. `Panel + Icon` describes its visual UI component composition, which is the responsibility of this router. The panel child may cover approximately the whole parent while the icon child is nested inside it; that spatial overlap does not change the decision.
 
 ### Bbox completeness
 
@@ -179,7 +190,7 @@ Give a concise non-empty `reason` for the decision. Use exactly one of the follo
     },
     {
       "id": "icon_001",
-      "label": "potion bottle graphic",
+      "label": "detailed sprouting potion bottle icon",
       "taxonomy": "icon",
       "bbox": {
         "x": 420,
@@ -216,12 +227,14 @@ Give a concise non-empty `reason` for the decision. Use exactly one of the follo
 
 Do not return masks, crops, extraction strategies, repaired geometry, recursive descendants, branch schedules, or any taxonomy outside the frozen ten.
 
-## v0.1.1 behavior summary
+## v0.1.2 behavior summary
 
 - Scope is one already-selected `component` or `component_instance` and one direct-child level.
 - The unit of decomposition is a visually distinguishable foundational UI component; functional completeness and semantic unity do not make a composite node atomic.
 - A node with multiple owned components such as a panel/base plus icon is decomposed, while a single icon, panel, or coherent illustration stops as an atomic asset.
 - Coherent artwork remains protected from visual-detail over-splitting inside one atomic icon or illustration.
+- `icon` versus `illustration` is decided by localized UI component role versus artwork-like narrative, scenic, decorative, or content-presentation role; visual complexity and bbox size are not hard classifiers.
+- `node_id` remains caller-owned and is overwritten by the engineering normalization layer rather than trusted from model output.
 - Baked-in and runtime text are distinguished by layer semantics.
 - `stop_as_asset` is a successful terminal decision, not a failure to recurse.
 - Complete, overlapping Analysis Image bboxes are valid. No child-count, mutual-exclusion, or child-smaller-than-parent rule exists.
