@@ -6,6 +6,7 @@ from __future__ import annotations
 import copy
 import json
 import shutil
+from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, fields
 from pathlib import Path
 from typing import Any, Protocol
@@ -26,11 +27,14 @@ from runtime_geometry import (
 
 
 RUNTIME_VERSION = "0.1"
+RUNTIME_CONCURRENCY_VERSION = "0.1"
+RUNTIME_CONCURRENCY_NAME = f"Runtime Concurrency v{RUNTIME_CONCURRENCY_VERSION}"
 NODE_STATUSES = frozenset(
     {"pending", "running", "ready", "done", "deferred", "failed", "blocked"}
 )
 ACTIONS = frozenset({"structural_split", "expand_instances", "semantic_decompose", "stop"})
 DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT = 2
+DEFAULT_MAX_CONCURRENCY = 4
 VALIDATION_MODES = frozenset({"mechanics", "real_image"})
 REAL_IMAGE_ADAPTER_TYPES = frozenset({"interactive_visual", "production_visual"})
 
@@ -97,6 +101,7 @@ class RuntimeConfig:
         DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT
     )
     validation_mode: str = "mechanics"
+    max_concurrency: int = DEFAULT_MAX_CONCURRENCY
 
     def __post_init__(self) -> None:
         value = self.repeated_instance_semantic_limit
@@ -108,6 +113,30 @@ class RuntimeConfig:
             raise ValueError(
                 f"validation_mode must be one of {sorted(VALIDATION_MODES)}"
             )
+        if type(self.max_concurrency) is not int or self.max_concurrency < 1:
+            raise ValueError("max_concurrency must be an integer >= 1")
+
+
+@dataclass
+class AdapterExecutionResult:
+    """One adapter response computed without committing Runtime state."""
+
+    adapter_kind: str
+    filename: str
+    result: dict[str, Any]
+    adapter: Any
+    validated: bool = False
+
+
+@dataclass
+class NodeExecutionResult:
+    """Internal compute result committed later by the Runtime thread."""
+
+    node: "NodeRecord"
+    original_status: str
+    outcome: str
+    adapter_results: list[AdapterExecutionResult]
+    pending_request: dict[str, str] | None = None
 
 
 @dataclass
@@ -292,7 +321,7 @@ class NodeStore:
 
 
 class RecursiveRuntime:
-    """Execute frozen Stage2-A actions serially behind a per-level barrier."""
+    """Execute frozen Stage2-A actions with deterministic per-level commits."""
 
     def __init__(
         self,
@@ -491,22 +520,24 @@ class RecursiveRuntime:
         node: NodeRecord,
         adapter_kind: str,
         analysis_image: Path,
+        request_id: str | None = None,
     ) -> None:
         bind = getattr(adapter, "bind_request", None)
         if bind is None:
             return
-        pending = self.state.pending_adapter_request
-        if pending is not None:
-            if (
-                pending.get("node_id") != node.node_id
-                or pending.get("adapter_kind") != adapter_kind
-            ):
-                raise ValueError(
-                    "pending adapter request does not match the current Node/action"
-                )
-            request_id = pending["request_id"]
-        else:
-            request_id = f"req_{self.state.next_request_number:06d}"
+        if request_id is None:
+            pending = self.state.pending_adapter_request
+            if pending is not None:
+                if (
+                    pending.get("node_id") != node.node_id
+                    or pending.get("adapter_kind") != adapter_kind
+                ):
+                    raise ValueError(
+                        "pending adapter request does not match the current Node/action"
+                    )
+                request_id = pending["request_id"]
+            else:
+                request_id = f"req_{self.state.next_request_number:06d}"
         bind(
             request_id=request_id,
             node_id=node.node_id,
@@ -694,6 +725,11 @@ class RecursiveRuntime:
             validate_structural_split.validate_document(result, analysis_image),
         )
         self._adapter_result_valid(adapter)
+        self._commit_structural_split_result(node, result)
+
+    def _commit_structural_split_result(
+        self, node: NodeRecord, result: dict[str, Any]
+    ) -> None:
         for source in result["children"]:
             child = self._create_recursive_child(
                 parent=node,
@@ -720,6 +756,11 @@ class RecursiveRuntime:
             validate_expand_instances.validate_document(result, analysis_image),
         )
         self._adapter_result_valid(adapter)
+        self._commit_expand_instances_result(node, result)
+
+    def _commit_expand_instances_result(
+        self, node: NodeRecord, result: dict[str, Any]
+    ) -> None:
         limit = self.config.repeated_instance_semantic_limit
         for index, source in enumerate(result["instances"]):
             child = self._create_recursive_child(
@@ -755,6 +796,13 @@ class RecursiveRuntime:
             validate_semantic_decomposition.validate_document(result, analysis_image),
         )
         self._adapter_result_valid(adapter)
+        self._apply_semantic_parent_result(node, result)
+        self._commit_semantic_decompose_result(node, result)
+
+    @staticmethod
+    def _apply_semantic_parent_result(
+        node: NodeRecord, result: dict[str, Any]
+    ) -> None:
         if result["decision"] == "stop_as_asset":
             resolved = terminal_resolver.resolve_terminal_state(
                 produced_by="semantic_decompose",
@@ -765,9 +813,288 @@ class RecursiveRuntime:
             node.next_action = resolved["next_action"]
             node.requires_router = resolved["requires_router"]
             node.taxonomy = result["asset_taxonomy"]
+
+    def _commit_semantic_decompose_result(
+        self, node: NodeRecord, result: dict[str, Any]
+    ) -> None:
+        if result["decision"] == "stop_as_asset":
             return
         for source in result["children"]:
             self._create_asset_child(parent=node, source=source)
+
+    def _compute_node(
+        self,
+        node_snapshot: NodeRecord,
+        *,
+        request_id: str,
+    ) -> NodeExecutionResult:
+        """Compute one node from an isolated snapshot without Runtime commits."""
+
+        node = copy.deepcopy(node_snapshot)
+        original_status = node.status
+        adapter_results: list[AdapterExecutionResult] = []
+        if node.status == "done":
+            return NodeExecutionResult(node, original_status, "done", adapter_results)
+
+        try:
+            if node.status not in {"pending", "ready"}:
+                raise ValueError(
+                    f"node {node.node_id!r} cannot run from status {node.status!r}"
+                )
+            node.status = "running"
+            node.error = None
+            analysis_image = self._artifact(node.analysis_image, "analysis_image")
+            self._deterministic_resolve(node)
+
+            if node.requires_router:
+                adapter = self._require_adapter("router")
+                self._bind_adapter_request(
+                    adapter,
+                    node=node,
+                    adapter_kind="router",
+                    analysis_image=analysis_image,
+                    request_id=request_id,
+                )
+                result = adapter.route(analysis_image)
+                execution = AdapterExecutionResult(
+                    "router", "router-result.json", result, adapter
+                )
+                adapter_results.append(execution)
+                self._raise_validation_errors(
+                    "Router", validate_node_route.validate_document(result)
+                )
+                execution.validated = True
+                resolved = terminal_resolver.resolve_terminal_state(
+                    node_role=result["node_role"]
+                )
+                node.node_role = resolved["node_role"]
+                node.terminal = resolved["terminal"]
+                node.next_action = resolved["next_action"]
+                node.requires_router = False
+
+            if node.next_action is None:
+                raise ValueError("next_action was not resolved")
+            node.status = "ready"
+
+            if node.next_action != "stop":
+                adapter = self._require_adapter(node.next_action)
+                self._bind_adapter_request(
+                    adapter,
+                    node=node,
+                    adapter_kind=node.next_action,
+                    analysis_image=analysis_image,
+                    request_id=request_id,
+                )
+                result = adapter.run(analysis_image)
+                execution = AdapterExecutionResult(
+                    node.next_action, "strategy-result.json", result, adapter
+                )
+                adapter_results.append(execution)
+                if node.next_action == "structural_split":
+                    self._raise_validation_errors(
+                        "structural_split",
+                        validate_structural_split.validate_document(
+                            result, analysis_image
+                        ),
+                    )
+                elif node.next_action == "expand_instances":
+                    self._raise_validation_errors(
+                        "expand_instances",
+                        validate_expand_instances.validate_document(
+                            result, analysis_image
+                        ),
+                    )
+                elif node.next_action == "semantic_decompose":
+                    self._raise_validation_errors(
+                        "semantic_decompose",
+                        validate_semantic_decomposition.validate_document(
+                            result, analysis_image
+                        ),
+                    )
+                    self._apply_semantic_parent_result(node, result)
+                else:
+                    raise ValueError(f"unsupported action: {node.next_action!r}")
+                execution.validated = True
+        except WaitingForAdapter as exc:
+            node.status = "ready" if node.next_action is not None else original_status
+            node.error = None
+            return NodeExecutionResult(
+                node,
+                original_status,
+                "waiting_for_adapter",
+                adapter_results,
+                copy.deepcopy(exc.pending_request),
+            )
+        except Exception as exc:
+            node.status = "failed"
+            node.error = str(exc)
+            return NodeExecutionResult(node, original_status, "failed", adapter_results)
+
+        node.status = "done"
+        return NodeExecutionResult(node, original_status, "done", adapter_results)
+
+    def _commit_node_execution(self, execution: NodeExecutionResult) -> str:
+        """Commit one completed compute result on the Runtime thread."""
+
+        node = execution.node
+        if execution.original_status == "done":
+            return "done"
+        try:
+            for adapter_result in execution.adapter_results:
+                self._save_adapter_result(
+                    node, adapter_result.result, adapter_result.filename
+                )
+                if not adapter_result.validated:
+                    continue
+                self._adapter_result_valid(adapter_result.adapter)
+                if adapter_result.adapter_kind == "structural_split":
+                    self._commit_structural_split_result(
+                        node, adapter_result.result
+                    )
+                elif adapter_result.adapter_kind == "expand_instances":
+                    self._commit_expand_instances_result(
+                        node, adapter_result.result
+                    )
+                elif adapter_result.adapter_kind == "semantic_decompose":
+                    self._commit_semantic_decompose_result(
+                        node, adapter_result.result
+                    )
+
+            if execution.outcome == "waiting_for_adapter":
+                pending = execution.pending_request
+                if pending is None:
+                    raise ValueError("waiting result is missing pending adapter request")
+                existing = self.state.pending_adapter_request
+                if existing is not None and existing != pending:
+                    raise ValueError(
+                        "interactive adapter changed the pending request identity"
+                    )
+                if existing is None:
+                    self.state.next_request_number += 1
+                self.state.pending_adapter_request = copy.deepcopy(pending)
+            elif execution.outcome == "failed":
+                if node.node_id not in self.state.failed_nodes:
+                    self.state.failed_nodes.append(node.node_id)
+            elif execution.outcome == "done":
+                if node.node_id not in self.state.processed_nodes:
+                    self.state.processed_nodes.append(node.node_id)
+            else:
+                raise ValueError(
+                    f"unsupported node execution outcome: {execution.outcome!r}"
+                )
+        except Exception as exc:
+            node.status = "failed"
+            node.error = str(exc)
+            if node.node_id not in self.state.failed_nodes:
+                self.state.failed_nodes.append(node.node_id)
+            self.store.update(node)
+            self._persist()
+            return "failed"
+
+        self.store.update(node)
+        self._persist()
+        return execution.outcome
+
+    def _node_requires_adapter_compute(self, node: NodeRecord) -> bool:
+        if node.status not in {"pending", "ready"}:
+            return False
+        candidate = copy.deepcopy(node)
+        try:
+            self._deterministic_resolve(candidate)
+        except Exception:
+            return False
+        return candidate.requires_router or candidate.next_action in {
+            "structural_split",
+            "expand_instances",
+            "semantic_decompose",
+        }
+
+    def _current_level_supports_concurrency(self) -> bool:
+        if (
+            self.config.max_concurrency == 1
+            or len(self.state.current_level_queue) < 2
+            or self.state.pending_adapter_request is not None
+        ):
+            return False
+        for adapter in (
+            self.adapters.router,
+            self.adapters.structural_split,
+            self.adapters.expand_instances,
+            self.adapters.semantic_decompose,
+        ):
+            if adapter is None:
+                continue
+            if getattr(adapter, "adapter_type", None) == "interactive_visual":
+                return False
+            if getattr(adapter, "mark_consumed", None) is not None:
+                return False
+        active_count = sum(
+            self._node_requires_adapter_compute(self.store.get(node_id))
+            for node_id in self.state.current_level_queue
+        )
+        return active_count > 1
+
+    @staticmethod
+    def _unexpected_future_failure(
+        node_snapshot: NodeRecord, exc: BaseException
+    ) -> NodeExecutionResult:
+        node = copy.deepcopy(node_snapshot)
+        original_status = node.status
+        node.status = "failed"
+        node.error = str(exc)
+        return NodeExecutionResult(node, original_status, "failed", [])
+
+    def _process_current_level_concurrently(self) -> str | None:
+        """Compute one complete BFS level, then commit in queue order."""
+
+        node_ids = list(self.state.current_level_queue)
+        snapshots = {
+            node_id: copy.deepcopy(self.store.get(node_id)) for node_id in node_ids
+        }
+        request_id = f"req_{self.state.next_request_number:06d}"
+        futures: dict[str, Future[NodeExecutionResult]] = {}
+        results: dict[str, NodeExecutionResult] = {}
+        active_node_ids = [
+            node_id
+            for node_id in node_ids
+            if self._node_requires_adapter_compute(snapshots[node_id])
+        ]
+        worker_count = min(self.config.max_concurrency, len(active_node_ids))
+
+        with ThreadPoolExecutor(max_workers=worker_count) as executor:
+            for node_id in active_node_ids:
+                futures[node_id] = executor.submit(
+                    self._compute_node,
+                    snapshots[node_id],
+                    request_id=request_id,
+                )
+            for node_id in node_ids:
+                if node_id not in futures:
+                    results[node_id] = self._compute_node(
+                        snapshots[node_id], request_id=request_id
+                    )
+            for node_id in active_node_ids:
+                try:
+                    results[node_id] = futures[node_id].result()
+                except BaseException as exc:  # defensive scheduler boundary
+                    results[node_id] = self._unexpected_future_failure(
+                        snapshots[node_id], exc
+                    )
+
+        for node_id in node_ids:
+            if not self.state.current_level_queue:
+                raise ValueError("current level queue changed during concurrent compute")
+            queued_node_id = self.state.current_level_queue.pop(0)
+            if queued_node_id != node_id:
+                raise ValueError(
+                    "current level queue order changed during concurrent compute"
+                )
+            outcome = self._commit_node_execution(results[node_id])
+            if outcome == "waiting_for_adapter":
+                self.state.current_level_queue.insert(0, node_id)
+                self._persist()
+                return outcome
+        return None
 
     def process_node(self, node_id: str) -> str:
         """Process one queued node; newly discovered nodes only enter next-level state."""
@@ -903,6 +1230,7 @@ class RecursiveRuntime:
         manifest = {
             "schema_version": RUNTIME_VERSION,
             "runtime": "recursive-runtime-v0.1",
+            "runtime_concurrency": RUNTIME_CONCURRENCY_NAME,
             "root_count": len(self.store.root_ids()),
             "root_ids": self.store.root_ids(),
             "config": asdict(self.config),
@@ -925,20 +1253,28 @@ class RecursiveRuntime:
         self._persist()
 
     def run(self) -> str:
-        """Run serially with a strict barrier between each node depth."""
+        """Run with same-depth compute concurrency and a strict level barrier."""
 
         while self.state.current_level_queue or self.state.next_level_queue:
-            while self.state.current_level_queue:
-                node_id = self.state.current_level_queue.pop(0)
-                self._persist()
-                outcome = self.process_node(node_id)
+            if self._current_level_supports_concurrency():
+                outcome = self._process_current_level_concurrently()
                 if outcome == "waiting_for_adapter":
-                    self.state.current_level_queue.insert(0, node_id)
-                    self._persist()
                     self._write_manifest(
                         "waiting_for_adapter", active_execution_complete=False
                     )
                     return "waiting_for_adapter"
+            else:
+                while self.state.current_level_queue:
+                    node_id = self.state.current_level_queue.pop(0)
+                    self._persist()
+                    outcome = self.process_node(node_id)
+                    if outcome == "waiting_for_adapter":
+                        self.state.current_level_queue.insert(0, node_id)
+                        self._persist()
+                        self._write_manifest(
+                            "waiting_for_adapter", active_execution_complete=False
+                        )
+                        return "waiting_for_adapter"
             self.advance_level()
         result = self._run_result()
         self._write_manifest(result, active_execution_complete=True)

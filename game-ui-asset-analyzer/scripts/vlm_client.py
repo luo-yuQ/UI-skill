@@ -10,6 +10,7 @@ import time
 from base64 import b64encode
 from dataclasses import dataclass, field
 from pathlib import Path
+from threading import local
 from typing import Any, Protocol
 from urllib.parse import urlparse
 
@@ -222,11 +223,28 @@ class ResponsesAPIVLMClient:
                 raise VLMConfigurationError(
                     "the requests package is required for production VLM execution"
                 )
-            session = requests.Session()
+            self._session_factory = requests.Session
+            self._session_local = local()
+        else:
+            self._session_factory = None
+            self._session_local = None
         self.config = config
         self.endpoint = build_responses_endpoint(config.base_url)
         self.session = session
         self.max_output_tokens = max_output_tokens
+
+    def _get_session(self) -> Any:
+        """Return the injected session or one production session per worker thread."""
+
+        if self.session is not None:
+            return self.session
+        if self._session_factory is None or self._session_local is None:
+            raise AssertionError("VLM session factory was not initialized")
+        session = getattr(self._session_local, "session", None)
+        if session is None:
+            session = self._session_factory()
+            self._session_local.session = session
+        return session
 
     def _post_with_transport_retry(
         self,
@@ -238,7 +256,7 @@ class ResponsesAPIVLMClient:
 
         for attempt in range(1, TRANSPORT_MAX_ATTEMPTS + 1):
             try:
-                response = self.session.post(
+                response = self._get_session().post(
                     self.endpoint,
                     headers=headers,
                     json=payload,

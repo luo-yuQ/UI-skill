@@ -7,6 +7,7 @@ import copy
 import json
 from dataclasses import dataclass
 from pathlib import Path
+from threading import Lock, local
 from typing import Any, Callable
 
 import validate_expand_instances
@@ -27,6 +28,7 @@ SYSTEM_PROMPT = """You are a Stage2-A game UI visual structure analyzer.
 Execute only the currently specified visual analysis contract.
 Judge only from the current input image and current contract; never infer answers from historical tests.
 Return output that conforms to the specified JSON schema."""
+_CONSUMED_RESPONSE_COUNT_LOCK = Lock()
 
 
 @dataclass(frozen=True)
@@ -151,7 +153,7 @@ class ProductionVisualAdapter:
     def __init__(self, vlm_client: VLMClient) -> None:
         self.vlm_client = vlm_client
         self.consumed_response_count = 0
-        self._request_context: ProductionRequestContext | None = None
+        self._request_context = local()
 
     def bind_request(
         self,
@@ -172,7 +174,7 @@ class ProductionVisualAdapter:
             raise ValueError(f"unsupported production adapter kind: {adapter_kind!r}")
         if not isinstance(analysis_image, str) or not analysis_image:
             raise ValueError("analysis_image must be a non-empty string")
-        self._request_context = ProductionRequestContext(
+        self._request_context.value = ProductionRequestContext(
             request_id=request_id,
             node_id=node_id,
             node_role=node_role,
@@ -183,8 +185,8 @@ class ProductionVisualAdapter:
     def _take_request_context(
         self, strategy: str
     ) -> ProductionRequestContext | None:
-        context = self._request_context
-        self._request_context = None
+        context = getattr(self._request_context, "value", None)
+        self._request_context.value = None
         if context is not None and context.adapter_kind != strategy:
             raise ValueError(
                 "production adapter kind context mismatch: "
@@ -273,7 +275,8 @@ class ProductionVisualAdapter:
                 image_size=image_size,
                 canonicalizations=canonicalizations,
             )
-        self.consumed_response_count += 1
+        with _CONSUMED_RESPONSE_COUNT_LOCK:
+            self.consumed_response_count += 1
         return canonical_result
 
     def route(self, analysis_image: Path) -> dict[str, Any]:
