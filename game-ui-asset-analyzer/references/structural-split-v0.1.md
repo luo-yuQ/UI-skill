@@ -21,8 +21,6 @@ Identify only the most natural, stable **Direct Children** whose different respo
 - Prefer stable, coarse structural regions with distinct responsibilities.
 - Keep a repeated collection whole at this level; do not expand its instances.
 - Do not emit icons, text, buttons, illustrations, or other visual assets directly. A title or status may remain inside a structural child when that region has an independent structural responsibility.
-- Asset suppression must not become region suppression. If a visually dominant icon, illustration, artwork, or other asset anchors a distinct functional or compositional area of the parent, emit the containing display/showcase region as a Direct Child rather than emitting the asset itself. A structural region does not require an explicit panel border or visible container boundary; it may be defined by layout responsibility, occupied space, surrounding negative space, or composition.
-- Before returning, check that all major functional or compositional regions of the parent are represented by the proposed Direct Children. Do not omit a major region merely because its primary visible content is a single asset. This coverage check does not apply to background ambience, decoration, glow, texture, or other non-structural details.
 - Ignore decoration, frame corners, glow, texture, and other small details that do not materially help the next analysis step.
 - Do not create a child that is nearly the whole parent when the visual complexity is not reduced.
 - Visual similarity alone does not make regions repeated instances when they serve different responsibilities.
