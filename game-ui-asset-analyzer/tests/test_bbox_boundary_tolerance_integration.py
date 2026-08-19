@@ -166,21 +166,21 @@ class BBoxBoundaryToleranceIntegrationTests(unittest.TestCase):
             self.adapter(response).semantic_decompose(image)
 
     def test_horizontal_relative_tolerance_is_canonicalized(self):
-        for x in (-1, -4, -5, -16):
+        for x in (-1, -4, -5, -16, -40):
             with self.subTest(x=x):
                 image = self.image(f"left-{abs(x)}.png", 78)
                 result = self.adapter(
-                    expand({"x": x, "y": 10, "width": 20, "height": 20})
+                    expand({"x": x, "y": 10, "width": 60, "height": 20})
                 ).expand_instances(image)
                 self.assertEqual(0, result["instances"][0]["bbox"]["x"])
 
     def test_horizontal_cap_plus_one_remains_a_strategy_schema_validation_error(self):
-        image = self.image("left-seventeen.png", 78)
+        image = self.image("left-forty-one.png", 78)
         with self.assertRaisesRegex(
             StrategySchemaValidationError, "strategy_schema_validation_error"
         ):
             self.adapter(
-                expand({"x": -17, "y": 10, "width": 20, "height": 20})
+                expand({"x": -41, "y": 10, "width": 60, "height": 20})
             ).expand_instances(image)
 
     def test_lucky_wheel_case_a_305_to_320_passes_structural_validator(self):

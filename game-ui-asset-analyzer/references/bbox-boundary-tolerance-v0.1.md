@@ -15,15 +15,15 @@ VLM raw response
 -> Runtime
 ```
 
-The tolerance is fixed at 4 Analysis Image pixels. `structural_split`, `expand_instances`, and `semantic_decompose` participate; Router does not emit bboxes and does not participate.
+The per-axis tolerance is `min(40, max(4, ceil(edge_dimension * 0.05)))` Analysis Image pixels. `structural_split`, `expand_instances`, and `semantic_decompose` participate; Router does not emit bboxes and does not participate.
 
 For an actual Analysis Image of width `W` and height `H`, a bbox is eligible only when all four raw edges satisfy:
 
 ```text
-left >= -4
-top >= -4
-right <= W + 4
-bottom <= H + 4
+left >= -tolerance(W)
+top >= -tolerance(H)
+right <= W + tolerance(W)
+bottom <= H + tolerance(H)
 ```
 
 The bbox must also have positive-area intersection with the Analysis Image. An eligible bbox is deterministically clamped to `[0, W] x [0, H]`, then `x`, `y`, `width`, and `height` are recomputed. The final width and height must remain positive.
@@ -40,5 +40,4 @@ When at least one bbox is canonicalized, ProductionVisualAdapter writes a strate
 <strategy>-bbox-boundary-canonicalization.json
 ```
 
-The sidecar records the actual image size, fixed tolerance, JSON path, item ID when available, raw bbox, canonical bbox, and per-edge raw value, canonical value, and `delta_px`. Diagnostics are never inserted into the frozen strategy result.
-
+The sidecar records the actual image size, tolerance formula and limits, JSON path, item ID when available, raw bbox, canonical bbox, and per-edge raw value, canonical value, and `delta_px`. Diagnostics are never inserted into the frozen strategy result.

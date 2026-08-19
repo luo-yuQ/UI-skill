@@ -45,13 +45,13 @@ class BBoxBoundaryCanonicalizerTests(unittest.TestCase):
         self.assertEqual("0.2", BBOX_BOUNDARY_TOLERANCE_VERSION)
         self.assertEqual(4, BBOX_BOUNDARY_TOLERANCE_PX)
         self.assertEqual(4, BBOX_BOUNDARY_TOLERANCE_FLOOR_PX)
-        self.assertEqual(16, BBOX_BOUNDARY_TOLERANCE_CAP_PX)
+        self.assertEqual(40, BBOX_BOUNDARY_TOLERANCE_CAP_PX)
         self.assertEqual(0.05, BBOX_BOUNDARY_TOLERANCE_RATIO)
         self.assertEqual(4, _compute_edge_tolerance(40))
         self.assertEqual(4, _compute_edge_tolerance(78))
         self.assertEqual(10, _compute_edge_tolerance(195))
         self.assertEqual(16, _compute_edge_tolerance(305))
-        self.assertEqual(16, _compute_edge_tolerance(1000))
+        self.assertEqual(40, _compute_edge_tolerance(1000))
 
     def test_invalid_edge_dimension_is_rejected(self):
         for value in (0, -1, True, 1.5):
@@ -104,17 +104,17 @@ class BBoxBoundaryCanonicalizerTests(unittest.TestCase):
         self.assertEqual(raw, bbox)
         self.assertEqual([], diagnostics)
 
-    def test_horizontal_cap_allows_left_minus_one_through_minus_sixteen(self):
-        for x in (-1, -4, -5, -16):
+    def test_horizontal_cap_allows_left_minus_one_through_minus_forty(self):
+        for x in (-1, -4, -5, -16, -40):
             with self.subTest(x=x):
-                raw = {"x": x, "y": 10, "width": 20, "height": 20}
+                raw = {"x": x, "y": 10, "width": 60, "height": 20}
                 bbox, diagnostics = self.canonicalize(raw)
                 self.assertEqual(0, bbox["x"])
-                self.assertEqual(20 + x, bbox["width"])
+                self.assertEqual(60 + x, bbox["width"])
                 self.assertEqual(-x, diagnostics[0]["adjustments"]["left"]["delta_px"])
 
-    def test_left_minus_seventeen_is_not_repaired(self):
-        raw = {"x": -17, "y": 10, "width": 20, "height": 20}
+    def test_left_minus_forty_one_is_not_repaired(self):
+        raw = {"x": -41, "y": 10, "width": 60, "height": 20}
         bbox, diagnostics = self.canonicalize(raw)
         self.assertEqual(raw, bbox)
         self.assertEqual([], diagnostics)
@@ -158,17 +158,17 @@ class BBoxBoundaryCanonicalizerTests(unittest.TestCase):
                 self.assertEqual(raw, bbox)
                 self.assertEqual([], diagnostics)
 
-    def test_cap_accepts_plus_sixteen_and_rejects_plus_seventeen(self):
+    def test_cap_accepts_plus_forty_and_rejects_plus_forty_one(self):
         accepted, diagnostics = self.canonicalize(
-            {"x": 10, "y": 900, "width": 100, "height": 116},
+            {"x": 10, "y": 900, "width": 100, "height": 140},
             image_size=(1024, 1000),
         )
         self.assertEqual(
             {"x": 10, "y": 900, "width": 100, "height": 100}, accepted
         )
-        self.assertEqual(16, diagnostics[0]["adjustments"]["bottom"]["overflow_px"])
+        self.assertEqual(40, diagnostics[0]["adjustments"]["bottom"]["overflow_px"])
 
-        raw = {"x": 10, "y": 900, "width": 100, "height": 117}
+        raw = {"x": 10, "y": 900, "width": 100, "height": 141}
         rejected, diagnostics = self.canonicalize(raw, image_size=(1024, 1000))
         self.assertEqual(raw, rejected)
         self.assertEqual([], diagnostics)
