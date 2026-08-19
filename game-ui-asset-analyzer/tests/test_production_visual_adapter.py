@@ -291,7 +291,7 @@ class ProductionVisualAdapterTests(unittest.TestCase):
                         "id": "overflow",
                         "label": "overflow",
                         "taxonomy": "icon",
-                        "bbox": {"x": 1000, "y": 100, "width": 25, "height": 25},
+                        "bbox": {"x": 1000, "y": 100, "width": 29, "height": 25},
                         "partial": False,
                         "confidence": 0.9,
                     }
@@ -301,7 +301,7 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         response.pop("asset_taxonomy")
         adapter, _ = self.adapter(response)
         with self.assertRaisesRegex(
-            StrategySchemaValidationError, "right edge 1025 exceeds"
+            StrategySchemaValidationError, "right edge 1029 exceeds"
         ):
             adapter.semantic_decompose(image)
 

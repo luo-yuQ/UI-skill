@@ -13,6 +13,11 @@ import validate_expand_instances
 import validate_node_route
 import validate_semantic_decomposition
 import validate_structural_split
+from bbox_boundary_canonicalizer import (
+    BBOX_BOUNDARY_TOLERANCE_PX,
+    STRATEGY_BBOX_COLLECTIONS,
+    canonicalize_strategy_bboxes,
+)
 from runtime_geometry import read_image_size
 from vlm_client import VLMClient, VLMError, VLMResponseParseError, VLMTransportError
 
@@ -80,6 +85,38 @@ def canonicalize_analysis_image_size(
     result["analysis_image_size"] = {"width": width, "height": height}
 
 
+def persist_bbox_boundary_diagnostic(
+    *,
+    strategy: str,
+    analysis_image: Path,
+    image_size: tuple[int, int],
+    canonicalizations: list[dict[str, Any]],
+) -> None:
+    """Persist raw/canonical bbox evidence outside frozen strategy results."""
+
+    if not canonicalizations:
+        return
+    width, height = image_size
+    diagnostic = {
+        "diagnostic_version": "0.1",
+        "policy": "bbox-boundary-tolerance-v0.1",
+        "strategy": strategy,
+        "analysis_image": analysis_image.name,
+        "analysis_image_size": {"width": width, "height": height},
+        "bbox_boundary_tolerance_px": BBOX_BOUNDARY_TOLERANCE_PX,
+        "bbox_boundary_canonicalized": True,
+        "canonicalizations": canonicalizations,
+    }
+    path = (
+        analysis_image.parent
+        / f"{strategy}-bbox-boundary-canonicalization.json"
+    )
+    path.write_text(
+        json.dumps(diagnostic, ensure_ascii=False, indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 class ProductionVisualAdapter:
     """Choose only the current Stage2-A contract; never control Runtime workflow."""
 
@@ -143,9 +180,25 @@ class ProductionVisualAdapter:
         canonicalize_analysis_image_size(
             canonical_result, response_schema, image_path
         )
+        image_size: tuple[int, int] | None = None
+        canonicalizations: list[dict[str, Any]] = []
+        if strategy in STRATEGY_BBOX_COLLECTIONS:
+            image_size = read_image_size(image_path)
+            canonicalizations = canonicalize_strategy_bboxes(
+                canonical_result,
+                strategy=strategy,
+                image_size=image_size,
+            )
         errors = contract.validator(canonical_result, image_path)
         if errors:
             raise StrategySchemaValidationError(strategy, errors)
+        if image_size is not None:
+            persist_bbox_boundary_diagnostic(
+                strategy=strategy,
+                analysis_image=image_path,
+                image_size=image_size,
+                canonicalizations=canonicalizations,
+            )
         self.consumed_response_count += 1
         return canonical_result
 
