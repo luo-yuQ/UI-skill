@@ -36,6 +36,15 @@ class StrategyContract:
     validator: Callable[[Any, Path], list[str]]
 
 
+@dataclass(frozen=True)
+class ProductionRequestContext:
+    request_id: str
+    node_id: str
+    node_role: str | None
+    adapter_kind: str
+    analysis_image: str
+
+
 def _route_validator(result: Any, _analysis_image: Path) -> list[str]:
     return validate_node_route.validate_document(result)
 
@@ -85,6 +94,23 @@ def canonicalize_analysis_image_size(
     result["analysis_image_size"] = {"width": width, "height": height}
 
 
+def canonicalize_semantic_contract_metadata(
+    result: dict[str, Any],
+    *,
+    request_context: ProductionRequestContext | None,
+    analysis_image: Path,
+) -> None:
+    """Inject semantic fields owned by the contract or current Runtime node."""
+
+    result["task"] = "semantic_decompose"
+    result["bbox_constraint"] = "completeness"
+    width, height = read_image_size(analysis_image)
+    result["analysis_image_size"] = {"width": width, "height": height}
+    if request_context is not None:
+        result["node_id"] = request_context.node_id
+        result["node_role"] = request_context.node_role
+
+
 def persist_bbox_boundary_diagnostic(
     *,
     strategy: str,
@@ -125,6 +151,46 @@ class ProductionVisualAdapter:
     def __init__(self, vlm_client: VLMClient) -> None:
         self.vlm_client = vlm_client
         self.consumed_response_count = 0
+        self._request_context: ProductionRequestContext | None = None
+
+    def bind_request(
+        self,
+        *,
+        request_id: str,
+        node_id: str,
+        node_role: str | None,
+        adapter_kind: str,
+        analysis_image: str,
+    ) -> None:
+        """Bind caller-owned metadata for exactly one subsequent visual call."""
+
+        if not isinstance(request_id, str) or not request_id:
+            raise ValueError("request_id must be a non-empty string")
+        if not isinstance(node_id, str) or not node_id:
+            raise ValueError("node_id must be a non-empty string")
+        if adapter_kind not in CONTRACTS:
+            raise ValueError(f"unsupported production adapter kind: {adapter_kind!r}")
+        if not isinstance(analysis_image, str) or not analysis_image:
+            raise ValueError("analysis_image must be a non-empty string")
+        self._request_context = ProductionRequestContext(
+            request_id=request_id,
+            node_id=node_id,
+            node_role=node_role,
+            adapter_kind=adapter_kind,
+            analysis_image=analysis_image,
+        )
+
+    def _take_request_context(
+        self, strategy: str
+    ) -> ProductionRequestContext | None:
+        context = self._request_context
+        self._request_context = None
+        if context is not None and context.adapter_kind != strategy:
+            raise ValueError(
+                "production adapter kind context mismatch: "
+                f"expected {strategy!r}, got {context.adapter_kind!r}"
+            )
+        return context
 
     @staticmethod
     def _load_json(path: Path) -> dict[str, Any]:
@@ -160,6 +226,7 @@ class ProductionVisualAdapter:
 
     def _infer(self, strategy: str, analysis_image: Path) -> dict[str, Any]:
         image_path = Path(analysis_image)
+        request_context = self._take_request_context(strategy)
         contract = CONTRACTS[strategy]
         user_prompt = self._load_prompt(contract.reference_path)
         response_schema = self._load_json(contract.schema_path)
@@ -177,9 +244,16 @@ class ProductionVisualAdapter:
         if not isinstance(result, dict):
             raise VLMResponseParseError("VLMClient returned a non-object result")
         canonical_result = copy.deepcopy(result)
-        canonicalize_analysis_image_size(
-            canonical_result, response_schema, image_path
-        )
+        if strategy == "semantic_decompose":
+            canonicalize_semantic_contract_metadata(
+                canonical_result,
+                request_context=request_context,
+                analysis_image=image_path,
+            )
+        else:
+            canonicalize_analysis_image_size(
+                canonical_result, response_schema, image_path
+            )
         image_size: tuple[int, int] | None = None
         canonicalizations: list[dict[str, Any]] = []
         if strategy in STRATEGY_BBOX_COLLECTIONS:
@@ -223,6 +297,23 @@ class _ProductionStrategyAdapter:
     def __init__(self, visual_adapter: ProductionVisualAdapter, method_name: str) -> None:
         self.visual_adapter = visual_adapter
         self.method_name = method_name
+
+    def bind_request(
+        self,
+        *,
+        request_id: str,
+        node_id: str,
+        node_role: str | None,
+        adapter_kind: str,
+        analysis_image: str,
+    ) -> None:
+        self.visual_adapter.bind_request(
+            request_id=request_id,
+            node_id=node_id,
+            node_role=node_role,
+            adapter_kind=adapter_kind,
+            analysis_image=analysis_image,
+        )
 
     def run(self, analysis_image: Path) -> dict[str, Any]:
         method = getattr(self.visual_adapter, self.method_name)

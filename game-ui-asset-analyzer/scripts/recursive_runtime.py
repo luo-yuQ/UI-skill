@@ -510,6 +510,8 @@ class RecursiveRuntime:
         bind(
             request_id=request_id,
             node_id=node.node_id,
+            node_role=node.node_role,
+            adapter_kind=adapter_kind,
             analysis_image=self._relative(analysis_image),
         )
 

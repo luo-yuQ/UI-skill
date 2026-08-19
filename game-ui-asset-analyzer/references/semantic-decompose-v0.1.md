@@ -89,7 +89,84 @@ Do not emit normalized coordinates, reinterpret a bbox as Node Crop pixels, rely
 
 ### Output
 
-Return JSON only. It must conform to `schemas/semantic-decomposition.schema.json`. Use the caller-provided `node_id`, `node_role`, and `analysis_image_size` unchanged. Set `task` to `semantic_decompose` and `bbox_constraint` to `completeness`. Give each direct child a unique non-empty `id`, concise `label`, frozen `taxonomy`, complete Analysis Image `bbox`, `partial`, and confidence from 0 through 1. Give a concise non-empty `reason` for the decision.
+Return JSON only. It must conform to `schemas/semantic-decomposition.schema.json`.
+
+The engineering caller owns and deterministically canonicalizes `task`, `node_id`, `node_role`, `bbox_constraint`, and `analysis_image_size` before validation. Do not infer their authoritative values from the image contents or filename. The examples below use structurally valid illustrative values for those fields.
+
+For every direct child:
+
+- Every child `id` must be a unique, non-empty string.
+- Every child `label` must be a non-empty string.
+- `taxonomy` must be exactly one value from the frozen taxonomy above.
+- `bbox` MUST be a JSON object with exactly four fields: `x`, `y`, `width`, and `height`.
+- `x`, `y`, `width`, and `height` MUST be JSON integer fields. `x` and `y` must be at least 0; `width` and `height` must be at least 1.
+- Never return `bbox` as an array. `[0, 0, 100, 100]` is invalid whether interpreted as `[x1, y1, x2, y2]` or `[x, y, width, height]`.
+- `partial` must be a JSON boolean: `true` or `false`. Never return the strings `"true"` or `"false"`.
+- `confidence` must be a JSON number from 0 through 1.
+
+The required bbox shape is:
+
+```json
+"bbox": {
+  "x": 0,
+  "y": 0,
+  "width": 1,
+  "height": 1
+}
+```
+
+Give a concise non-empty `reason` for the decision. Use exactly one of the following complete JSON shapes and do not add fields.
+
+#### `decompose` JSON shape
+
+```json
+{
+  "node_id": "caller_owned_node_id",
+  "node_role": "component",
+  "task": "semantic_decompose",
+  "bbox_constraint": "completeness",
+  "analysis_image_size": {
+    "width": 1024,
+    "height": 512
+  },
+  "decision": "decompose",
+  "children": [
+    {
+      "id": "child_001",
+      "label": "direct visual asset",
+      "taxonomy": "icon",
+      "bbox": {
+        "x": 0,
+        "y": 0,
+        "width": 1,
+        "height": 1
+      },
+      "partial": false,
+      "confidence": 0.9
+    }
+  ],
+  "reason": "At least one meaningful direct visual-asset child exists."
+}
+```
+
+#### `stop_as_asset` JSON shape
+
+```json
+{
+  "node_id": "caller_owned_node_id",
+  "node_role": "component_instance",
+  "task": "semantic_decompose",
+  "bbox_constraint": "completeness",
+  "analysis_image_size": {
+    "width": 1024,
+    "height": 512
+  },
+  "decision": "stop_as_asset",
+  "asset_taxonomy": "illustration",
+  "children": [],
+  "reason": "Further splitting would not produce a meaningful independent asset."
+}
+```
 
 Do not return masks, crops, extraction strategies, repaired geometry, recursive descendants, branch schedules, or any taxonomy outside the frozen ten.
 

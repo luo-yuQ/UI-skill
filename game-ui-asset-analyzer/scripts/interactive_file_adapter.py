@@ -110,8 +110,13 @@ class InteractiveFileAdapter:
         *,
         request_id: str,
         node_id: str,
+        node_role: str | None = None,
+        adapter_kind: str | None = None,
         analysis_image: str,
     ) -> None:
+        del node_role
+        if adapter_kind is not None and adapter_kind != self.adapter_kind:
+            raise ValueError("interactive adapter kind context mismatch")
         request_path = self.requests_dir / f"{request_id}.json"
         response_path = self.responses_dir / f"{request_id}.json"
         self._context = AdapterRequestContext(
@@ -192,4 +197,3 @@ class InteractiveFileAdapter:
         if self.adapter_kind == "router":
             raise ValueError("run() is not valid for the router adapter kind")
         return self._exchange(analysis_image)
-

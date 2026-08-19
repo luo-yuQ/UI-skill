@@ -144,6 +144,45 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         adapter.semantic_decompose(self.image)
         self.assertIn("`semantic_decompose` v0.1", client.calls[0]["user_prompt"])
 
+    def test_semantic_prompt_exposes_strict_structured_output_contract(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        prompt = client.calls[0]["user_prompt"]
+        for required_text in (
+            "`bbox` MUST be a JSON object",
+            "`x`, `y`, `width`, and `height` MUST be JSON integer fields",
+            "Never return `bbox` as an array",
+            "Every child `id` must be a unique, non-empty string",
+            "Every child `label` must be a non-empty string",
+            "`partial` must be a JSON boolean",
+            "`confidence` must be a JSON number from 0 through 1",
+        ):
+            self.assertIn(required_text, prompt)
+
+        examples: dict[str, dict[str, Any]] = {}
+        for decision in ("decompose", "stop_as_asset"):
+            heading = f"#### `{decision}` JSON shape"
+            section = prompt.split(heading, 1)[1]
+            code = section.split("```json", 1)[1].split("```", 1)[0]
+            examples[decision] = json.loads(code)
+
+        decompose = examples["decompose"]
+        self.assertEqual("decompose", decompose["decision"])
+        self.assertGreaterEqual(len(decompose["children"]), 1)
+        self.assertIsInstance(decompose["children"][0]["bbox"], dict)
+        self.assertNotIn("asset_taxonomy", decompose)
+        self.assertEqual(
+            [], validate_semantic_decomposition.validate_document(decompose, self.image)
+        )
+
+        stop = examples["stop_as_asset"]
+        self.assertEqual("stop_as_asset", stop["decision"])
+        self.assertEqual([], stop["children"])
+        self.assertIn("asset_taxonomy", stop)
+        self.assertEqual(
+            [], validate_semantic_decomposition.validate_document(stop, self.image)
+        )
+
     def test_t06_all_four_methods_share_one_vlm_client(self):
         adapter, client = self.adapter(
             route_result(), structural_result(), expand_result(), semantic_result()
@@ -207,7 +246,8 @@ class ProductionVisualAdapterTests(unittest.TestCase):
     def test_t15_adapter_has_no_node_tree_or_queue_mutation_surface(self):
         adapter, _ = self.adapter()
         self.assertEqual(
-            {"vlm_client", "consumed_response_count"}, set(vars(adapter))
+            {"vlm_client", "consumed_response_count", "_request_context"},
+            set(vars(adapter)),
         )
         for name in ("node", "tree", "queue", "children", "deferred"):
             self.assertFalse(hasattr(adapter, name))
@@ -255,6 +295,104 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         adapter = InteractiveFileAdapter(self.base / "interactive", "router")
         self.assertEqual("interactive_visual", adapter.adapter_type)
         self.assertTrue(callable(adapter.route))
+
+    def test_semantic_bound_caller_metadata_overrides_empty_and_wrong_model_values(self):
+        for returned_node_id in ("", "wrong"):
+            with self.subTest(returned_node_id=returned_node_id):
+                response = semantic_result()
+                response.update(
+                    {
+                        "node_id": returned_node_id,
+                        "node_role": "wrong",
+                        "task": "wrong",
+                        "bbox_constraint": "wrong",
+                        "analysis_image_size": {"width": 1, "height": 1},
+                    }
+                )
+                adapter, _ = self.adapter(response)
+                adapter.bind_request(
+                    request_id="req_000001",
+                    node_id="test.node_001",
+                    node_role="component_instance",
+                    adapter_kind="semantic_decompose",
+                    analysis_image="nodes/test.node_001/analysis-image.png",
+                )
+                result = adapter.semantic_decompose(self.image)
+                self.assertEqual("test.node_001", result["node_id"])
+                self.assertEqual("component_instance", result["node_role"])
+                self.assertEqual("semantic_decompose", result["task"])
+                self.assertEqual("completeness", result["bbox_constraint"])
+                self.assertEqual(
+                    {"width": 1024, "height": 512},
+                    result["analysis_image_size"],
+                )
+
+    def test_runtime_bind_hook_supplies_semantic_node_metadata(self):
+        response = semantic_result()
+        response["node_id"] = "wrong"
+        response["node_role"] = "component"
+        adapter, _ = self.adapter(route_result("component_instance"), response)
+        runtime = RecursiveRuntime.create(
+            run_dir=self.base / "bound-runtime",
+            root_node_crop=self.image,
+            root_id="test.node_001",
+            adapters=build_production_runtime_adapters(adapter),
+            config=RuntimeConfig(validation_mode="real_image"),
+        )
+        self.assertEqual("complete", runtime.run())
+        result_path = runtime.store.node_directory("test.node_001") / "strategy-result.json"
+        result = json.loads(result_path.read_text(encoding="utf-8"))
+        self.assertEqual("test.node_001", result["node_id"])
+        self.assertEqual("component_instance", result["node_role"])
+
+    def test_semantic_bbox_array_remains_invalid_without_repair(self):
+        response = semantic_result()
+        response.update(
+            {
+                "decision": "decompose",
+                "children": [
+                    {
+                        "id": "child_001",
+                        "label": "direct visual asset",
+                        "taxonomy": "icon",
+                        "bbox": [1, 2, 3, 4],
+                        "partial": False,
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        )
+        response.pop("asset_taxonomy")
+        adapter, _ = self.adapter(response)
+        with self.assertRaisesRegex(
+            StrategySchemaValidationError, "is not of type 'object'"
+        ):
+            adapter.semantic_decompose(self.image)
+
+    def test_semantic_valid_bbox_object_still_passes(self):
+        response = semantic_result()
+        response.update(
+            {
+                "decision": "decompose",
+                "children": [
+                    {
+                        "id": "child_001",
+                        "label": "direct visual asset",
+                        "taxonomy": "icon",
+                        "bbox": {"x": 1, "y": 2, "width": 3, "height": 4},
+                        "partial": False,
+                        "confidence": 0.9,
+                    }
+                ],
+            }
+        )
+        response.pop("asset_taxonomy")
+        adapter, _ = self.adapter(response)
+        result = adapter.semantic_decompose(self.image)
+        self.assertEqual(
+            {"x": 1, "y": 2, "width": 3, "height": 4},
+            result["children"][0]["bbox"],
+        )
 
     def test_analysis_size_t01_canonicalizes_one_pixel_height_mismatch(self):
         image = self.base / "analysis-1039-a.png"
