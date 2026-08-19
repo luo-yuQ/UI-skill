@@ -219,6 +219,7 @@ class ProductionVisualAdapter:
             position
             for heading in (
                 "\n## Engineering contract",
+                "\n## v0.1.1 behavior summary",
                 "\n## v0.1 behavior summary",
                 "\n## Validation Evidence",
                 "\n## Validation evidence",

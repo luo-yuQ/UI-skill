@@ -330,8 +330,8 @@ class RuntimeConcurrencyTests(unittest.TestCase):
         runtime.store.update(node)
 
     def test_config_default_and_validation(self):
-        self.assertEqual(4, DEFAULT_MAX_CONCURRENCY)
-        self.assertEqual(4, RuntimeConfig().max_concurrency)
+        self.assertEqual(2, DEFAULT_MAX_CONCURRENCY)
+        self.assertEqual(2, RuntimeConfig().max_concurrency)
         for value in (0, -1, True, 1.5):
             with self.subTest(value=value), self.assertRaisesRegex(
                 ValueError, "max_concurrency"
@@ -340,7 +340,7 @@ class RuntimeConcurrencyTests(unittest.TestCase):
 
     def test_concurrency_limit_and_serial_compatibility(self):
         observed: dict[int, int] = {}
-        for max_concurrency in (4, 1):
+        for max_concurrency in (2, 1):
             router = TrackingRouter(max_concurrency)
             runtime = self.create_multi(
                 name=f"limit-{max_concurrency}",
@@ -359,8 +359,8 @@ class RuntimeConcurrencyTests(unittest.TestCase):
                 [chr(ord("A") + index) for index in range(8)],
                 runtime.state.processed_nodes,
             )
-        self.assertGreater(observed[4], 1)
-        self.assertLessEqual(observed[4], 4)
+        self.assertGreater(observed[2], 1)
+        self.assertLessEqual(observed[2], 2)
         self.assertEqual(1, observed[1])
 
     def test_completion_order_does_not_control_commit_or_child_order(self):

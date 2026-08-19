@@ -46,6 +46,43 @@ def make_decomposition():
     }
 
 
+def make_panel_icon_decomposition():
+    data = make_decomposition()
+    data["children"] = [
+        {
+            "id": "panel_001",
+            "label": "green rounded button base",
+            "taxonomy": "panel",
+            "bbox": {"x": 0, "y": 0, "width": 1024, "height": 1019},
+            "partial": False,
+            "confidence": 0.98,
+        },
+        {
+            "id": "icon_001",
+            "label": "potion bottle icon",
+            "taxonomy": "icon",
+            "bbox": {"x": 390, "y": 210, "width": 244, "height": 500},
+            "partial": False,
+            "confidence": 0.97,
+        },
+    ]
+    data["reason"] = (
+        "The panel base and potion icon are distinguishable UI components."
+    )
+    return data
+
+
+def make_atomic_stop(taxonomy):
+    data = make_decomposition()
+    data["decision"] = "stop_as_asset"
+    data["asset_taxonomy"] = taxonomy
+    data["children"] = []
+    data["reason"] = (
+        f"The current node is one atomic {taxonomy} with no component-level split."
+    )
+    return data
+
+
 class SemanticDecompositionTests(unittest.TestCase):
     def make_image(self, size=(1024, 1019)):
         context = tempfile.TemporaryDirectory()
@@ -54,8 +91,76 @@ class SemanticDecompositionTests(unittest.TestCase):
         self.addCleanup(context.cleanup)
         return image_path
 
-    def test_decompose_accepts_overlapping_complete_bboxes(self):
-        data = make_decomposition()
+    def test_case_a_panel_plus_icon_is_a_valid_decomposition(self):
+        data = make_panel_icon_decomposition()
+        self.assertEqual("decompose", data["decision"])
+        self.assertGreaterEqual(len(data["children"]), 2)
+        self.assertEqual(
+            {"panel", "icon"},
+            {child["taxonomy"] for child in data["children"]},
+        )
+        self.assertNotIn("asset_taxonomy", data)
+        self.assertEqual([], validator.validate_document(data, self.make_image()))
+
+    def test_cases_b_and_c_atomic_icon_or_panel_are_valid_stops(self):
+        for taxonomy in ("icon", "panel"):
+            with self.subTest(taxonomy=taxonomy):
+                data = make_atomic_stop(taxonomy)
+                self.assertEqual("stop_as_asset", data["decision"])
+                self.assertEqual(taxonomy, data["asset_taxonomy"])
+                self.assertEqual([], data["children"])
+                self.assertEqual(
+                    [], validator.validate_document(data, self.make_image())
+                )
+
+    def test_case_d_panel_icon_and_text_is_a_valid_decomposition(self):
+        data = make_panel_icon_decomposition()
+        data["children"].append(
+            {
+                "id": "text_001",
+                "label": "potion action label",
+                "taxonomy": "text",
+                "bbox": {"x": 320, "y": 820, "width": 384, "height": 96},
+                "partial": False,
+                "confidence": 0.96,
+            }
+        )
+        data["reason"] = (
+            "The panel base, potion icon, and text are distinguishable UI components."
+        )
+        self.assertEqual("decompose", data["decision"])
+        self.assertEqual(
+            {"panel", "icon", "text"},
+            {child["taxonomy"] for child in data["children"]},
+        )
+        self.assertEqual([], validator.validate_document(data, self.make_image()))
+
+    def test_case_e_full_parent_panel_and_nested_icon_overlap_is_valid(self):
+        data = make_panel_icon_decomposition()
+        by_taxonomy = {child["taxonomy"]: child for child in data["children"]}
+        panel_bbox = by_taxonomy["panel"]["bbox"]
+        icon_bbox = by_taxonomy["icon"]["bbox"]
+
+        self.assertEqual(
+            {
+                "x": 0,
+                "y": 0,
+                "width": data["analysis_image_size"]["width"],
+                "height": data["analysis_image_size"]["height"],
+            },
+            panel_bbox,
+        )
+        self.assertGreaterEqual(icon_bbox["x"], panel_bbox["x"])
+        self.assertGreaterEqual(icon_bbox["y"], panel_bbox["y"])
+        self.assertLessEqual(
+            icon_bbox["x"] + icon_bbox["width"],
+            panel_bbox["x"] + panel_bbox["width"],
+        )
+        self.assertLessEqual(
+            icon_bbox["y"] + icon_bbox["height"],
+            panel_bbox["y"] + panel_bbox["height"],
+        )
+        self.assertEqual("decompose", data["decision"])
         self.assertEqual([], validator.validate_document(data, self.make_image()))
 
     def test_stop_as_asset_requires_empty_children_and_taxonomy(self):

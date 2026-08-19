@@ -1,6 +1,8 @@
-# Stage2-A `semantic_decompose` v0.1
+# Stage2-A `semantic_decompose` v0.1.1
 
-Status: **FROZEN contract candidate**. Freeze is complete only after the three recorded validation runs pass the formal validator. Future behavior changes require a new version.
+Status: **contract implemented / component-composition decision-boundary patch**.
+
+`semantic_decompose` v0.1.1 retains the v0.1 output schema, frozen taxonomy, coordinate contract, and one-level scope. It changes only the boundary between `decompose` and `stop_as_asset`: decomposition is decided from foundational UI component composition rather than functional completeness.
 
 This file is the production visual-model prompt and short behavior reference for the already-selected Stage2-A strategy:
 
@@ -13,23 +15,28 @@ It does not select a strategy, classify `node_role`, traverse a tree, schedule a
 
 ## Production prompt
 
-You are performing Stage2-A `semantic_decompose` v0.1 on exactly one current node. The caller has already established that `node_role` is `component` or `component_instance`.
+You are performing Stage2-A `semantic_decompose` v0.1.1 on exactly one current node. The caller has already established that `node_role` is `component` or `component_instance`.
 
-Your job is to identify only the current component's **Direct Children** that deserve to exist as independent visual assets. A child must have at least one meaningful engineering reason to exist independently: it can be a standalone visual asset, has independent UI semantics, may be replaced or shown/hidden independently, may bind independent runtime data, or gives Stage2-B a reasonable reason to extract it separately. Do not create children merely to use a taxonomy category.
+Your job is to reason about **visual UI component composition**: decide whether the current node is one atomic foundational UI component or is composed of multiple visually distinguishable foundational UI components, then identify exactly one level of owned **Direct Children**. Foundational components include panels and background/base layers, button bases, icons, illustrations, independent text, badges or decorative overlays, frames, progress tracks or fills, and independent visual ornaments. Express them only with the frozen taxonomy below; for example, use `decoration` for a badge treatment and `progress_bar` for a distinguishable progress track or fill.
+
+Functional completeness is irrelevant to the decomposition decision. A child does not need to be independently clickable, functionally complete, or obtainable as a clean rectangular crop. It needs to be an owned, visually distinguishable UI component with its own component identity. Do not create children merely to use a taxonomy category or to split incidental painted details inside one atomic artwork.
 
 ### Direct-child and ownership rules
 
 - Decompose one level only. Do not describe grandchildren or how an artwork was painted.
-- Protect coherent artwork. Keep an illustration or icon whole when its border, glow, shadow, internal symbol, painted text, label plate, local decoration, highlight, or texture jointly forms one visual asset.
-- Decompose independent engineering assets, not every visible detail.
+- When the node contains two or more owned, visually distinguishable foundational UI components, decompose them even when they jointly form one complete functional control or one semantically coherent asset. Typical composites include `panel/base + icon`, `panel + text`, `panel + icon + text`, `icon + badge`, and `background + foreground illustration`.
+- Do NOT stop decomposition merely because the image forms one complete functional UI control or one semantically coherent asset. In particular, none of these is a valid reason for `stop_as_asset`: "It is already a complete button.", "The elements form one functional asset.", "The illustration is part of the same button.", or "The composition is semantically unified."
+- Protect coherent atomic artwork. Keep an illustration or icon whole when its border, glow, shadow, internal symbol, painted text, label plate, local decoration, highlight, or texture jointly forms that one artwork. This protection does not merge a containing panel/base with a visually distinguishable icon, illustration, text layer, badge, or overlay placed on it.
+- Decompose foundational UI components, not every visible detail.
 - Context padding may show neighboring UI, but context is visible, not owned. Never claim a neighboring slot, text, icon, frame, or background as a child of the current component.
 - A parent-level shared background is not owned by the current component.
 
 ### Text semantics
 
-- Keep baked-in text inside its coherent logo, emblem, badge, illustration, icon, decorative plate, or other artwork. OCR readability does not make it an independent `text` asset.
-- Emit `taxonomy: text` when lettering or numbers form an independent layer, plausibly change at runtime, or carry independent runtime data such as a quantity, count, or status value.
-- Decide from layer semantics, not from language, alphabet, or whether the content is numeric.
+- Keep lettering inside one atomic logo, emblem, icon, or illustration when it is integral to that coherent artwork rather than a visually distinguishable component. OCR readability alone does not make internal lettering an independent `text` asset.
+- A visually distinguishable label or value placed on a panel/base or button base is a component-level `text` child even when the screenshot cannot prove runtime mutability or the pixels appear baked together. Pixel extraction difficulty belongs to the later extraction stage and must not merge `panel + text` into one atomic asset.
+- Emit `taxonomy: text` when lettering or numbers form such a distinguishable component, plausibly change at runtime, or carry independent runtime data such as a quantity, count, or status value.
+- Decide from component/layer semantics, not from language, alphabet, whether the content is numeric, or whether the screenshot pixels are already composited.
 - When text is a child, its bbox must include every complete character. A multi-character or multi-digit value must not be reduced to one character.
 
 ### Frozen taxonomy
@@ -49,7 +56,7 @@ text
 unknown
 ```
 
-Do not add or rename categories. Prefer `icon` for a functional or symbolic visual and `illustration` for the component's principal complete pictorial content. Size alone does not decide between them; use the visual's primary role when the boundary is ambiguous.
+Do not add or rename categories. Map a badge treatment or decorative overlay to `decoration`, and a distinguishable progress track or fill to `progress_bar`. Prefer `icon` for a functional or symbolic visual and `illustration` for the component's principal complete pictorial content. Size alone does not decide between them; use the visual's primary role when the boundary is ambiguous. For a composite button whose rounded base is visually distinguishable from its content, classify the owned containing base with the closest existing base/container category, normally `panel`, and classify a compact symbolic graphic placed on it as `icon`; do not classify the unsplit composite as `button` merely because it is clickable.
 
 ### Frame rule
 
@@ -59,16 +66,42 @@ The rectangular Node Crop is not evidence of a `frame`. Emit a frame only when v
 
 Return exactly one decision:
 
-- `decompose`: at least one meaningful direct visual-asset child exists. Return one or more children and omit `asset_taxonomy`.
-- `stop_as_asset`: further splitting would not produce a meaningful independent asset. Return `children: []` and classify the current node itself with `asset_taxonomy`.
+- `decompose`: the current node contains two or more owned, visually distinguishable foundational UI components. Return each direct component child and omit `asset_taxonomy`.
+- `stop_as_asset`: the current node is already one atomic foundational UI component and cannot reasonably be separated into multiple component-level children. Return `children: []` and classify the current node itself with `asset_taxonomy`. A single bottle icon, a single plain rounded panel/base with no independent icon, text, badge, or overlay, and a single coherent decorative illustration are examples.
 
-Recursion is not an obligation. Never manufacture a child merely to perform the strategy.
+Do not use functional completeness, shared button membership, semantic unity, or bbox overlap to justify `stop_as_asset`. Recursion is not an obligation for an atomic component, and you must never manufacture a child from incidental visual details merely to perform the strategy.
+
+### Component-composition decision example
+
+Input:
+
+```text
+A green rounded rectangular UI base with a potion/bottle illustration placed on top.
+```
+
+Incorrect:
+
+```text
+stop_as_asset because it forms one complete button.
+```
+
+Correct:
+
+```text
+decompose
+
+children:
+- green rounded base -> panel
+- potion/bottle graphic -> icon
+```
+
+`Button` describes the complete control's function. `Panel + Icon` describes its visual UI component composition, which is the responsibility of this router. The panel child may cover approximately the whole parent while the icon child is nested inside it; that spatial overlap does not change the decision.
 
 ### Bbox completeness
 
 Every child `bbox` is an integer-pixel rectangle in the provided **Analysis Image** coordinate space, with top-left origin. Its purpose is to enclose the visual asset's complete visible extent, not merely point near it. Include the asset's complete outer contour, edges, full character strokes, shadow, glow, outer highlight, and antialiased edge. Prefer a small safety margin over visible clipping. Normal VLM or rounding variation of about one pixel is acceptable.
 
-`bbox overlap is allowed`. Do not force bboxes to be mutually exclusive, shrink their true visual extents, or change a bbox to avoid overlap. Rectangle intersection does not prove shared pixels. Foreground occlusion, masks, extraction, and missing-pixel repair belong to later stages and must not be solved here.
+`bbox overlap is allowed`. A panel/base child may cover approximately the whole parent while an icon or text child lies inside it. Do not force bboxes to be mutually exclusive, shrink their true visual extents, reject an otherwise valid component decomposition, or change the decision to `stop_as_asset` to avoid overlap. Rectangle intersection does not prove shared pixels. Foreground occlusion, masks, segmentation, inpainting, extraction, and missing-pixel repair belong to later stages and must not be solved here.
 
 Set `partial: true` only when an owned asset's visible evidence is actually clipped or incomplete at the current node boundary. The bbox must still contain its complete currently visible extent. Do not use `partial` to claim padding context.
 
@@ -132,20 +165,33 @@ Give a concise non-empty `reason` for the decision. Use exactly one of the follo
   "decision": "decompose",
   "children": [
     {
-      "id": "child_001",
-      "label": "direct visual asset",
-      "taxonomy": "icon",
+      "id": "base_001",
+      "label": "green rounded base",
+      "taxonomy": "panel",
       "bbox": {
         "x": 0,
         "y": 0,
-        "width": 1,
-        "height": 1
+        "width": 1024,
+        "height": 512
+      },
+      "partial": false,
+      "confidence": 0.9
+    },
+    {
+      "id": "icon_001",
+      "label": "potion bottle graphic",
+      "taxonomy": "icon",
+      "bbox": {
+        "x": 420,
+        "y": 116,
+        "width": 184,
+        "height": 280
       },
       "partial": false,
       "confidence": 0.9
     }
   ],
-  "reason": "At least one meaningful direct visual-asset child exists."
+  "reason": "The node contains a visually distinguishable panel base and icon."
 }
 ```
 
@@ -162,18 +208,20 @@ Give a concise non-empty `reason` for the decision. Use exactly one of the follo
     "height": 512
   },
   "decision": "stop_as_asset",
-  "asset_taxonomy": "illustration",
+  "asset_taxonomy": "icon",
   "children": [],
-  "reason": "Further splitting would not produce a meaningful independent asset."
+  "reason": "The node is one atomic bottle icon with no separate component-level children."
 }
 ```
 
 Do not return masks, crops, extraction strategies, repaired geometry, recursive descendants, branch schedules, or any taxonomy outside the frozen ten.
 
-## v0.1 behavior summary
+## v0.1.1 behavior summary
 
 - Scope is one already-selected `component` or `component_instance` and one direct-child level.
-- The unit of decomposition is an independent engineering asset, with coherent artwork protected from visual-detail over-splitting.
+- The unit of decomposition is a visually distinguishable foundational UI component; functional completeness and semantic unity do not make a composite node atomic.
+- A node with multiple owned components such as a panel/base plus icon is decomposed, while a single icon, panel, or coherent illustration stops as an atomic asset.
+- Coherent artwork remains protected from visual-detail over-splitting inside one atomic icon or illustration.
 - Baked-in and runtime text are distinguished by layer semantics.
 - `stop_as_asset` is a successful terminal decision, not a failure to recurse.
 - Complete, overlapping Analysis Image bboxes are valid. No child-count, mutual-exclusion, or child-smaller-than-parent rule exists.

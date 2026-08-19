@@ -144,6 +144,100 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         adapter.semantic_decompose(self.image)
         self.assertIn("`semantic_decompose` v0.1", client.calls[0]["user_prompt"])
 
+    def test_semantic_prompt_uses_visual_component_composition_boundary(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        prompt = client.calls[0]["user_prompt"]
+
+        for required_text in (
+            "Functional completeness is irrelevant",
+            "visual UI component composition",
+            "multiple visually distinguishable foundational UI components",
+            "even when they jointly form one complete functional control or one "
+            "semantically coherent asset",
+            "`panel + icon + text`",
+            "A visually distinguishable label or value placed on a panel/base",
+            "component-level `text` child even when",
+            "Pixel extraction difficulty belongs to the later extraction stage",
+            "Map a badge treatment or decorative overlay to `decoration`",
+            "progress track or fill to `progress_bar`",
+        ):
+            self.assertIn(required_text, prompt)
+
+        for invalid_stop_reason in (
+            "It is already a complete button.",
+            "The elements form one functional asset.",
+            "The illustration is part of the same button.",
+            "The composition is semantically unified.",
+        ):
+            self.assertIn(invalid_stop_reason, prompt)
+
+    def test_semantic_prompt_includes_green_base_and_potion_few_shot(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        prompt = client.calls[0]["user_prompt"]
+        example_start = prompt.index(
+            "A green rounded rectangular UI base with a potion/bottle illustration"
+        )
+        example_end = prompt.find("\n### ", example_start)
+        example = prompt[example_start : example_end if example_end >= 0 else None]
+        normalized = example.lower()
+
+        self.assertIn("incorrect:", normalized)
+        self.assertIn("stop_as_asset", normalized)
+        self.assertIn("complete button", normalized)
+        self.assertIn("correct:", normalized)
+        self.assertIn("decompose", normalized)
+        self.assertIn("green rounded base", normalized)
+        self.assertIn("panel", normalized)
+        self.assertIn("potion/bottle graphic", normalized)
+        self.assertIn("icon", normalized)
+
+    def test_semantic_prompt_reserves_stop_for_atomic_components(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        lines = [
+            line.strip().lower()
+            for line in client.calls[0]["user_prompt"].splitlines()
+        ]
+
+        for taxonomy in ("icon", "panel", "illustration"):
+            with self.subTest(taxonomy=taxonomy):
+                self.assertTrue(
+                    any(
+                        taxonomy in line
+                        and "stop_as_asset" in line
+                        and any(
+                            boundary in line
+                            for boundary in ("atomic", "single", "standalone")
+                        )
+                        for line in lines
+                    ),
+                    f"production prompt lacks an atomic {taxonomy} stop example",
+                )
+
+    def test_semantic_prompt_keeps_bbox_overlap_out_of_the_decision(self):
+        adapter, client = self.adapter(semantic_result())
+        adapter.semantic_decompose(self.image)
+        prompt = client.calls[0]["user_prompt"]
+
+        self.assertIn("`bbox overlap is allowed`", prompt)
+        self.assertIn("spatial overlap does not change the decision", prompt)
+        self.assertIn(
+            "change the decision to `stop_as_asset` to avoid overlap",
+            prompt,
+        )
+        for later_stage_concept in (
+            "Foreground occlusion",
+            "masks",
+            "segmentation",
+            "inpainting",
+            "extraction",
+            "missing-pixel repair",
+            "belong to later stages",
+        ):
+            self.assertIn(later_stage_concept, prompt)
+
     def test_semantic_prompt_exposes_strict_structured_output_contract(self):
         adapter, client = self.adapter(semantic_result())
         adapter.semantic_decompose(self.image)
@@ -168,7 +262,12 @@ class ProductionVisualAdapterTests(unittest.TestCase):
 
         decompose = examples["decompose"]
         self.assertEqual("decompose", decompose["decision"])
-        self.assertGreaterEqual(len(decompose["children"]), 1)
+        self.assertGreaterEqual(len(decompose["children"]), 2)
+        self.assertTrue(
+            {"panel", "icon"}.issubset(
+                {child["taxonomy"] for child in decompose["children"]}
+            )
+        )
         self.assertIsInstance(decompose["children"][0]["bbox"], dict)
         self.assertNotIn("asset_taxonomy", decompose)
         self.assertEqual(

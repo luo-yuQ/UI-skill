@@ -34,7 +34,7 @@ NODE_STATUSES = frozenset(
 )
 ACTIONS = frozenset({"structural_split", "expand_instances", "semantic_decompose", "stop"})
 DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT = 2
-DEFAULT_MAX_CONCURRENCY = 4
+DEFAULT_MAX_CONCURRENCY = 2
 VALIDATION_MODES = frozenset({"mechanics", "real_image"})
 REAL_IMAGE_ADAPTER_TYPES = frozenset({"interactive_visual", "production_visual"})
 

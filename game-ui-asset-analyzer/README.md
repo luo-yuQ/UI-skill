@@ -6,7 +6,7 @@ This Stage2-A skill decomposes a UI into reusable visual assets, assigns the fou
 
 - Level-1 Region Decomposition v0.1 — **FROZEN**
 - Coordinate Contract v0.1 — **FROZEN**
-- `semantic_decompose` v0.1 — **FROZEN**
+- `semantic_decompose` v0.1.1 — **IMPLEMENTED / COMPONENT-COMPOSITION BOUNDARY PATCH**
 - Node Router v0.1 — **FROZEN**
 - `structural_split` v0.1 — **FROZEN**
 - `expand_instances` v0.1 — **FROZEN**
@@ -94,7 +94,7 @@ python scripts/render_instances_overlay.py --analysis-image path\to\analysis-ima
 
 The validator checks only schema, exact `repeat_count`, required fields, unique instance IDs, numeric ranges, `partial_instance`, and real-image bbox bounds. The renderer reuses the existing deterministic overlay layout utilities; it does not modify JSON, call a VLM, perform semantic review, or feed a correction loop. Recursive Runtime v0.1 uses provenance to schedule selected instances directly for `semantic_decompose`, without another Router call.
 
-## Recursive Stage2-A: `semantic_decompose` v0.1
+## Recursive Stage2-A: `semantic_decompose` v0.1.1
 
 For an already-selected `component` or `component_instance`, use the production prompt and behavior contract in `references/semantic-decompose-v0.1.md`. Its VLM JSON must conform to `schemas/semantic-decomposition.schema.json`; all child bboxes are complete visible extents in the deterministic 1024-pixel-wide Analysis Image coordinate space.
 
