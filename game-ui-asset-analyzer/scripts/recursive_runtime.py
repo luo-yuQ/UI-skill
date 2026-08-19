@@ -60,6 +60,19 @@ class RuntimeAdapters:
 
 
 @dataclass(frozen=True)
+class RootInput:
+    """Ordered Level-0 input for multi-root Runtime initialization."""
+
+    root_id: str
+    root_node_crop: Path
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.root_id, str) or not self.root_id.strip():
+            raise ValueError("root_id must be a non-empty string")
+        object.__setattr__(self, "root_node_crop", Path(self.root_node_crop))
+
+
+@dataclass(frozen=True)
 class SemanticWarning:
     """Non-operative semantic quality note attached to a run summary."""
 
@@ -221,6 +234,11 @@ class NodeStore:
         self.get(node_id)
         return [self.get(child_id) for child_id in self._children[node_id]]
 
+    def root_ids(self) -> list[str]:
+        return [
+            node.node_id for node in self._nodes.values() if node.parent_id is None
+        ]
+
     def restore_deferred(self, node_id: str) -> NodeRecord:
         node = self.get(node_id)
         if node.status != "deferred":
@@ -330,34 +348,60 @@ class RecursiveRuntime:
         root_id: str = "root",
         config: RuntimeConfig | None = None,
     ) -> "RecursiveRuntime":
+        return cls.create_multi(
+            run_dir=run_dir,
+            roots=[RootInput(root_id=root_id, root_node_crop=root_node_crop)],
+            adapters=adapters,
+            config=config,
+        )
+
+    @classmethod
+    def create_multi(
+        cls,
+        *,
+        run_dir: Path,
+        roots: list[RootInput],
+        adapters: RuntimeAdapters,
+        config: RuntimeConfig | None = None,
+    ) -> "RecursiveRuntime":
+        ordered_roots = list(roots)
+        if not ordered_roots:
+            raise ValueError("multi-root Runtime requires at least one root")
+        if any(not isinstance(root, RootInput) for root in ordered_roots):
+            raise ValueError("roots must contain only RootInput values")
+        root_ids = [root.root_id for root in ordered_roots]
+        if len(root_ids) != len(set(root_ids)):
+            raise ValueError("duplicate root_id in multi-root Runtime input")
+
         runtime = cls(run_dir, adapters, config)
-        root_dir = runtime.store.node_directory(root_id)
-        root_dir.mkdir(parents=True, exist_ok=True)
-        crop_path = root_dir / "node-crop.png"
-        analysis_path = root_dir / "analysis-image.png"
-        metadata_path = root_dir / "analysis-image-meta.json"
-        try:
-            shutil.copy2(root_node_crop, crop_path)
-        except OSError as exc:
-            raise ValueError(f"unable to copy root Node Crop: {exc}") from exc
-        prepare_analysis_input(
-            crop_path,
-            analysis_path,
-            metadata_path,
-            max_width=DEFAULT_MAX_WIDTH,
-            force_width=True,
-        )
-        root = NodeRecord(
-            node_id=root_id,
-            parent_id=None,
-            depth=0,
-            produced_by=None,
-            node_crop=runtime._relative(crop_path),
-            analysis_image=runtime._relative(analysis_path),
-            status="pending",
-        )
-        runtime.store.add(root)
-        runtime.state.current_level_queue.append(root_id)
+        for root_input in ordered_roots:
+            root_dir = runtime.store.node_directory(root_input.root_id)
+            root_dir.mkdir(parents=True, exist_ok=True)
+            crop_path = root_dir / "node-crop.png"
+            analysis_path = root_dir / "analysis-image.png"
+            metadata_path = root_dir / "analysis-image-meta.json"
+            try:
+                shutil.copy2(root_input.root_node_crop, crop_path)
+            except OSError as exc:
+                raise ValueError(f"unable to copy root Node Crop: {exc}") from exc
+            prepare_analysis_input(
+                crop_path,
+                analysis_path,
+                metadata_path,
+                max_width=DEFAULT_MAX_WIDTH,
+                force_width=True,
+            )
+            root = NodeRecord(
+                node_id=root_input.root_id,
+                parent_id=None,
+                depth=0,
+                produced_by=None,
+                node_crop=runtime._relative(crop_path),
+                analysis_image=runtime._relative(analysis_path),
+                status="pending",
+            )
+            runtime.store.add(root)
+            runtime.state.current_level_queue.append(root_input.root_id)
         runtime._persist()
         return runtime
 
@@ -857,6 +901,8 @@ class RecursiveRuntime:
         manifest = {
             "schema_version": RUNTIME_VERSION,
             "runtime": "recursive-runtime-v0.1",
+            "root_count": len(self.store.root_ids()),
+            "root_ids": self.store.root_ids(),
             "config": asdict(self.config),
             "validation_mode": self.config.validation_mode,
             "adapter_types": self._adapter_types(),
