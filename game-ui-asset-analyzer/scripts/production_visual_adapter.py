@@ -126,6 +126,23 @@ def canonicalize_semantic_contract_metadata(
         result["node_id"] = authoritative_node_id
 
 
+def canonicalize_semantic_child_ids(result: dict[str, Any]) -> None:
+    """Derive stable child IDs from the VLM-selected taxonomy."""
+
+    children = result.get("children")
+    if not isinstance(children, list):
+        return
+    taxonomy_counts: dict[str, int] = {}
+    for child in children:
+        if not isinstance(child, dict):
+            continue
+        taxonomy = child.get("taxonomy")
+        if not isinstance(taxonomy, str) or not taxonomy:
+            continue
+        taxonomy_counts[taxonomy] = taxonomy_counts.get(taxonomy, 0) + 1
+        child["id"] = f"{taxonomy}_{taxonomy_counts[taxonomy]:03d}"
+
+
 def persist_bbox_boundary_diagnostic(
     *,
     strategy: str,
@@ -277,6 +294,7 @@ class ProductionVisualAdapter:
                 caller_node_id=caller_node_id,
                 analysis_image=image_path,
             )
+            canonicalize_semantic_child_ids(canonical_result)
         else:
             canonicalize_analysis_image_size(
                 canonical_result, response_schema, image_path

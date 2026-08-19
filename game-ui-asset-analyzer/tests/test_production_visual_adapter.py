@@ -473,6 +473,44 @@ class ProductionVisualAdapterTests(unittest.TestCase):
 
         self.assertEqual("test_component_001", result["node_id"])
 
+    def test_semantic_child_ids_are_derived_from_taxonomy(self):
+        response = semantic_result()
+        response.update(
+            {
+                "decision": "decompose",
+                "children": [
+                    {
+                        "id": "base_001",
+                        "label": "green rounded base",
+                        "taxonomy": "panel",
+                        "bbox": {"x": 0, "y": 0, "width": 1024, "height": 512},
+                        "partial": False,
+                        "confidence": 0.97,
+                    },
+                    {
+                        "id": "potion_art",
+                        "label": "detailed sprouting potion bottle icon",
+                        "taxonomy": "icon",
+                        "bbox": {"x": 420, "y": 116, "width": 184, "height": 280},
+                        "partial": False,
+                        "confidence": 0.96,
+                    },
+                ],
+                "reason": "The panel and localized potion icon are separate components.",
+            }
+        )
+        response.pop("asset_taxonomy")
+        adapter, _ = self.adapter(response)
+
+        result = adapter.semantic_decompose(
+            self.image, node_id="test_component_001"
+        )
+
+        self.assertEqual(
+            ["panel_001", "icon_001"],
+            [child["id"] for child in result["children"]],
+        )
+
     def test_runtime_bind_hook_supplies_semantic_node_metadata(self):
         response = semantic_result()
         response["node_id"] = "wrong"
