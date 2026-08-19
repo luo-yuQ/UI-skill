@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import copy
 import contextlib
 import io
 import json
@@ -21,6 +22,7 @@ if str(SCRIPTS) not in sys.path:
     sys.path.insert(0, str(SCRIPTS))
 
 import run_recursive_runtime  # noqa: E402
+import vlm_client  # noqa: E402
 from production_visual_adapter import (  # noqa: E402
     ProductionVisualAdapter,
     StrategySchemaValidationError,
@@ -29,7 +31,10 @@ from production_visual_adapter import (  # noqa: E402
 from recursive_runtime import RecursiveRuntime, RuntimeConfig  # noqa: E402
 from vlm_client import (  # noqa: E402
     DEFAULT_MAX_OUTPUT_TOKENS,
+    RECOVERABLE_HTTP_STATUS_CODES,
     ResponsesAPIVLMClient,
+    TRANSPORT_MAX_ATTEMPTS,
+    TRANSPORT_RETRY_WAIT_SECONDS,
     VLMClientConfig,
     VLMConfigurationError,
     VLMResponseParseError,
@@ -51,13 +56,26 @@ class FakeResponse:
 
 
 class FakeSession:
-    def __init__(self, response: FakeResponse | None = None, error: Exception | None = None) -> None:
+    def __init__(
+        self,
+        response: FakeResponse | None = None,
+        error: Exception | None = None,
+        events: list[FakeResponse | Exception] | None = None,
+    ) -> None:
         self.response = response
         self.error = error
+        self.events = list(events) if events is not None else None
         self.calls: list[dict[str, Any]] = []
 
     def post(self, url: str, **kwargs: Any) -> FakeResponse:
-        self.calls.append({"url": url, **kwargs})
+        self.calls.append({"url": url, **copy.deepcopy(kwargs)})
+        if self.events is not None:
+            if not self.events:
+                raise AssertionError("fake transport received an unexpected request")
+            event = self.events.pop(0)
+            if isinstance(event, Exception):
+                raise event
+            return event
         if self.error is not None:
             raise self.error
         if self.response is None:
@@ -112,10 +130,12 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         status: int = 200,
         error: Exception | None = None,
         config: VLMClientConfig | None = None,
+        events: list[FakeResponse | Exception] | None = None,
     ) -> tuple[ResponsesAPIVLMClient, FakeSession]:
-        if body is None:
+        if body is None and events is None:
             body = responses_body('{"ok": true}')
-        session = FakeSession(FakeResponse(status, body), error=error)
+        response = FakeResponse(status, body) if events is None else None
+        session = FakeSession(response, error=error, events=events)
         return ResponsesAPIVLMClient(config or self.config, session=session), session
 
     def infer(self, client: ResponsesAPIVLMClient) -> dict[str, Any]:
@@ -246,19 +266,32 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.assertEqual({"node_role": "asset"}, self.infer(client))
 
     def test_t18_invalid_output_text_json_is_parse_error(self):
-        client, _ = self.client(body=responses_body("```json\n{}\n```"))
-        with self.assertRaisesRegex(VLMResponseParseError, "vlm_response_parse_error"):
-            self.infer(client)
+        client, session = self.client(body=responses_body("```json\n{}\n```"))
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(VLMResponseParseError, "vlm_response_parse_error"):
+                self.infer(client)
+        self.assertEqual(1, len(session.calls))
+        sleep.assert_not_called()
 
     def test_t19_timeout_is_transport_error(self):
-        client, _ = self.client(error=TimeoutError("provider timeout"))
-        with self.assertRaisesRegex(VLMTransportError, "vlm_transport_error"):
-            self.infer(client)
+        client, session = self.client(error=TimeoutError("provider timeout"))
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                VLMTransportError, "attempts=3/3"
+            ):
+                self.infer(client)
+        self.assertEqual(3, len(session.calls))
+        self.assertEqual([5, 5], [call.args[0] for call in sleep.call_args_list])
 
     def test_t20_connection_failure_is_transport_error(self):
-        client, _ = self.client(error=ConnectionError("connection failed"))
-        with self.assertRaisesRegex(VLMTransportError, "vlm_transport_error"):
-            self.infer(client)
+        client, session = self.client(error=ConnectionError("connection failed"))
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                VLMTransportError, "attempts=3/3"
+            ):
+                self.infer(client)
+        self.assertEqual(3, len(session.calls))
+        self.assertEqual([5, 5], [call.args[0] for call in sleep.call_args_list])
 
     def test_t21_http_401_is_transport_error(self):
         client, _ = self.client(status=401, body="unauthorized")
@@ -271,9 +304,125 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
             self.infer(client)
 
     def test_http_502_is_transport_error(self):
-        client, _ = self.client(status=502, body="Proxy request failed")
-        with self.assertRaisesRegex(VLMTransportError, "HTTP 502"):
-            self.infer(client)
+        client, session = self.client(status=502, body="Proxy request failed")
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(VLMTransportError, "attempts=3/3"):
+                self.infer(client)
+        self.assertEqual(3, len(session.calls))
+        self.assertEqual([5, 5], [call.args[0] for call in sleep.call_args_list])
+
+    def test_transport_retry_v01_constants_and_status_classification(self):
+        self.assertEqual(3, TRANSPORT_MAX_ATTEMPTS)
+        self.assertEqual(5, TRANSPORT_RETRY_WAIT_SECONDS)
+        self.assertEqual({429, 502, 503, 504}, set(RECOVERABLE_HTTP_STATUS_CODES))
+
+    def test_transport_retry_502_then_success(self):
+        client, session = self.client(
+            events=[
+                FakeResponse(502, '{"error":"Proxy request failed"}'),
+                FakeResponse(200, responses_body('{"value": 2}')),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            self.assertEqual({"value": 2}, self.infer(client))
+        self.assertEqual(2, len(session.calls))
+        sleep.assert_called_once_with(5)
+        self.assertEqual(session.calls[0]["json"], session.calls[1]["json"])
+        self.assertEqual(session.calls[0]["headers"], session.calls[1]["headers"])
+        self.assertEqual(session.calls[0]["timeout"], session.calls[1]["timeout"])
+
+    def test_transport_retry_two_502_failures_then_success(self):
+        client, session = self.client(
+            events=[
+                FakeResponse(502, "proxy failure 1"),
+                FakeResponse(502, "proxy failure 2"),
+                FakeResponse(200, responses_body('{"value": 3}')),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            self.assertEqual({"value": 3}, self.infer(client))
+        self.assertEqual(3, len(session.calls))
+        self.assertEqual([5, 5], [call.args[0] for call in sleep.call_args_list])
+
+    def test_transport_retry_three_502_failures_exhausts_without_attempt_four(self):
+        client, session = self.client(
+            events=[
+                FakeResponse(502, "proxy failure 1"),
+                FakeResponse(502, "proxy failure 2"),
+                FakeResponse(502, "proxy failure 3"),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                VLMTransportError, "HTTP 502.*attempts=3/3.*last_error=HTTP 502"
+            ):
+                self.infer(client)
+        self.assertEqual(3, len(session.calls))
+        self.assertEqual([5, 5], [call.args[0] for call in sleep.call_args_list])
+
+    def test_transport_retry_429_then_success(self):
+        client, session = self.client(
+            events=[
+                FakeResponse(429, "rate limited"),
+                FakeResponse(200, responses_body('{"ok": true}')),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            self.assertEqual({"ok": True}, self.infer(client))
+        self.assertEqual(2, len(session.calls))
+        sleep.assert_called_once_with(5)
+
+    def test_transport_retry_503_and_504_statuses(self):
+        for status in (503, 504):
+            with self.subTest(status=status):
+                client, session = self.client(
+                    events=[
+                        FakeResponse(status, "temporary upstream failure"),
+                        FakeResponse(200, responses_body('{"ok": true}')),
+                    ]
+                )
+                with patch("vlm_client.time.sleep") as sleep:
+                    self.assertEqual({"ok": True}, self.infer(client))
+                self.assertEqual(2, len(session.calls))
+                sleep.assert_called_once_with(5)
+
+    @unittest.skipIf(vlm_client.requests is None, "requests package is not installed")
+    def test_transport_retry_requests_timeout_then_success(self):
+        timeout = vlm_client.requests.Timeout("provider timeout")
+        client, session = self.client(
+            events=[
+                timeout,
+                FakeResponse(200, responses_body('{"ok": true}')),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            self.assertEqual({"ok": True}, self.infer(client))
+        self.assertEqual(2, len(session.calls))
+        sleep.assert_called_once_with(5)
+
+    @unittest.skipIf(vlm_client.requests is None, "requests package is not installed")
+    def test_transport_retry_requests_connection_error_then_success(self):
+        connection_error = vlm_client.requests.ConnectionError("connection reset")
+        client, session = self.client(
+            events=[
+                connection_error,
+                FakeResponse(200, responses_body('{"ok": true}')),
+            ]
+        )
+        with patch("vlm_client.time.sleep") as sleep:
+            self.assertEqual({"ok": True}, self.infer(client))
+        self.assertEqual(2, len(session.calls))
+        sleep.assert_called_once_with(5)
+
+    def test_transport_retry_nonrecoverable_http_statuses_fail_once(self):
+        for status in (400, 401, 403, 404):
+            with self.subTest(status=status):
+                client, session = self.client(status=status, body="client error")
+                with patch("vlm_client.time.sleep") as sleep:
+                    with self.assertRaisesRegex(VLMTransportError, f"HTTP {status}"):
+                        self.infer(client)
+                self.assertEqual(1, len(session.calls))
+                sleep.assert_not_called()
 
     def test_http_204_empty_body_is_transport_error(self):
         client, _ = self.client(status=204, body="")
@@ -321,12 +470,15 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.assertEqual(expand_result(), adapter.expand_instances(self.png))
 
     def test_t26_schema_error_remains_production_adapter_responsibility(self):
-        client, _ = self.client(body=responses_body('{"node_role": "asset"}'))
+        client, session = self.client(body=responses_body('{"node_role": "asset"}'))
         adapter = ProductionVisualAdapter(client)
-        with self.assertRaisesRegex(
-            StrategySchemaValidationError, "strategy_schema_validation_error"
-        ):
-            adapter.route(self.png)
+        with patch("vlm_client.time.sleep") as sleep:
+            with self.assertRaisesRegex(
+                StrategySchemaValidationError, "strategy_schema_validation_error"
+            ):
+                adapter.route(self.png)
+        self.assertEqual(1, len(session.calls))
+        sleep.assert_not_called()
 
     def test_t27_missing_production_config_makes_cli_fail_closed(self):
         stderr = io.StringIO()

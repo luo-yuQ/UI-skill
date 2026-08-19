@@ -6,6 +6,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from base64 import b64encode
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -21,6 +22,19 @@ except ModuleNotFoundError:  # pragma: no cover - exercised only without depende
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
 RESPONSES_PATH = "/v1/responses"
 SAFE_ERROR_BODY_LIMIT = 500
+TRANSPORT_MAX_ATTEMPTS = 3
+TRANSPORT_RETRY_WAIT_SECONDS = 5
+RECOVERABLE_HTTP_STATUS_CODES = frozenset({429, 502, 503, 504})
+
+RECOVERABLE_TRANSPORT_EXCEPTIONS: tuple[type[BaseException], ...] = (
+    TimeoutError,
+    ConnectionError,
+)
+if requests is not None:
+    RECOVERABLE_TRANSPORT_EXCEPTIONS += (
+        requests.Timeout,
+        requests.ConnectionError,
+    )
 
 
 class VLMError(RuntimeError):
@@ -172,6 +186,13 @@ def _safe_provider_body(value: Any, api_key: str) -> str:
     return " ".join(text.split())[:SAFE_ERROR_BODY_LIMIT]
 
 
+def _transport_failure_detail(detail: str, attempt: int) -> str:
+    return (
+        f"{detail}; attempts={attempt}/{TRANSPORT_MAX_ATTEMPTS}; "
+        f"last_error={detail}"
+    )
+
+
 def parse_json_object(response_text: str) -> dict[str, Any]:
     """Parse provider response text without repairing or extracting partial JSON."""
 
@@ -207,6 +228,57 @@ class ResponsesAPIVLMClient:
         self.session = session
         self.max_output_tokens = max_output_tokens
 
+    def _post_with_transport_retry(
+        self,
+        *,
+        payload: dict[str, Any],
+        headers: dict[str, str],
+    ) -> Any:
+        """Send one unchanged request with Transport Retry v0.1 semantics."""
+
+        for attempt in range(1, TRANSPORT_MAX_ATTEMPTS + 1):
+            try:
+                response = self.session.post(
+                    self.endpoint,
+                    headers=headers,
+                    json=payload,
+                    timeout=self.config.timeout,
+                )
+            except RECOVERABLE_TRANSPORT_EXCEPTIONS as exc:
+                detail = type(exc).__name__
+            except Exception as exc:
+                detail = type(exc).__name__
+                raise VLMTransportError(
+                    _transport_failure_detail(detail, attempt)
+                ) from None
+            else:
+                status_code = getattr(response, "status_code", None)
+                if type(status_code) is not int:
+                    detail = "Provider response has no HTTP status code"
+                    raise VLMTransportError(
+                        _transport_failure_detail(detail, attempt)
+                    )
+                if 200 <= status_code < 300:
+                    return response
+                body = _safe_provider_body(
+                    getattr(response, "text", ""), self.config.api_key
+                )
+                detail = f"HTTP {status_code}"
+                if body:
+                    detail += f": {body}"
+                if status_code not in RECOVERABLE_HTTP_STATUS_CODES:
+                    raise VLMTransportError(
+                        _transport_failure_detail(detail, attempt)
+                    )
+
+            if attempt == TRANSPORT_MAX_ATTEMPTS:
+                raise VLMTransportError(
+                    _transport_failure_detail(detail, attempt)
+                )
+            time.sleep(TRANSPORT_RETRY_WAIT_SECONDS)
+
+        raise AssertionError("transport retry loop exhausted without a result")
+
     def infer_json(
         self,
         image_path: Path,
@@ -241,25 +313,8 @@ class ResponsesAPIVLMClient:
             "User-Agent": "Stage2A-VLMClient/0.1",
             "Accept-Encoding": "identity",
         }
-        try:
-            response = self.session.post(
-                self.endpoint,
-                headers=headers,
-                json=payload,
-                timeout=self.config.timeout,
-            )
-        except Exception as exc:
-            raise VLMTransportError(type(exc).__name__) from None
-
+        response = self._post_with_transport_retry(payload=payload, headers=headers)
         status_code = getattr(response, "status_code", None)
-        if type(status_code) is not int:
-            raise VLMTransportError("Provider response has no HTTP status code")
-        if status_code < 200 or status_code >= 300:
-            body = _safe_provider_body(getattr(response, "text", ""), self.config.api_key)
-            detail = f"HTTP {status_code}"
-            if body:
-                detail += f": {body}"
-            raise VLMTransportError(detail)
         response_text = getattr(response, "text", "")
         if status_code == 204:
             raise VLMTransportError(
