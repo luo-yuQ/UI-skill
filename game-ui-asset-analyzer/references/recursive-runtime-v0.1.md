@@ -101,6 +101,10 @@ Supported statuses are:
 
 `terminal` and `status` are independent. For example, a non-terminal component instance becomes `done` after successful semantic decomposition.
 
+For the experimental structural/repeated route-resolution path, `router_role` preserves the immutable first Router hypothesis while `effective_role` records the role accepted by deterministic action-result effectiveness validation. At route commit, backward-compatible `node_role` equals the accepted `effective_role`; it is absent when both controlled routes are unresolved. The existing later semantic state transitions remain authoritative and unchanged. `route_attempts` distinguishes `contract_valid` from `effectiveness_valid`, records at most the initial action and one fallback probe, and persists across Interactive Adapter waiting/resume. `route_resolution` is `pending`, `resolved`, or `unresolved`. Only `structural_split` and `expand_instances` may fall back to each other; all other role/action behavior is unchanged.
+
+The Runtime validates each structural/repeated response in this order: existing schema and real Analysis Image bounds, deterministic route effectiveness, then accepted-result commit. Contract-valid empty/no-useful results are effectiveness-invalid. Schema, transport, and JSON failures retain the existing retry/failure path and never trigger this fallback. A valid fallback response is committed directly without a second adapter call.
+
 ## Retry Queue / Requeue Mechanism v0.1
 
 `RuntimeConfig.max_node_retries` defaults to `2`. It counts retries after the initial attempt, so one Node may execute at most three times. A retryable failure restores the Node to `pending` or `ready`, increments `retry_count`, and appends it to the tail of `current_level_queue`. It is not retried in a worker-local loop. The current level remains a barrier, so retries finish before the Runtime advances to child Nodes in `next_level_queue`.

@@ -13,7 +13,7 @@ It identifies one level of stable structural regions. It does not classify the p
 
 ## Production prompt
 
-You are performing Stage2-A `structural_split` v0.1 on exactly one current `structural_group` Analysis Image.
+You are performing Stage2-A `structural_split` v0.1 on exactly one current Analysis Image. The caller supplies either normal routed mode, where the Router selected `structural_group`, or fallback probe mode, where the role is deliberately unconfirmed. In probe mode, do not assume the node is a `structural_group` and do not invent children merely to satisfy the task.
 
 Identify only the most natural, stable **Direct Children** whose different responsibilities make the next visual-analysis step materially more focused.
 

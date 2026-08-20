@@ -49,6 +49,9 @@ class ProductionRequestContext:
     node_role: str | None
     adapter_kind: str
     analysis_image: str
+    execution_mode: str = "normal"
+    previous_action: str | None = None
+    previous_reason_code: str | None = None
 
 
 def _route_validator(result: Any, _analysis_image: Path) -> list[str]:
@@ -198,6 +201,9 @@ class ProductionVisualAdapter:
         node_role: str | None,
         adapter_kind: str,
         analysis_image: str,
+        execution_mode: str = "normal",
+        previous_action: str | None = None,
+        previous_reason_code: str | None = None,
     ) -> None:
         """Bind caller-owned metadata for exactly one subsequent visual call."""
 
@@ -209,12 +215,22 @@ class ProductionVisualAdapter:
             raise ValueError(f"unsupported production adapter kind: {adapter_kind!r}")
         if not isinstance(analysis_image, str) or not analysis_image:
             raise ValueError("analysis_image must be a non-empty string")
+        if execution_mode not in {"normal", "probe"}:
+            raise ValueError(f"unsupported execution_mode: {execution_mode!r}")
+        if execution_mode == "probe" and adapter_kind not in {
+            "structural_split",
+            "expand_instances",
+        }:
+            raise ValueError("probe mode is valid only for controlled route actions")
         self._request_context.value = ProductionRequestContext(
             request_id=request_id,
             node_id=node_id,
             node_role=node_role,
             adapter_kind=adapter_kind,
             analysis_image=analysis_image,
+            execution_mode=execution_mode,
+            previous_action=previous_action,
+            previous_reason_code=previous_reason_code,
         )
 
     def _take_request_context(
@@ -274,6 +290,51 @@ class ProductionVisualAdapter:
         request_context = self._take_request_context(strategy)
         contract = CONTRACTS[strategy]
         user_prompt = self._load_prompt(contract.reference_path)
+        if strategy in {"structural_split", "expand_instances"}:
+            mode = (
+                request_context.execution_mode
+                if request_context is not None
+                else "normal"
+            )
+            if mode == "probe":
+                previous_action = request_context.previous_action or "the initial action"
+                previous_reason = (
+                    request_context.previous_reason_code
+                    or "EFFECTIVENESS_INVALID"
+                )
+                if strategy == "expand_instances":
+                    mode_prompt = (
+                        "Execution mode: fallback probe. The current node is not "
+                        "asserted to be a repeated_group. Determine whether it "
+                        "contains a genuine enumerable collection of peer instances "
+                        "sharing the same functional/component schema. If yes, return "
+                        "the instances normally. If no, do not invent instances; "
+                        "return repeat_count=0, instances=[], a non-empty diagnostic "
+                        "instance_type, and a brief reason."
+                    )
+                else:
+                    mode_prompt = (
+                        "Execution mode: fallback probe. The current node is not "
+                        "asserted to be a structural_group. Attempt to find meaningful "
+                        "direct structural children. If none exist, do not invent "
+                        "children; return no_useful_structural_split=true and "
+                        "children=[]."
+                    )
+                user_prompt = (
+                    f"{mode_prompt}\nPrevious action: {previous_action}.\n"
+                    f"Previous effectiveness result: {previous_reason}.\n\n"
+                    f"{user_prompt}"
+                )
+            else:
+                role = (
+                    "structural_group"
+                    if strategy == "structural_split"
+                    else "repeated_group"
+                )
+                user_prompt = (
+                    "Execution mode: normal routed action. The Router selected this "
+                    f"task from node_role={role}.\n\n{user_prompt}"
+                )
         response_schema = self._load_json(contract.schema_path)
         try:
             result = self.vlm_client.infer_json(
@@ -362,6 +423,9 @@ class _ProductionStrategyAdapter:
         node_role: str | None,
         adapter_kind: str,
         analysis_image: str,
+        execution_mode: str = "normal",
+        previous_action: str | None = None,
+        previous_reason_code: str | None = None,
     ) -> None:
         self.visual_adapter.bind_request(
             request_id=request_id,
@@ -369,6 +433,9 @@ class _ProductionStrategyAdapter:
             node_role=node_role,
             adapter_kind=adapter_kind,
             analysis_image=analysis_image,
+            execution_mode=execution_mode,
+            previous_action=previous_action,
+            previous_reason_code=previous_reason_code,
         )
 
     def run(self, analysis_image: Path) -> dict[str, Any]:
