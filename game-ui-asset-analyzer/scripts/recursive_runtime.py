@@ -16,7 +16,6 @@ from urllib.parse import quote
 import resolve_terminal_state as terminal_resolver
 import validate_expand_instances
 import validate_node_route
-import validate_route_action_result
 import validate_semantic_decomposition
 import validate_structural_split
 from interactive_file_adapter import WaitingForAdapter
@@ -37,14 +36,6 @@ NODE_STATUSES = frozenset(
     {"pending", "running", "ready", "done", "deferred", "failed", "blocked"}
 )
 ACTIONS = frozenset({"structural_split", "expand_instances", "semantic_decompose", "stop"})
-ROUTE_FALLBACKS = {
-    "structural_split": "expand_instances",
-    "expand_instances": "structural_split",
-}
-ACTION_ROLE_MAP = {
-    action: role for role, action in validate_node_route.ROLE_ACTION_MAP.items()
-}
-ROUTE_RESOLUTIONS = frozenset({"pending", "resolved", "unresolved"})
 DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT = 2
 DEFAULT_MAX_CONCURRENCY = 2
 DEFAULT_MAX_NODE_RETRIES = 2
@@ -66,10 +57,6 @@ class AdapterResultValidationError(ValueError):
         self.kind = kind
         self.errors = tuple(errors)
         super().__init__(f"invalid {kind} adapter result:\n- " + "\n- ".join(errors))
-
-
-class RouteResolutionUnresolved(ValueError):
-    """Both controlled structural/repeated routes were effectiveness-invalid."""
 
 
 @dataclass(frozen=True)
@@ -202,11 +189,7 @@ class AdapterExecutionResult:
     filename: str
     result: dict[str, Any]
     adapter: Any
-    contract_validated: bool = False
-    effectiveness: dict[str, Any] | None = None
-    accepted: bool = False
-    source: str | None = None
-    execution_mode: str = "normal"
+    validated: bool = False
 
 
 @dataclass
@@ -227,15 +210,9 @@ class NodeRecord:
     depth: int
     produced_by: str | None
     node_role: str | None = None
-    router_role: str | None = None
-    effective_role: str | None = None
     terminal: bool = False
     next_action: str | None = None
     requires_router: bool = True
-    route_resolution: str | None = None
-    route_override: bool | None = None
-    route_override_reason: str | None = None
-    route_attempts: list[dict[str, Any]] | None = None
     node_crop: str | None = None
     analysis_image: str | None = None
     bbox_in_parent_analysis: dict[str, int] | None = None
@@ -263,27 +240,6 @@ class NodeRecord:
             raise ValueError(f"unsupported node status: {self.status!r}")
         if self.next_action is not None and self.next_action not in ACTIONS:
             raise ValueError(f"unsupported next_action: {self.next_action!r}")
-        for field_name in ("router_role", "effective_role"):
-            role = getattr(self, field_name)
-            if role is not None and role not in validate_node_route.ROLE_ACTION_MAP:
-                raise ValueError(f"unsupported {field_name}: {role!r}")
-        if (
-            self.route_resolution is not None
-            and self.route_resolution not in ROUTE_RESOLUTIONS
-        ):
-            raise ValueError(
-                f"unsupported route_resolution: {self.route_resolution!r}"
-            )
-        if self.route_override is not None and type(self.route_override) is not bool:
-            raise ValueError("route_override must be a boolean when present")
-        if self.route_attempts is not None:
-            if not isinstance(self.route_attempts, list) or not all(
-                isinstance(attempt, dict) for attempt in self.route_attempts
-            ):
-                raise ValueError("route_attempts must be an array of objects")
-            if len(self.route_attempts) > 2:
-                raise ValueError("route_attempts permits at most two entries")
-            self.route_attempts = copy.deepcopy(self.route_attempts)
         if type(self.attempt_count) is not int or self.attempt_count < 0:
             raise ValueError("attempt_count must be an integer >= 0")
         if type(self.retry_count) is not int or self.retry_count < 0:
@@ -670,9 +626,6 @@ class RecursiveRuntime:
         adapter_kind: str,
         analysis_image: Path,
         request_id: str | None = None,
-        execution_mode: str = "normal",
-        previous_action: str | None = None,
-        previous_reason_code: str | None = None,
     ) -> None:
         bind = getattr(adapter, "bind_request", None)
         if bind is None:
@@ -683,7 +636,6 @@ class RecursiveRuntime:
                 if (
                     pending.get("node_id") != node.node_id
                     or pending.get("adapter_kind") != adapter_kind
-                    or pending.get("execution_mode", "normal") != execution_mode
                 ):
                     raise ValueError(
                         "pending adapter request does not match the current Node/action"
@@ -691,20 +643,13 @@ class RecursiveRuntime:
                 request_id = pending["request_id"]
             else:
                 request_id = f"req_{self.state.next_request_number:06d}"
-        context: dict[str, Any] = {
-            "request_id": request_id,
-            "node_id": node.node_id,
-            "node_role": node.node_role,
-            "adapter_kind": adapter_kind,
-            "analysis_image": self._relative(analysis_image),
-        }
-        if execution_mode != "normal" or previous_action is not None:
-            context.update(
-                execution_mode=execution_mode,
-                previous_action=previous_action,
-                previous_reason_code=previous_reason_code,
-            )
-        bind(**context)
+        bind(
+            request_id=request_id,
+            node_id=node.node_id,
+            node_role=node.node_role,
+            adapter_kind=adapter_kind,
+            analysis_image=self._relative(analysis_image),
+        )
 
     def _adapter_result_valid(self, adapter: Any) -> None:
         mark_consumed = getattr(adapter, "mark_consumed", None)
@@ -716,34 +661,6 @@ class RecursiveRuntime:
             self.state.real_visual_inference_used = True
 
     def _deterministic_resolve(self, node: NodeRecord) -> None:
-        if node.route_resolution == "unresolved":
-            raise RouteResolutionUnresolved(
-                f"route_resolution_unresolved: node {node.node_id!r}"
-            )
-        if node.route_resolution == "pending":
-            if node.router_role not in {"structural_group", "repeated_group"}:
-                raise ValueError(
-                    "pending route resolution requires structural_group or "
-                    "repeated_group router_role"
-                )
-            attempts = node.route_attempts or []
-            if len(attempts) > 1:
-                raise ValueError("pending route resolution has too many attempts")
-            initial_action = validate_node_route.resolve_node_action(node.router_role)
-            expected_action = (
-                initial_action if not attempts else ROUTE_FALLBACKS[initial_action]
-            )
-            if node.next_action is not None and node.next_action != expected_action:
-                raise ValueError(
-                    "pending route next_action conflict: "
-                    f"{node.next_action!r} != {expected_action!r}"
-                )
-            node.node_role = None
-            node.effective_role = None
-            node.terminal = False
-            node.requires_router = False
-            node.next_action = expected_action
-            return
         # Current semantic state outranks creation provenance. This matters when
         # an expand_instances child later becomes an asset via stop_as_asset.
         if node.node_role is not None:
@@ -784,30 +701,6 @@ class RecursiveRuntime:
         node.requires_router = resolved["requires_router"]
         node.next_action = resolved.get("next_action")
 
-    @staticmethod
-    def _apply_router_result(node: NodeRecord, result: dict[str, Any]) -> None:
-        resolved = terminal_resolver.resolve_terminal_state(
-            node_role=result["node_role"]
-        )
-        node.router_role = resolved["node_role"]
-        node.route_attempts = []
-        node.route_override_reason = None
-        node.requires_router = False
-        if resolved["next_action"] in ROUTE_FALLBACKS:
-            node.node_role = None
-            node.effective_role = None
-            node.terminal = False
-            node.next_action = resolved["next_action"]
-            node.route_resolution = "pending"
-            node.route_override = None
-            return
-        node.node_role = resolved["node_role"]
-        node.effective_role = resolved["node_role"]
-        node.terminal = resolved["terminal"]
-        node.next_action = resolved["next_action"]
-        node.route_resolution = "resolved"
-        node.route_override = False
-
     def _route(self, node: NodeRecord, analysis_image: Path) -> None:
         adapter = self._require_adapter("router")
         self._bind_adapter_request(
@@ -819,256 +712,13 @@ class RecursiveRuntime:
             "Router", validate_node_route.validate_document(result)
         )
         self._adapter_result_valid(adapter)
-        self._apply_router_result(node, result)
-
-    @staticmethod
-    def _strategy_contract_errors(
-        action: str, result: dict[str, Any], analysis_image: Path
-    ) -> list[str]:
-        if action == "structural_split":
-            return validate_structural_split.validate_document(result, analysis_image)
-        if action == "expand_instances":
-            return validate_expand_instances.validate_document(result, analysis_image)
-        raise ValueError(f"unsupported controlled route action: {action!r}")
-
-    @staticmethod
-    def _route_effectiveness(
-        action: str, result: dict[str, Any], parent_size: tuple[int, int]
-    ) -> dict[str, Any]:
-        if action == "structural_split":
-            return validate_route_action_result.validate_structural_split_result(
-                result, parent_size
-            )
-        if action == "expand_instances":
-            return validate_route_action_result.validate_expand_instances_result(
-                result, parent_size
-            )
-        raise ValueError(f"unsupported controlled route action: {action!r}")
-
-    @staticmethod
-    def _initialize_route_tracking(node: NodeRecord) -> None:
-        if node.next_action not in ROUTE_FALLBACKS:
-            raise ValueError(
-                f"route tracking is not supported for action {node.next_action!r}"
-            )
-        if node.route_resolution == "pending":
-            return
-        if node.route_resolution == "unresolved":
-            raise RouteResolutionUnresolved(
-                f"route_resolution_unresolved: node {node.node_id!r}"
-            )
-        if node.router_role is None:
-            node.router_role = node.node_role or ACTION_ROLE_MAP[node.next_action]
-        initial_action = validate_node_route.resolve_node_action(node.router_role)
-        if initial_action != node.next_action:
-            raise ValueError(
-                "router role/action conflict: "
-                f"{node.router_role!r} -> {initial_action!r}, got {node.next_action!r}"
-            )
-        node.node_role = None
-        node.effective_role = None
-        node.terminal = False
-        node.requires_router = False
-        node.route_resolution = "pending"
-        node.route_override = None
-        node.route_override_reason = None
-        node.route_attempts = []
-
-    @staticmethod
-    def _next_route_attempt(
-        node: NodeRecord,
-    ) -> tuple[str, str, str, str | None, str | None]:
-        attempts = node.route_attempts or []
-        initial_action = validate_node_route.resolve_node_action(node.router_role)
-        if not attempts:
-            return initial_action, "router", "normal", None, None
-        if len(attempts) == 1:
-            first = attempts[0]
-            if (
-                first.get("action") != initial_action
-                or first.get("contract_valid") is not True
-                or first.get("effectiveness_valid") is not False
-            ):
-                raise ValueError("invalid initial route-attempt state")
-            return (
-                ROUTE_FALLBACKS[initial_action],
-                "fallback",
-                "probe",
-                initial_action,
-                str(first.get("reason_code") or "EFFECTIVENESS_INVALID"),
-            )
-        raise RouteResolutionUnresolved(
-            f"route_resolution_unresolved: node {node.node_id!r} exhausted fallback"
+        resolved = terminal_resolver.resolve_terminal_state(
+            node_role=result["node_role"]
         )
-
-    @staticmethod
-    def _append_route_attempt(
-        node: NodeRecord,
-        *,
-        action: str,
-        source: str,
-        execution_mode: str,
-        effectiveness: dict[str, Any],
-    ) -> None:
-        attempts = node.route_attempts if node.route_attempts is not None else []
-        if len(attempts) >= 2:
-            raise ValueError("controlled route permits at most two attempts")
-        attempts.append(
-            {
-                "action": action,
-                "source": source,
-                "execution_mode": execution_mode,
-                "contract_valid": True,
-                "effectiveness_valid": effectiveness["valid"],
-                "valid": effectiveness["valid"],
-                "reason_code": effectiveness["reason_code"],
-                "reasons": copy.deepcopy(effectiveness["reasons"]),
-            }
-        )
-        node.route_attempts = attempts
-
-    @staticmethod
-    def _accept_route(
-        node: NodeRecord, *, action: str, effectiveness: dict[str, Any]
-    ) -> None:
-        effective_role = ACTION_ROLE_MAP[action]
-        resolved = terminal_resolver.resolve_terminal_state(node_role=effective_role)
-        node.node_role = effective_role
-        node.effective_role = effective_role
+        node.node_role = resolved["node_role"]
         node.terminal = resolved["terminal"]
         node.next_action = resolved["next_action"]
         node.requires_router = False
-        node.route_resolution = "resolved"
-        node.route_override = effective_role != node.router_role
-        if node.route_override:
-            first = (node.route_attempts or [])[0]
-            node.route_override_reason = (
-                f"initial {first['action']} effectiveness-invalid "
-                f"({first['reason_code']}); fallback {action} effectiveness-valid "
-                f"({effectiveness['reason_code']})"
-            )
-        else:
-            node.route_override_reason = None
-
-    @staticmethod
-    def _mark_route_unresolved(node: NodeRecord) -> None:
-        attempts = node.route_attempts or []
-        node.node_role = None
-        node.effective_role = None
-        node.terminal = False
-        node.next_action = None
-        node.requires_router = False
-        node.route_resolution = "unresolved"
-        node.route_override = False
-        node.route_override_reason = "; ".join(
-            f"{attempt['source']} {attempt['action']} effectiveness-invalid "
-            f"({attempt['reason_code']})"
-            for attempt in attempts
-        )
-
-    def _execute_route_action_sequence(
-        self,
-        node: NodeRecord,
-        analysis_image: Path,
-        *,
-        adapter_results: list[AdapterExecutionResult],
-        request_id: str | None,
-        persist_results: bool,
-        consume_results: bool,
-    ) -> AdapterExecutionResult:
-        """Run the shared initial/fallback policy without committing any children."""
-
-        self._initialize_route_tracking(node)
-        parent_size = read_image_size(analysis_image)
-        while True:
-            action, source, mode, previous_action, previous_reason_code = (
-                self._next_route_attempt(node)
-            )
-            node.next_action = action
-            adapter = self._require_adapter(action)
-            self._bind_adapter_request(
-                adapter,
-                node=node,
-                adapter_kind=action,
-                analysis_image=analysis_image,
-                request_id=request_id,
-                execution_mode=mode,
-                previous_action=previous_action,
-                previous_reason_code=previous_reason_code,
-            )
-            result = adapter.run(analysis_image)
-            execution = AdapterExecutionResult(
-                action,
-                "strategy-result.json",
-                result,
-                adapter,
-                source=source,
-                execution_mode=mode,
-            )
-            adapter_results.append(execution)
-            errors = self._strategy_contract_errors(action, result, analysis_image)
-            if errors:
-                if persist_results:
-                    self._save_adapter_result(node, result, execution.filename)
-                self._raise_validation_errors(action, errors)
-            execution.contract_validated = True
-            effectiveness = self._route_effectiveness(action, result, parent_size)
-            execution.effectiveness = effectiveness
-            self._append_route_attempt(
-                node,
-                action=action,
-                source=source,
-                execution_mode=mode,
-                effectiveness=effectiveness,
-            )
-            if effectiveness["valid"]:
-                execution.accepted = True
-                self._accept_route(
-                    node, action=action, effectiveness=effectiveness
-                )
-            else:
-                execution.filename = (
-                    f"route-attempt-{len(node.route_attempts or []):02d}-"
-                    f"{action}-result.json"
-                )
-            if persist_results:
-                self._save_adapter_result(node, result, execution.filename)
-            if consume_results:
-                self._adapter_result_valid(adapter)
-            if execution.accepted:
-                return execution
-            if source == "fallback":
-                self._mark_route_unresolved(node)
-                raise RouteResolutionUnresolved(
-                    f"route_resolution_unresolved: node {node.node_id!r}; "
-                    "initial and fallback actions were effectiveness-invalid"
-                )
-
-    def _commit_route_action_execution(
-        self, node: NodeRecord, execution: AdapterExecutionResult
-    ) -> None:
-        if not execution.accepted:
-            raise ValueError("cannot commit an effectiveness-invalid route result")
-        if execution.adapter_kind == "structural_split":
-            self._commit_structural_split_result(node, execution.result)
-        elif execution.adapter_kind == "expand_instances":
-            self._commit_expand_instances_result(node, execution.result)
-        else:
-            raise ValueError(
-                f"unsupported accepted route action: {execution.adapter_kind!r}"
-            )
-
-    def _run_route_action(self, node: NodeRecord, analysis_image: Path) -> None:
-        executions: list[AdapterExecutionResult] = []
-        accepted = self._execute_route_action_sequence(
-            node,
-            analysis_image,
-            adapter_results=executions,
-            request_id=None,
-            persist_results=True,
-            consume_results=True,
-        )
-        self._commit_route_action_execution(node, accepted)
 
     def _new_child_id(self, parent: NodeRecord, source_id: str) -> str:
         if not isinstance(source_id, str) or not source_id:
@@ -1166,7 +816,21 @@ class RecursiveRuntime:
         return child
 
     def _run_structural_split(self, node: NodeRecord, analysis_image: Path) -> None:
-        self._run_route_action(node, analysis_image)
+        adapter = self._require_adapter("structural_split")
+        self._bind_adapter_request(
+            adapter,
+            node=node,
+            adapter_kind="structural_split",
+            analysis_image=analysis_image,
+        )
+        result = adapter.run(analysis_image)
+        self._save_adapter_result(node, result, "strategy-result.json")
+        self._raise_validation_errors(
+            "structural_split",
+            validate_structural_split.validate_document(result, analysis_image),
+        )
+        self._adapter_result_valid(adapter)
+        self._commit_structural_split_result(node, result)
 
     def _commit_structural_split_result(
         self, node: NodeRecord, result: dict[str, Any]
@@ -1183,7 +847,21 @@ class RecursiveRuntime:
             self.state.next_level_queue.append(child.node_id)
 
     def _run_expand_instances(self, node: NodeRecord, analysis_image: Path) -> None:
-        self._run_route_action(node, analysis_image)
+        adapter = self._require_adapter("expand_instances")
+        self._bind_adapter_request(
+            adapter,
+            node=node,
+            adapter_kind="expand_instances",
+            analysis_image=analysis_image,
+        )
+        result = adapter.run(analysis_image)
+        self._save_adapter_result(node, result, "strategy-result.json")
+        self._raise_validation_errors(
+            "expand_instances",
+            validate_expand_instances.validate_document(result, analysis_image),
+        )
+        self._adapter_result_valid(adapter)
+        self._commit_expand_instances_result(node, result)
 
     def _commit_expand_instances_result(
         self, node: NodeRecord, result: dict[str, Any]
@@ -1292,23 +970,20 @@ class RecursiveRuntime:
                 self._raise_validation_errors(
                     "Router", validate_node_route.validate_document(result)
                 )
-                execution.contract_validated = True
-                self._apply_router_result(node, result)
+                execution.validated = True
+                resolved = terminal_resolver.resolve_terminal_state(
+                    node_role=result["node_role"]
+                )
+                node.node_role = resolved["node_role"]
+                node.terminal = resolved["terminal"]
+                node.next_action = resolved["next_action"]
+                node.requires_router = False
 
             if node.next_action is None:
                 raise ValueError("next_action was not resolved")
             node.status = "ready"
 
-            if node.next_action in ROUTE_FALLBACKS:
-                self._execute_route_action_sequence(
-                    node,
-                    analysis_image,
-                    adapter_results=adapter_results,
-                    request_id=request_id,
-                    persist_results=False,
-                    consume_results=False,
-                )
-            elif node.next_action != "stop":
+            if node.next_action != "stop":
                 adapter = self._require_adapter(node.next_action)
                 self._bind_adapter_request(
                     adapter,
@@ -1322,7 +997,21 @@ class RecursiveRuntime:
                     node.next_action, "strategy-result.json", result, adapter
                 )
                 adapter_results.append(execution)
-                if node.next_action == "semantic_decompose":
+                if node.next_action == "structural_split":
+                    self._raise_validation_errors(
+                        "structural_split",
+                        validate_structural_split.validate_document(
+                            result, analysis_image
+                        ),
+                    )
+                elif node.next_action == "expand_instances":
+                    self._raise_validation_errors(
+                        "expand_instances",
+                        validate_expand_instances.validate_document(
+                            result, analysis_image
+                        ),
+                    )
+                elif node.next_action == "semantic_decompose":
                     self._raise_validation_errors(
                         "semantic_decompose",
                         validate_semantic_decomposition.validate_document(
@@ -1332,8 +1021,7 @@ class RecursiveRuntime:
                     self._apply_semantic_parent_result(node, result)
                 else:
                     raise ValueError(f"unsupported action: {node.next_action!r}")
-                execution.contract_validated = True
-                execution.accepted = True
+                execution.validated = True
         except WaitingForAdapter as exc:
             node.attempt_count = original_attempt_count
             node.status = "ready" if node.next_action is not None else original_status
@@ -1365,13 +1053,17 @@ class RecursiveRuntime:
                 self._save_adapter_result(
                     node, adapter_result.result, adapter_result.filename
                 )
-                if not adapter_result.contract_validated:
+                if not adapter_result.validated:
                     continue
                 self._adapter_result_valid(adapter_result.adapter)
-                if not adapter_result.accepted:
-                    continue
-                if adapter_result.adapter_kind in ROUTE_FALLBACKS:
-                    self._commit_route_action_execution(node, adapter_result)
+                if adapter_result.adapter_kind == "structural_split":
+                    self._commit_structural_split_result(
+                        node, adapter_result.result
+                    )
+                elif adapter_result.adapter_kind == "expand_instances":
+                    self._commit_expand_instances_result(
+                        node, adapter_result.result
+                    )
                 elif adapter_result.adapter_kind == "semantic_decompose":
                     self._commit_semantic_decompose_result(
                         node, adapter_result.result

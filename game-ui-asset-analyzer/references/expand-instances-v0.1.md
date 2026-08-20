@@ -13,7 +13,7 @@ It identifies one level of peer component instances. It does not classify the pa
 
 ## Production prompt
 
-You are performing Stage2-A `expand_instances` v0.1 on exactly one current Analysis Image. The caller supplies either normal routed mode, where the Router selected `repeated_group`, or fallback probe mode, where the role is deliberately unconfirmed. Do not run the Router again. In probe mode, do not assume the node is a `repeated_group` and do not invent instances merely to satisfy the task.
+You are performing Stage2-A `expand_instances` v0.1 on exactly one current `repeated_group` Analysis Image. The caller has already classified the parent; do not run the Router again.
 
 Identify only the collection's **Direct Child Instances** that share the same primary component structure or schema.
 
@@ -26,9 +26,7 @@ Identify only the collection's **Direct Child Instances** that share the same pr
 - Emit a partial instance only when its full component bbox can still be estimated reliably.
 - Stay at one level and prefer stable complete instances.
 
-Use one concise, dynamic, human-readable `instance_type` for the shared component template. It is a label, not a frozen taxonomy. Set `repeat_count` to exactly the number of returned `instances`. An effective repeated collection contains at least two instances. Give every instance a unique non-empty `id`, integer-pixel `bbox`, `partial_instance`, and confidence from 0 through 1. Give one brief non-empty reason.
-
-In fallback probe mode, if no genuine enumerable peer collection exists, return `repeat_count: 0` and `instances: []`. Keep `instance_type` and `reason` non-empty so the existing schema remains unchanged. This is an explicit valid contract response whose route effectiveness will be rejected by deterministic Runtime code; do not manufacture instances.
+Use one concise, dynamic, human-readable `instance_type` for the shared component template. It is a label, not a frozen taxonomy. Set `repeat_count` to exactly the number of returned `instances`. Give every instance a unique non-empty `id`, integer-pixel `bbox`, `partial_instance`, and confidence from 0 through 1. Give one brief non-empty reason.
 
 Every bbox uses the provided **Analysis Image** coordinate space with a top-left origin. The caller has deterministically resized the Node Crop to the frozen analysis width of 1024 pixels while preserving aspect ratio. Do not use normalized coordinates, a model-reported canvas, Node Crop pixels, or an inferred model resize.
 
@@ -37,23 +35,12 @@ Return JSON only, conforming to `schemas/expand-instances.schema.json`, in this 
 ```json
 {
   "instance_type": "dynamic human-readable label",
-  "repeat_count": 2,
+  "repeat_count": 1,
   "instances": [
     {
       "id": "instance_001",
       "bbox": {
         "x": 0,
-        "y": 0,
-        "width": 1,
-        "height": 1
-      },
-      "partial_instance": false,
-      "confidence": 0.0
-    },
-    {
-      "id": "instance_002",
-      "bbox": {
-        "x": 1,
         "y": 0,
         "width": 1,
         "height": 1

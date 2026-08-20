@@ -30,25 +30,16 @@ class AdapterRequestContext:
     analysis_image: str
     request_path: str
     response_path: str
-    execution_mode: str = "normal"
-    previous_action: str | None = None
-    previous_reason_code: str | None = None
 
     def to_pending_dict(self) -> dict[str, str]:
-        result = {
+        return {
             "request_id": self.request_id,
             "node_id": self.node_id,
             "adapter_kind": self.adapter_kind,
             "analysis_image": self.analysis_image,
             "request_path": self.request_path,
             "response_path": self.response_path,
-            "execution_mode": self.execution_mode,
         }
-        if self.previous_action is not None:
-            result["previous_action"] = self.previous_action
-        if self.previous_reason_code is not None:
-            result["previous_reason_code"] = self.previous_reason_code
-        return result
 
 
 class WaitingForAdapter(Exception):
@@ -122,20 +113,10 @@ class InteractiveFileAdapter:
         node_role: str | None = None,
         adapter_kind: str | None = None,
         analysis_image: str,
-        execution_mode: str = "normal",
-        previous_action: str | None = None,
-        previous_reason_code: str | None = None,
     ) -> None:
         del node_role
         if adapter_kind is not None and adapter_kind != self.adapter_kind:
             raise ValueError("interactive adapter kind context mismatch")
-        if execution_mode not in {"normal", "probe"}:
-            raise ValueError(f"unsupported execution_mode: {execution_mode!r}")
-        if execution_mode == "probe" and self.adapter_kind not in {
-            "structural_split",
-            "expand_instances",
-        }:
-            raise ValueError("probe mode is valid only for controlled route actions")
         request_path = self.requests_dir / f"{request_id}.json"
         response_path = self.responses_dir / f"{request_id}.json"
         self._context = AdapterRequestContext(
@@ -145,9 +126,6 @@ class InteractiveFileAdapter:
             analysis_image=analysis_image,
             request_path=request_path.relative_to(self.run_dir).as_posix(),
             response_path=response_path.relative_to(self.run_dir).as_posix(),
-            execution_mode=execution_mode,
-            previous_action=previous_action,
-            previous_reason_code=previous_reason_code,
         )
 
     def _require_context(self) -> AdapterRequestContext:
@@ -167,13 +145,8 @@ class InteractiveFileAdapter:
             "adapter_kind": context.adapter_kind,
             "analysis_image": context.analysis_image,
             "contract": ADAPTER_CONTRACTS[context.adapter_kind],
-            "execution_mode": context.execution_mode,
             "status": "waiting",
         }
-        if context.previous_action is not None:
-            document["previous_action"] = context.previous_action
-        if context.previous_reason_code is not None:
-            document["previous_reason_code"] = context.previous_reason_code
         request_path.write_text(
             json.dumps(document, ensure_ascii=False, indent=2) + "\n",
             encoding="utf-8",
