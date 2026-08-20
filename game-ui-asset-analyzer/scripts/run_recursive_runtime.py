@@ -60,6 +60,12 @@ def build_parser() -> argparse.ArgumentParser:
         type=int,
         default=2,
     )
+    parser.add_argument(
+        "--max-node-retries",
+        type=int,
+        default=2,
+        help="maximum requeues after the initial node attempt (default: 2)",
+    )
     return parser
 
 
@@ -95,6 +101,7 @@ def main(argv: list[str] | None = None) -> int:
                         args.repeated_instance_semantic_limit
                     ),
                     validation_mode=args.validation_mode,
+                    max_node_retries=args.max_node_retries,
                 ),
             )
         result = runtime.run()

@@ -101,6 +101,20 @@ Supported statuses are:
 
 `terminal` and `status` are independent. For example, a non-terminal component instance becomes `done` after successful semantic decomposition.
 
+## Retry Queue / Requeue Mechanism v0.1
+
+`RuntimeConfig.max_node_retries` defaults to `2`. It counts retries after the initial attempt, so one Node may execute at most three times. A retryable failure restores the Node to `pending` or `ready`, increments `retry_count`, and appends it to the tail of `current_level_queue`. It is not retried in a worker-local loop. The current level remains a barrier, so retries finish before the Runtime advances to child Nodes in `next_level_queue`.
+
+Each Node persists `attempt_count`, `retry_count`, `last_error`, and `last_error_category`. Interactive waiting does not count as an execution attempt. Exhausting the configured retries changes the Node to `failed` and records it in `failed_nodes`.
+
+The retryable categories are deliberately narrow:
+
+- `transport_transient`: an exhausted client error explicitly marked retryable for HTTP 429/502/503/504, an empty successful provider response, timeout, or connection failure. Authentication and other non-recoverable HTTP errors are not retried. The VLM client still owns its bounded request-level transport retry; Runtime requeue starts only after that complete Node attempt fails.
+- `model_output_transient`: malformed model JSON, or a structured strategy validation failure consisting entirely of model-produced bboxes exceeding actual Analysis Image bounds.
+- `non_retryable`: every other schema/contract mismatch, local artifact or transform failure, unsupported action, invariant violation, configuration error, and unclassified engineering exception.
+
+Adapter output is completely validated before any strategy child is committed. A retryable validation failure may persist diagnostic/raw response evidence, but it creates no child record, child crop, parent-child relation, or queue entry. Concurrent workers compute isolated Node snapshots; validated results commit in original queue order on the Runtime thread, and one Node cannot have two active executions.
+
 ## Current state and provenance shortcuts
 
 Current semantic state has higher priority than creation provenance. If `node_role`, `terminal`, and `next_action` already form a complete consistent state, the Runtime validates and preserves them without applying a provenance shortcut. Thus an `expand_instances` child that later became `asset -> stop` through `stop_as_asset` remains an asset during later processing or resume. Provenance describes how the Node was created; the current fields describe what it is now.

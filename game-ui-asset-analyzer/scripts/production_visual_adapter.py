@@ -81,6 +81,8 @@ CONTRACTS = {
 
 class StrategySchemaValidationError(ValueError):
     def __init__(self, strategy: str, errors: list[str]) -> None:
+        self.strategy = strategy
+        self.errors = tuple(errors)
         super().__init__(
             f"strategy_schema_validation_error: {strategy}: " + "; ".join(errors)
         )
@@ -282,8 +284,10 @@ class ProductionVisualAdapter:
             )
         except VLMError:
             raise
-        except (TimeoutError, ConnectionError, OSError) as exc:
-            raise VLMTransportError(type(exc).__name__) from exc
+        except (TimeoutError, ConnectionError) as exc:
+            raise VLMTransportError(type(exc).__name__, retryable=True) from exc
+        except OSError as exc:
+            raise VLMTransportError(type(exc).__name__, retryable=False) from exc
         if not isinstance(result, dict):
             raise VLMResponseParseError("VLMClient returned a non-object result")
         canonical_result = copy.deepcopy(result)

@@ -5,6 +5,7 @@ from __future__ import annotations
 
 import copy
 import json
+import re
 import shutil
 from concurrent.futures import Future, ThreadPoolExecutor
 from dataclasses import asdict, dataclass, fields
@@ -19,11 +20,13 @@ import validate_semantic_decomposition
 import validate_structural_split
 from interactive_file_adapter import WaitingForAdapter
 from prepare_analysis_input import DEFAULT_MAX_WIDTH, prepare_analysis_input
+from production_visual_adapter import StrategySchemaValidationError
 from runtime_geometry import (
     analysis_bbox_to_crop_bbox,
     create_child_node_images,
     read_image_size,
 )
+from vlm_client import VLMResponseParseError, VLMTransportError
 
 
 RUNTIME_VERSION = "0.1"
@@ -35,8 +38,66 @@ NODE_STATUSES = frozenset(
 ACTIONS = frozenset({"structural_split", "expand_instances", "semantic_decompose", "stop"})
 DEFAULT_REPEATED_INSTANCE_SEMANTIC_LIMIT = 2
 DEFAULT_MAX_CONCURRENCY = 2
+DEFAULT_MAX_NODE_RETRIES = 2
 VALIDATION_MODES = frozenset({"mechanics", "real_image"})
 REAL_IMAGE_ADAPTER_TYPES = frozenset({"interactive_visual", "production_visual"})
+RETRY_CATEGORIES = frozenset(
+    {"transport_transient", "model_output_transient", "non_retryable"}
+)
+_BBOX_BOUNDS_ERROR = re.compile(
+    r"^\$\.(?:children|instances)\[\d+\]\.bbox: "
+    r"(?:right|bottom) edge \d+ exceeds Analysis Image (?:width|height) \d+$"
+)
+
+
+class AdapterResultValidationError(ValueError):
+    """Structured Runtime-side validation failure for one adapter document."""
+
+    def __init__(self, kind: str, errors: list[str]) -> None:
+        self.kind = kind
+        self.errors = tuple(errors)
+        super().__init__(f"invalid {kind} adapter result:\n- " + "\n- ".join(errors))
+
+
+@dataclass(frozen=True)
+class NodeErrorClassification:
+    retryable: bool
+    category: str
+    reason: str
+
+
+def classify_node_error(exc: BaseException) -> NodeErrorClassification:
+    """Classify only confirmed transient node-execution failures."""
+
+    if isinstance(exc, VLMTransportError) and exc.retryable:
+        return NodeErrorClassification(
+            True,
+            "transport_transient",
+            "transient transport or API failure",
+        )
+    if isinstance(exc, (TimeoutError, ConnectionError)):
+        return NodeErrorClassification(
+            True,
+            "transport_transient",
+            "transient transport or API failure",
+        )
+    if isinstance(exc, VLMResponseParseError):
+        return NodeErrorClassification(
+            True,
+            "model_output_transient",
+            "model response was not parseable JSON",
+        )
+    if isinstance(
+        exc, (StrategySchemaValidationError, AdapterResultValidationError)
+    ) and exc.errors and all(_BBOX_BOUNDS_ERROR.fullmatch(error) for error in exc.errors):
+        return NodeErrorClassification(
+            True,
+            "model_output_transient",
+            "model-produced bbox exceeded Analysis Image bounds",
+        )
+    return NodeErrorClassification(
+        False, "non_retryable", "unclassified engineering failure"
+    )
 
 
 class RouterAdapter(Protocol):
@@ -102,6 +163,7 @@ class RuntimeConfig:
     )
     validation_mode: str = "mechanics"
     max_concurrency: int = DEFAULT_MAX_CONCURRENCY
+    max_node_retries: int = DEFAULT_MAX_NODE_RETRIES
 
     def __post_init__(self) -> None:
         value = self.repeated_instance_semantic_limit
@@ -115,6 +177,8 @@ class RuntimeConfig:
             )
         if type(self.max_concurrency) is not int or self.max_concurrency < 1:
             raise ValueError("max_concurrency must be an integer >= 1")
+        if type(self.max_node_retries) is not int or self.max_node_retries < 0:
+            raise ValueError("max_node_retries must be an integer >= 0")
 
 
 @dataclass
@@ -162,6 +226,10 @@ class NodeRecord:
     confidence: float | None = None
     deferred_reason: str | None = None
     error: str | None = None
+    attempt_count: int = 0
+    retry_count: int = 0
+    last_error: str | None = None
+    last_error_category: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.node_id, str) or not self.node_id:
@@ -172,6 +240,19 @@ class NodeRecord:
             raise ValueError(f"unsupported node status: {self.status!r}")
         if self.next_action is not None and self.next_action not in ACTIONS:
             raise ValueError(f"unsupported next_action: {self.next_action!r}")
+        if type(self.attempt_count) is not int or self.attempt_count < 0:
+            raise ValueError("attempt_count must be an integer >= 0")
+        if type(self.retry_count) is not int or self.retry_count < 0:
+            raise ValueError("retry_count must be an integer >= 0")
+        if self.retry_count > self.attempt_count:
+            raise ValueError("retry_count must not exceed attempt_count")
+        if (
+            self.last_error_category is not None
+            and self.last_error_category not in RETRY_CATEGORIES
+        ):
+            raise ValueError(
+                f"unsupported last_error_category: {self.last_error_category!r}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {key: value for key, value in asdict(self).items() if value is not None}
@@ -494,7 +575,31 @@ class RecursiveRuntime:
     @staticmethod
     def _raise_validation_errors(kind: str, errors: list[str]) -> None:
         if errors:
-            raise ValueError(f"invalid {kind} adapter result:\n- " + "\n- ".join(errors))
+            raise AdapterResultValidationError(kind, errors)
+
+    def _record_node_error(
+        self,
+        node: NodeRecord,
+        *,
+        original_status: str,
+        exc: BaseException,
+    ) -> str:
+        classification = classify_node_error(exc)
+        message = str(exc)
+        node.last_error = message
+        node.last_error_category = classification.category
+        if classification.retryable and node.retry_count < self.config.max_node_retries:
+            node.retry_count += 1
+            node.status = "ready" if node.next_action is not None else original_status
+            node.error = None
+            return "requeued"
+        node.status = "failed"
+        node.error = message
+        return "failed"
+
+    def _schedule_requeue(self, node_id: str) -> None:
+        if node_id not in self.state.current_level_queue:
+            self.state.current_level_queue.append(node_id)
 
     def _require_adapter(self, name: str) -> Any:
         adapter = getattr(self.adapters, name)
@@ -832,10 +937,12 @@ class RecursiveRuntime:
 
         node = copy.deepcopy(node_snapshot)
         original_status = node.status
+        original_attempt_count = node.attempt_count
         adapter_results: list[AdapterExecutionResult] = []
         if node.status == "done":
             return NodeExecutionResult(node, original_status, "done", adapter_results)
 
+        node.attempt_count += 1
         try:
             if node.status not in {"pending", "ready"}:
                 raise ValueError(
@@ -916,6 +1023,7 @@ class RecursiveRuntime:
                     raise ValueError(f"unsupported action: {node.next_action!r}")
                 execution.validated = True
         except WaitingForAdapter as exc:
+            node.attempt_count = original_attempt_count
             node.status = "ready" if node.next_action is not None else original_status
             node.error = None
             return NodeExecutionResult(
@@ -926,9 +1034,10 @@ class RecursiveRuntime:
                 copy.deepcopy(exc.pending_request),
             )
         except Exception as exc:
-            node.status = "failed"
-            node.error = str(exc)
-            return NodeExecutionResult(node, original_status, "failed", adapter_results)
+            outcome = self._record_node_error(
+                node, original_status=original_status, exc=exc
+            )
+            return NodeExecutionResult(node, original_status, outcome, adapter_results)
 
         node.status = "done"
         return NodeExecutionResult(node, original_status, "done", adapter_results)
@@ -975,6 +1084,8 @@ class RecursiveRuntime:
             elif execution.outcome == "failed":
                 if node.node_id not in self.state.failed_nodes:
                     self.state.failed_nodes.append(node.node_id)
+            elif execution.outcome == "requeued":
+                self._schedule_requeue(node.node_id)
             elif execution.outcome == "done":
                 if node.node_id not in self.state.processed_nodes:
                     self.state.processed_nodes.append(node.node_id)
@@ -985,6 +1096,8 @@ class RecursiveRuntime:
         except Exception as exc:
             node.status = "failed"
             node.error = str(exc)
+            node.last_error = str(exc)
+            node.last_error_category = "non_retryable"
             if node.node_id not in self.state.failed_nodes:
                 self.state.failed_nodes.append(node.node_id)
             self.store.update(node)
@@ -1040,8 +1153,11 @@ class RecursiveRuntime:
     ) -> NodeExecutionResult:
         node = copy.deepcopy(node_snapshot)
         original_status = node.status
+        node.attempt_count += 1
         node.status = "failed"
         node.error = str(exc)
+        node.last_error = str(exc)
+        node.last_error_category = "non_retryable"
         return NodeExecutionResult(node, original_status, "failed", [])
 
     def _process_current_level_concurrently(self) -> str | None:
@@ -1107,6 +1223,8 @@ class RecursiveRuntime:
                 f"node {node_id!r} cannot run from status {node.status!r}"
             )
         original_status = node.status
+        original_attempt_count = node.attempt_count
+        node.attempt_count += 1
         node.status = "running"
         node.error = None
         self.store.update(node)
@@ -1138,19 +1256,23 @@ class RecursiveRuntime:
             if existing is None:
                 self.state.next_request_number += 1
             self.state.pending_adapter_request = copy.deepcopy(exc.pending_request)
+            node.attempt_count = original_attempt_count
             node.status = "ready" if node.next_action is not None else original_status
             node.error = None
             self.store.update(node)
             self._persist()
             return "waiting_for_adapter"
         except Exception as exc:
-            node.status = "failed"
-            node.error = str(exc)
-            if node.node_id not in self.state.failed_nodes:
+            outcome = self._record_node_error(
+                node, original_status=original_status, exc=exc
+            )
+            if outcome == "requeued":
+                self._schedule_requeue(node.node_id)
+            elif node.node_id not in self.state.failed_nodes:
                 self.state.failed_nodes.append(node.node_id)
             self.store.update(node)
             self._persist()
-            return "failed"
+            return outcome
 
         node.status = "done"
         if node.node_id not in self.state.processed_nodes:

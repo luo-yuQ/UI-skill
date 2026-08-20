@@ -50,6 +50,17 @@ class VLMError(RuntimeError):
 class VLMTransportError(VLMError):
     code = "vlm_transport_error"
 
+    def __init__(
+        self,
+        message: str,
+        *,
+        retryable: bool = False,
+        status_code: int | None = None,
+    ) -> None:
+        self.retryable = retryable
+        self.status_code = status_code
+        super().__init__(message)
+
 
 class VLMResponseParseError(VLMError):
     code = "vlm_response_parse_error"
@@ -255,6 +266,7 @@ class ResponsesAPIVLMClient:
         """Send one unchanged request with Transport Retry v0.1 semantics."""
 
         for attempt in range(1, TRANSPORT_MAX_ATTEMPTS + 1):
+            status_code: int | None = None
             try:
                 response = self._get_session().post(
                     self.endpoint,
@@ -267,14 +279,14 @@ class ResponsesAPIVLMClient:
             except Exception as exc:
                 detail = type(exc).__name__
                 raise VLMTransportError(
-                    _transport_failure_detail(detail, attempt)
+                    _transport_failure_detail(detail, attempt), retryable=False
                 ) from None
             else:
                 status_code = getattr(response, "status_code", None)
                 if type(status_code) is not int:
                     detail = "Provider response has no HTTP status code"
                     raise VLMTransportError(
-                        _transport_failure_detail(detail, attempt)
+                        _transport_failure_detail(detail, attempt), retryable=False
                     )
                 if 200 <= status_code < 300:
                     return response
@@ -286,12 +298,16 @@ class ResponsesAPIVLMClient:
                     detail += f": {body}"
                 if status_code not in RECOVERABLE_HTTP_STATUS_CODES:
                     raise VLMTransportError(
-                        _transport_failure_detail(detail, attempt)
+                        _transport_failure_detail(detail, attempt),
+                        retryable=False,
+                        status_code=status_code,
                     )
 
             if attempt == TRANSPORT_MAX_ATTEMPTS:
                 raise VLMTransportError(
-                    _transport_failure_detail(detail, attempt)
+                    _transport_failure_detail(detail, attempt),
+                    retryable=True,
+                    status_code=status_code,
                 )
             time.sleep(TRANSPORT_RETRY_WAIT_SECONDS)
 
@@ -336,10 +352,16 @@ class ResponsesAPIVLMClient:
         response_text = getattr(response, "text", "")
         if status_code == 204:
             raise VLMTransportError(
-                "Provider returned HTTP 204 with no response body"
+                "Provider returned HTTP 204 with no response body",
+                retryable=True,
+                status_code=204,
             )
         if not isinstance(response_text, str) or not response_text.strip():
-            raise VLMTransportError("Provider returned an empty response body")
+            raise VLMTransportError(
+                "Provider returned an empty response body",
+                retryable=True,
+                status_code=status_code if type(status_code) is int else None,
+            )
         try:
             provider_response = json.loads(response_text)
         except (TypeError, json.JSONDecodeError) as exc:

@@ -377,6 +377,7 @@ class ProductionVisualAdapterTests(unittest.TestCase):
         with self.assertRaisesRegex(VLMTransportError, "vlm_transport_error") as caught:
             adapter.route(self.image)
         self.assertNotIn("secret-bearing", str(caught.exception))
+        self.assertTrue(caught.exception.retryable)
 
     def test_t15_adapter_has_no_node_tree_or_queue_mutation_surface(self):
         adapter, _ = self.adapter()

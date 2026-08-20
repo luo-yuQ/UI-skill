@@ -316,6 +316,20 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.assertEqual(5, TRANSPORT_RETRY_WAIT_SECONDS)
         self.assertEqual({429, 502, 503, 504}, set(RECOVERABLE_HTTP_STATUS_CODES))
 
+    def test_transport_errors_expose_runtime_retryability(self):
+        transient_client, _ = self.client(status=502, body="temporary failure")
+        with patch("vlm_client.time.sleep"):
+            with self.assertRaises(VLMTransportError) as transient:
+                self.infer(transient_client)
+        self.assertTrue(transient.exception.retryable)
+        self.assertEqual(502, transient.exception.status_code)
+
+        permanent_client, _ = self.client(status=401, body="unauthorized")
+        with self.assertRaises(VLMTransportError) as permanent:
+            self.infer(permanent_client)
+        self.assertFalse(permanent.exception.retryable)
+        self.assertEqual(401, permanent.exception.status_code)
+
     def test_transport_retry_502_then_success(self):
         client, session = self.client(
             events=[
