@@ -192,6 +192,12 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.infer(client)
         self.assertEqual("verified-vision-model", session.calls[0]["json"]["model"])
 
+    def test_request_fixes_sampling_parameters(self):
+        client, session = self.client()
+        self.infer(client)
+        self.assertEqual(0, session.calls[0]["json"]["temperature"])
+        self.assertEqual(1, session.calls[0]["json"]["top_p"])
+
     def test_t07_instructions_contains_system_prompt(self):
         client, session = self.client()
         self.infer(client)

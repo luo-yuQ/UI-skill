@@ -343,6 +343,8 @@ class ResponsesAPIVLMClient:
         del response_schema
         payload = {
             "model": self.config.model,
+            "temperature": 0,
+            "top_p": 1,
             "instructions": system_prompt,
             "input": [
                 {
