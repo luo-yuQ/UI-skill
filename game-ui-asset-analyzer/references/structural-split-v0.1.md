@@ -25,6 +25,36 @@ Identify only the most natural, stable **Direct Children** whose different respo
 - Do not create a child that is nearly the whole parent when the visual complexity is not reduced.
 - Visual similarity alone does not make regions repeated instances when they serve different responsibilities.
 
+### Functional Control Region Exception
+
+A small visual area may still be a valid structural child when it represents an independently meaningful functional control region. Examples include a back or navigation control area, a close or dismiss control area, a mode-switching control area, a standalone entry-point area, or an independent functional-shortcut area.
+
+Do not output the final visual asset itself. Represent the smallest meaningful **functional ownership area**, not the smallest visible graphic.
+
+Incorrect:
+
+```text
+label: back_arrow_icon
+bbox: only the visible arrow pixels
+```
+
+Correct:
+
+```text
+label: back_navigation_control
+bbox: the complete functional control region
+```
+
+Do not create a structural child for every icon or button. Ordinary buttons, decorative icons, small badges, text labels, and embedded artwork remain for later asset decomposition. Upgrade a visual area to a structural child only when all three conditions hold:
+
+1. It is a peer of the Current Node's other direct regions at this level.
+2. It owns an independent functional responsibility.
+3. Omitting it would leave the Current Node's first-level structure incomplete.
+
+Negative example: A panel contains a title icon, decorative arrows, and background symbols. Do not create structural children for them; they are visual assets without independent functional ownership.
+
+Positive example: A bottom navigation Current Node contains a compact navigation-control region beside a feature-navigation tab collection. Return both peer regions as direct children. Keep the complete control region rather than only its visible icon, and keep the tab collection whole rather than expanding its tabs.
+
 If no useful structural split exists, set `no_useful_structural_split` to `true`, return `children: []`, and give a brief reason. Otherwise set it to `false` and return at least one child. Give every child a unique non-empty `id`, a concise dynamic `label`, an integer-pixel `bbox`, and confidence from 0 through 1.
 
 Every bbox uses the provided **Analysis Image** coordinate space with a top-left origin. The caller has deterministically resized the Node Crop to the frozen analysis width of 1024 pixels while preserving aspect ratio. Do not use normalized coordinates, a model-reported canvas, Node Crop pixels, or an inferred model resize.
