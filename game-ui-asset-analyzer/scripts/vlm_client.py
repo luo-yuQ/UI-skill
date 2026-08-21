@@ -209,7 +209,26 @@ def parse_json_object(response_text: str) -> dict[str, Any]:
     """Parse provider response text without repairing or extracting partial JSON."""
 
     try:
-        result = json.loads(response_text)
+        text = response_text.strip()
+
+        # remove model reasoning block
+        for start_tag, end_tag in [
+            ("<think>", "</think>"),
+            ("<thinking>", "</thinking>")
+        ]:
+            if start_tag in text and end_tag in text:
+                text = text.split(end_tag, 1)[1].strip()
+
+        # remove markdown fence
+        if text.startswith("```"):
+            lines = text.splitlines()
+            lines = [
+                line for line in lines
+                if not line.strip().startswith("```")
+            ]
+            text = "\n".join(lines).strip()
+
+        return json.loads(text)
     except (TypeError, json.JSONDecodeError) as exc:
         raise VLMResponseParseError("model response is not valid JSON") from exc
     if not isinstance(result, dict):
