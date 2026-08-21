@@ -24,6 +24,7 @@ from production_visual_adapter import StrategySchemaValidationError
 from runtime_geometry import (
     analysis_bbox_to_crop_bbox,
     create_child_node_images,
+    create_node_crop,
     read_image_size,
 )
 from vlm_client import VLMResponseParseError, VLMTransportError
@@ -796,6 +797,14 @@ class RecursiveRuntime:
             produced_by="semantic_decompose",
             taxonomy=source["taxonomy"],
         )
+        crop_path: Path | None = None
+        if resolved["terminal"] and resolved["next_action"] == "stop":
+            crop_path = self.store.node_directory(node_id) / "node-crop.png"
+            create_node_crop(
+                parent_node_crop=self._artifact(parent.node_crop, "node_crop"),
+                bbox_in_parent_crop=bbox_in_crop,
+                child_node_crop=crop_path,
+            )
         child = NodeRecord(
             node_id=node_id,
             parent_id=parent.node_id,
@@ -805,6 +814,7 @@ class RecursiveRuntime:
             terminal=resolved["terminal"],
             next_action=resolved["next_action"],
             requires_router=resolved["requires_router"],
+            node_crop=self._relative(crop_path) if crop_path is not None else None,
             bbox_in_parent_analysis=bbox,
             bbox_in_parent_crop=bbox_in_crop,
             status="done",

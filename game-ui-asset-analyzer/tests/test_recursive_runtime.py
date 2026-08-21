@@ -206,6 +206,45 @@ class RecursiveRuntimeTests(unittest.TestCase):
         self.assertEqual("done", asset.status)
         self.assertEqual([], runtime.state.next_level_queue)
 
+    def test_t04b_terminal_asset_materializes_bbox_contract_node_crop(self):
+        document = semantic_decompose("root", height=512)
+        source_bbox = dict(document["children"][0]["bbox"])
+        runtime, _ = self.make_runtime(semantics={"root": document})
+        root = self.set_root_role(
+            runtime, "component_instance", "semantic_decompose"
+        )
+        parent_crop = runtime.run_dir / root.node_crop
+        parent_crop_before = parent_crop.read_bytes()
+
+        runtime.process_node("root")
+
+        asset = runtime.store.get("root.asset_001")
+        asset_crop = runtime.run_dir / asset.node_crop
+        expected_crop_bbox = analysis_bbox_to_crop_bbox(
+            source_bbox,
+            read_image_size(runtime.run_dir / root.analysis_image),
+            read_image_size(parent_crop),
+        )
+        persisted = json.loads(
+            (runtime.store.node_directory(asset.node_id) / "node.json").read_text(
+                encoding="utf-8"
+            )
+        )
+
+        self.assertTrue(asset.terminal)
+        self.assertEqual("stop", asset.next_action)
+        self.assertTrue(asset_crop.is_file())
+        self.assertEqual(
+            (expected_crop_bbox["width"], expected_crop_bbox["height"]),
+            read_image_size(asset_crop),
+        )
+        self.assertEqual(parent_crop_before, parent_crop.read_bytes())
+        self.assertEqual(source_bbox, document["children"][0]["bbox"])
+        self.assertEqual(source_bbox, asset.bbox_in_parent_analysis)
+        self.assertEqual(expected_crop_bbox, asset.bbox_in_parent_crop)
+        self.assertEqual(source_bbox, persisted["bbox_in_parent_analysis"])
+        self.assertEqual(expected_crop_bbox, persisted["bbox_in_parent_crop"])
+
     def test_t05_stop_as_asset_changes_parent_without_fake_child(self):
         runtime, _ = self.make_runtime(semantics={"root": semantic_stop("root")})
         self.set_root_role(runtime, "component_instance", "semantic_decompose")
@@ -386,4 +425,3 @@ class RecursiveRuntimeTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
-

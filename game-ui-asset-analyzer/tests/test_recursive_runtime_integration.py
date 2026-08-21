@@ -100,11 +100,11 @@ class RecursiveRuntimeIntegrationTests(unittest.TestCase):
             self.assertEqual(["icon", "text"], [child.taxonomy for child in children])
             self.assertTrue(all(child.terminal for child in children))
             self.assertTrue(all(child.status == "done" for child in children))
-            self.assertTrue(all(child.node_crop is None for child in children))
+            self.assertTrue(all(child.node_crop is not None for child in children))
             self.assertTrue(all(child.analysis_image is None for child in children))
             for child in children:
                 asset_dir = runtime.store.node_directory(child.node_id)
-                self.assertFalse((asset_dir / "node-crop.png").exists())
+                self.assertTrue((asset_dir / "node-crop.png").is_file())
                 self.assertFalse((asset_dir / "analysis-image.png").exists())
         for suffix in ("003", "004", "005"):
             deferred = runtime.store.get(f"root.instance_{suffix}")

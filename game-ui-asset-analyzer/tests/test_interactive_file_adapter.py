@@ -346,7 +346,7 @@ class InteractiveFileAdapterTests(unittest.TestCase):
         self.assertFalse(manifest["active_execution_complete"])
         self.assertNotIn(manifest["result"], {"complete", "blocked", "failed"})
 
-    def test_t20_terminal_semantic_asset_has_no_new_image_artifacts(self):
+    def test_t20_terminal_semantic_asset_has_crop_without_analysis_image(self):
         run_dir = self.base / "terminal-asset"
         adapters = self.fixture_adapters(
             adapter_type="fixture",
@@ -365,7 +365,7 @@ class InteractiveFileAdapterTests(unittest.TestCase):
         self.assertEqual("complete", runtime.run())
         asset = runtime.store.get("root.asset_001")
         asset_dir = runtime.store.node_directory(asset.node_id)
-        self.assertFalse((asset_dir / "node-crop.png").exists())
+        self.assertTrue((asset_dir / "node-crop.png").is_file())
         self.assertFalse((asset_dir / "analysis-image.png").exists())
 
     def test_response_schema_is_valid(self):

@@ -42,6 +42,29 @@ def analysis_bbox_to_crop_bbox(
     return map_bbox_to_source(bbox, analysis_size, crop_size)
 
 
+def create_node_crop(
+    *,
+    parent_node_crop: Path,
+    bbox_in_parent_crop: dict[str, int],
+    child_node_crop: Path,
+) -> None:
+    """Materialize one child Node Crop from its parent-crop bbox."""
+
+    x = bbox_in_parent_crop["x"]
+    y = bbox_in_parent_crop["y"]
+    right = x + bbox_in_parent_crop["width"]
+    bottom = y + bbox_in_parent_crop["height"]
+    try:
+        with Image.open(parent_node_crop) as parent:
+            child = parent.crop((x, y, right, bottom))
+            child_node_crop.parent.mkdir(parents=True, exist_ok=True)
+            child.save(child_node_crop, format="PNG")
+    except (OSError, UnidentifiedImageError) as exc:
+        raise ValueError(
+            f"unable to create child crop from {parent_node_crop}: {exc}"
+        ) from exc
+
+
 def create_child_node_images(
     *,
     parent_node_crop: Path,
@@ -60,19 +83,11 @@ def create_child_node_images(
         analysis_size,
         crop_size,
     )
-    x = bbox_in_parent_crop["x"]
-    y = bbox_in_parent_crop["y"]
-    right = x + bbox_in_parent_crop["width"]
-    bottom = y + bbox_in_parent_crop["height"]
-    try:
-        with Image.open(parent_node_crop) as parent:
-            child = parent.crop((x, y, right, bottom))
-            child_node_crop.parent.mkdir(parents=True, exist_ok=True)
-            child.save(child_node_crop, format="PNG")
-    except (OSError, UnidentifiedImageError) as exc:
-        raise ValueError(
-            f"unable to create child crop from {parent_node_crop}: {exc}"
-        ) from exc
+    create_node_crop(
+        parent_node_crop=parent_node_crop,
+        bbox_in_parent_crop=bbox_in_parent_crop,
+        child_node_crop=child_node_crop,
+    )
 
     prepare_analysis_input(
         child_node_crop,
@@ -82,4 +97,3 @@ def create_child_node_images(
         force_width=True,
     )
     return bbox_in_parent_crop
-
