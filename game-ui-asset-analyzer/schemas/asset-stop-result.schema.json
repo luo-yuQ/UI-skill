@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/asset-stop-result.schema.json",
+  "title": "Stage2-A Asset / Stop Contract v0.1 resolver result",
+  "description": "Minimal deterministic terminal-state result. Router roles and actions are validated against the existing frozen ROLE_ACTION_MAP by engineering code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["terminal", "requires_router"],
+  "properties": {
+    "node_role": {
+      "type": "string",
+      "minLength": 1
+    },
+    "terminal": { "type": "boolean" },
+    "next_action": {
+      "type": "string",
+      "minLength": 1
+    },
+    "requires_router": { "type": "boolean" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "requires_router": { "const": true } },
+        "required": ["requires_router"]
+      },
+      "then": {
+        "properties": { "terminal": { "const": false } },
+        "not": {
+          "anyOf": [
+            { "required": ["node_role"] },
+            { "required": ["next_action"] }
+          ]
+        }
+      },
+      "else": {
+        "required": ["node_role", "next_action"]
+      }
+    }
+  ]
+}

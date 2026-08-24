@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/semantic-decomposition.schema.json",
+  "title": "Stage2-A semantic_decompose v0.1",
+  "description": "Direct visual-asset children of one component or component_instance. All child bboxes use deterministic Analysis Image pixels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "node_id",
+    "node_role",
+    "task",
+    "bbox_constraint",
+    "analysis_image_size",
+    "decision",
+    "children",
+    "reason"
+  ],
+  "properties": {
+    "node_id": { "type": "string", "minLength": 1 },
+    "node_role": {
+      "type": "string",
+      "enum": ["component", "component_instance"]
+    },
+    "task": { "const": "semantic_decompose" },
+    "bbox_constraint": { "const": "completeness" },
+    "analysis_image_size": { "$ref": "#/$defs/analysis_image_size" },
+    "decision": {
+      "type": "string",
+      "enum": ["decompose", "stop_as_asset"]
+    },
+    "asset_taxonomy": { "$ref": "#/$defs/taxonomy" },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/child" }
+    },
+    "reason": { "type": "string", "minLength": 1 }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "decision": { "const": "decompose" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "properties": { "children": { "minItems": 1 } },
+        "not": { "required": ["asset_taxonomy"] }
+      }
+    },
+    {
+      "if": {
+        "properties": { "decision": { "const": "stop_as_asset" } },
+        "required": ["decision"]
+      },
+      "then": {
+        "required": ["asset_taxonomy"],
+        "properties": { "children": { "maxItems": 0 } }
+      }
+    }
+  ],
+  "$defs": {
+    "analysis_image_size": {
+      "description": "Actual deterministic Analysis Image size. v0.1 fixes width at 1024 pixels.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "const": 1024 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "taxonomy": {
+      "type": "string",
+      "enum": [
+        "background",
+        "panel",
+        "button",
+        "icon",
+        "illustration",
+        "frame",
+        "progress_bar",
+        "decoration",
+        "text",
+        "unknown"
+      ]
+    },
+    "bbox": {
+      "description": "Complete visible asset bounds in Analysis Image integer pixels, with a top-left origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "child": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "label",
+        "taxonomy",
+        "bbox",
+        "partial",
+        "confidence"
+      ],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "label": { "type": "string", "minLength": 1 },
+        "taxonomy": { "$ref": "#/$defs/taxonomy" },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "partial": { "type": "boolean" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

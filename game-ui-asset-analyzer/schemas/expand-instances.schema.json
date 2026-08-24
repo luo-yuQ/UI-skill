@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/expand-instances.schema.json",
+  "title": "Stage2-A expand_instances v0.1",
+  "description": "Direct peer component instances of one repeated_group. All bboxes use deterministic Analysis Image pixels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "instance_type",
+    "repeat_count",
+    "instances",
+    "reason"
+  ],
+  "properties": {
+    "instance_type": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    },
+    "repeat_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "instances": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/instance" }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "description": "Complete instance bounds in Analysis Image integer pixels, with a top-left origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "instance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "id",
+        "bbox",
+        "partial_instance",
+        "confidence"
+      ],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "partial_instance": { "type": "boolean" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

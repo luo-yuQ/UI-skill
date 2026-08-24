@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/stage2-b1-extraction-plan-v0.1.schema.json",
+  "title": "Stage2-B1 ExtractionPlan v0.1",
+  "description": "Deterministic extraction plan for one immutable Stage2-A asset leaf.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "asset_id",
+    "extraction_mode",
+    "backend",
+    "confidence",
+    "quality_gate",
+    "metadata"
+  ],
+  "properties": {
+    "asset_id": { "type": "string", "minLength": 1 },
+    "extraction_mode": {
+      "type": "string",
+      "enum": ["direct_crop", "foreground_extract", "repair_required"]
+    },
+    "backend": {
+      "type": "string",
+      "enum": ["direct", "color_distance", "grabcut", "unknown"]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "quality_gate": { "$ref": "#/$defs/quality_gate" },
+    "metadata": { "$ref": "#/$defs/metadata" }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": { "extraction_mode": { "const": "direct_crop" } },
+        "required": ["extraction_mode"]
+      },
+      "then": { "properties": { "backend": { "const": "direct" } } }
+    },
+    {
+      "if": {
+        "properties": { "extraction_mode": { "const": "foreground_extract" } },
+        "required": ["extraction_mode"]
+      },
+      "then": {
+        "properties": {
+          "backend": {
+            "enum": ["color_distance", "grabcut", "unknown"]
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "extraction_mode": { "const": "repair_required" } },
+        "required": ["extraction_mode"]
+      },
+      "then": { "properties": { "backend": { "const": "unknown" } } }
+    }
+  ],
+  "$defs": {
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "ratio_bounds": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min", "max"],
+      "properties": {
+        "min": { "type": "number", "minimum": 0, "maximum": 1 },
+        "max": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "quality_gate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "required",
+        "checks",
+        "foreground_ratio",
+        "background_ratio"
+      ],
+      "properties": {
+        "required": { "const": true },
+        "checks": {
+          "type": "array",
+          "minItems": 6,
+          "maxItems": 6,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "empty_output",
+              "empty_mask",
+              "bbox_outside",
+              "foreground_ratio_abnormal",
+              "background_ratio_abnormal",
+              "extraction_failure"
+            ]
+          }
+        },
+        "foreground_ratio": { "$ref": "#/$defs/ratio_bounds" },
+        "background_ratio": { "$ref": "#/$defs/ratio_bounds" }
+      }
+    },
+    "metadata": {
+      "type": "object",
+      "required": [
+        "node_id",
+        "taxonomy",
+        "input_bbox",
+        "source_crop",
+        "planner_policy",
+        "decision_reason"
+      ],
+      "properties": {
+        "node_id": { "type": "string", "minLength": 1 },
+        "taxonomy": { "type": "string", "minLength": 1 },
+        "input_bbox": { "$ref": "#/$defs/bbox" },
+        "source_crop": { "type": "string", "minLength": 1 },
+        "planner_policy": { "type": "string", "minLength": 1 },
+        "decision_reason": { "type": "string", "minLength": 1 }
+      },
+      "additionalProperties": true
+    }
+  }
+}

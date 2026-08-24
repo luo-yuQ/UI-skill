@@ -1,0 +1,56 @@
+[
+  {
+    "label": "Offer card surface",
+    "semantic_type": "panel",
+    "bbox": {"x": 100, "y": 80, "width": 300, "height": 380},
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": ["merged_with_neighbor"],
+    "reason": "The reusable card surface is visually fused with its contained artwork and controls."
+  },
+  {
+    "label": "Crystal bundle illustration",
+    "semantic_type": "illustration",
+    "bbox": {"x": 145, "y": 135, "width": 210, "height": 150},
+    "should_extract": true,
+    "strategy": "foreground_extract",
+    "issues": ["complex_background"],
+    "reason": "All crystal pixels are visible; only the surrounding card background needs foreground separation."
+  },
+  {
+    "label": "BEST VALUE decoration",
+    "semantic_type": "decoration",
+    "bbox": {"x": 115, "y": 95, "width": 110, "height": 38},
+    "should_extract": true,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "The full rectangular crop belongs to the badge asset, so every pixel can be retained unchanged."
+  },
+  {
+    "label": "Bundle amount text",
+    "semantic_type": "text",
+    "bbox": {"x": 180, "y": 295, "width": 140, "height": 30},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "The amount should remain runtime text."
+  },
+  {
+    "label": "Bonus amount text",
+    "semantic_type": "text",
+    "bbox": {"x": 185, "y": 332, "width": 130, "height": 24},
+    "should_extract": false,
+    "strategy": "do_not_extract",
+    "issues": [],
+    "reason": "The bonus label should remain runtime text."
+  },
+  {
+    "label": "Purchase price button",
+    "semantic_type": "button",
+    "bbox": {"x": 155, "y": 382, "width": 190, "height": 52},
+    "should_extract": true,
+    "strategy": "advanced_required",
+    "issues": ["text_baked_in"],
+    "reason": "The price text is baked into the button's own reusable control surface."
+  }
+]

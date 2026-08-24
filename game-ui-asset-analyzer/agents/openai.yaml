@@ -1,0 +1,4 @@
+interface:
+  display_name: "Game UI Asset Analyzer"
+  short_description: "Route, split, expand, stop, and analyze game UI nodes"
+  default_prompt: "Use $game-ui-asset-analyzer to route this UI node, apply the selected frozen decomposition contract, and resolve terminal asset state deterministically."

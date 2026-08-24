@@ -1,0 +1,20 @@
+{
+  "contract_version": "node-router-v0.1.2",
+  "cases": [
+    {
+      "id": "item_slot",
+      "semantic_basis": "One concrete item slot whose immediate owned children are its panel and item artwork, with no valuable intermediate ownership node between the slot and those visual assets.",
+      "expected_node_role": "component_instance"
+    },
+    {
+      "id": "wheel_with_slot_collection",
+      "semantic_basis": "One self-contained wheel module whose direct structure includes a repeated slot collection plus independent wheel structure, selector, and selection state; each slot owns its own panel and item artwork.",
+      "expected_node_role": "structural_group"
+    },
+    {
+      "id": "slot_collection",
+      "semantic_basis": "One collection whose primary identity is its enumerable peer slot instances with the same component schema and different instance data.",
+      "expected_node_role": "repeated_group"
+    }
+  ]
+}

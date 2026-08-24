@@ -1,0 +1,153 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/bbox-refinement.schema.json",
+  "title": "Game UI BBox Refinement v0.2",
+  "description": "Deterministic local foreground bbox suggestions. This artifact never replaces asset-analysis.json.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_image",
+    "source_size",
+    "method",
+    "refinements"
+  ],
+  "properties": {
+    "schema_version": { "const": "0.2" },
+    "source_image": { "type": "string", "minLength": 1 },
+    "source_size": { "$ref": "#/$defs/source_size" },
+    "method": { "const": "local-foreground-v0.2" },
+    "refinements": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/refinement" }
+    }
+  },
+  "$defs": {
+    "source_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["center_shift_px", "area_ratio", "foreground_pixel_ratio"],
+      "properties": {
+        "center_shift_px": { "type": "number", "minimum": 0 },
+        "area_ratio": { "type": "number", "exclusiveMinimum": 0 },
+        "foreground_pixel_ratio": { "type": "number", "minimum": 0, "maximum": 1 }
+      }
+    },
+    "refinement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "asset_id",
+        "coarse_bbox",
+        "roi_bbox",
+        "refined_bbox",
+        "status",
+        "use_bbox",
+        "candidate_count",
+        "selected_candidate_rank",
+        "confidence",
+        "metrics"
+      ],
+      "properties": {
+        "asset_id": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9_-]*$"
+        },
+        "coarse_bbox": { "$ref": "#/$defs/bbox" },
+        "roi_bbox": {
+          "anyOf": [
+            { "$ref": "#/$defs/bbox" },
+            { "type": "null" }
+          ]
+        },
+        "refined_bbox": {
+          "anyOf": [
+            { "$ref": "#/$defs/bbox" },
+            { "type": "null" }
+          ]
+        },
+        "status": { "enum": ["success", "fallback", "failed", "skipped"] },
+        "use_bbox": { "enum": ["refined", "coarse"] },
+        "candidate_count": { "type": "integer", "minimum": 0 },
+        "selected_candidate_rank": {
+          "anyOf": [
+            { "type": "integer", "minimum": 1 },
+            { "type": "null" }
+          ]
+        },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "metrics": {
+          "anyOf": [
+            { "$ref": "#/$defs/metrics" },
+            { "type": "null" }
+          ]
+        },
+        "failure_reason": { "type": "string", "minLength": 1 }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "status": { "const": "success" } } },
+          "then": {
+            "properties": {
+              "roi_bbox": { "$ref": "#/$defs/bbox" },
+              "refined_bbox": { "$ref": "#/$defs/bbox" },
+              "use_bbox": { "const": "refined" },
+              "candidate_count": { "type": "integer", "minimum": 1 },
+              "selected_candidate_rank": { "type": "integer", "minimum": 1 },
+              "metrics": { "$ref": "#/$defs/metrics" }
+            },
+            "not": { "required": ["failure_reason"] }
+          }
+        },
+        {
+          "if": { "properties": { "status": { "const": "fallback" } } },
+          "then": {
+            "properties": {
+              "roi_bbox": { "$ref": "#/$defs/bbox" },
+              "refined_bbox": { "$ref": "#/$defs/bbox" },
+              "use_bbox": { "const": "coarse" },
+              "candidate_count": { "type": "integer", "minimum": 1 },
+              "selected_candidate_rank": { "type": "null" },
+              "confidence": { "const": 0.0 },
+              "metrics": { "$ref": "#/$defs/metrics" }
+            },
+            "required": ["failure_reason"]
+          }
+        },
+        {
+          "if": { "properties": { "status": { "enum": ["failed", "skipped"] } } },
+          "then": {
+            "properties": {
+              "refined_bbox": { "type": "null" },
+              "use_bbox": { "const": "coarse" },
+              "candidate_count": { "const": 0 },
+              "selected_candidate_rank": { "type": "null" },
+              "confidence": { "const": 0.0 }
+            },
+            "required": ["failure_reason"]
+          }
+        }
+      ]
+    }
+  }
+}

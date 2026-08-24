@@ -1,0 +1,90 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/structural-split.schema.json",
+  "title": "Stage2-A structural_split v0.1",
+  "description": "Direct structural children of one structural_group. All bboxes use deterministic Analysis Image pixels.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "no_useful_structural_split",
+    "children",
+    "reason"
+  ],
+  "properties": {
+    "no_useful_structural_split": { "type": "boolean" },
+    "children": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/child" }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "no_useful_structural_split": { "const": true }
+        },
+        "required": ["no_useful_structural_split"]
+      },
+      "then": {
+        "properties": {
+          "children": { "maxItems": 0 }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "no_useful_structural_split": { "const": false }
+        },
+        "required": ["no_useful_structural_split"]
+      },
+      "then": {
+        "properties": {
+          "children": { "minItems": 1 }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "bbox": {
+      "description": "Structural child bounds in Analysis Image integer pixels, with a top-left origin.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "child": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "label", "bbox", "confidence"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "\\S"
+        },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "confidence": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    }
+  }
+}

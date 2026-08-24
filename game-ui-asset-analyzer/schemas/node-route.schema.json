@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/node-route.schema.json",
+  "title": "Stage2-A Node Router v0.1 VLM output",
+  "description": "Raw classification output for one Current Node. next_action is intentionally excluded and is resolved by deterministic engineering code.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["node_role", "confidence", "reason"],
+  "properties": {
+    "node_role": {
+      "type": "string",
+      "enum": [
+        "structural_group",
+        "repeated_group",
+        "component_instance",
+        "asset"
+      ]
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "\\S"
+    }
+  }
+}

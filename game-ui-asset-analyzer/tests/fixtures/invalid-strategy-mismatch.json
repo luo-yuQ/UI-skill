@@ -1,0 +1,11 @@
+[
+  {
+    "label": "Invalid icon",
+    "semantic_type": "icon",
+    "bbox": {"x": 5, "y": 5, "width": 16, "height": 16},
+    "should_extract": false,
+    "strategy": "direct_crop",
+    "issues": [],
+    "reason": "Fixture for extraction consistency validation."
+  }
+]

@@ -1,0 +1,123 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/asset-candidates.schema.json",
+  "title": "Game UI Asset Candidates v0.1 with Strategy Contract v0.3",
+  "description": "The complete content a vision model may emit for Stage2-A asset analysis. Every bbox is expressed in analysis-input image pixels. The field structure remains v0.1 while strategy uses the backward-compatible v0.3 four-state contract.",
+  "type": "array",
+  "items": { "$ref": "#/$defs/candidate" },
+  "$defs": {
+    "semantic_type": {
+      "type": "string",
+      "enum": [
+        "background",
+        "panel",
+        "button",
+        "icon",
+        "illustration",
+        "frame",
+        "progress_bar",
+        "decoration",
+        "text",
+        "unknown"
+      ]
+    },
+    "strategy": {
+      "type": "string",
+      "enum": [
+        "direct_crop",
+        "foreground_extract",
+        "advanced_required",
+        "do_not_extract"
+      ]
+    },
+    "issue": {
+      "type": "string",
+      "enum": [
+        "text_baked_in",
+        "complex_background",
+        "occluded",
+        "partial_visibility",
+        "merged_with_neighbor",
+        "uncertain_boundary"
+      ]
+    },
+    "bbox": {
+      "description": "Pixel bounds in the deterministic analysis-input image coordinate space; origin is top-left.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": { "type": "integer", "minimum": 0 },
+        "y": { "type": "integer", "minimum": 0 },
+        "width": { "type": "integer", "minimum": 1 },
+        "height": { "type": "integer", "minimum": 1 }
+      }
+    },
+    "candidate": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "label",
+        "semantic_type",
+        "bbox",
+        "should_extract",
+        "strategy",
+        "issues",
+        "reason"
+      ],
+      "properties": {
+        "label": { "type": "string", "minLength": 1 },
+        "semantic_type": { "$ref": "#/$defs/semantic_type" },
+        "bbox": { "$ref": "#/$defs/bbox" },
+        "should_extract": { "type": "boolean" },
+        "strategy": { "$ref": "#/$defs/strategy" },
+        "issues": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/issue" },
+          "uniqueItems": true
+        },
+        "reason": { "type": "string", "minLength": 1 },
+        "source_ref": {
+          "anyOf": [
+            { "type": "string", "minLength": 1 },
+            { "type": "null" }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": { "should_extract": { "const": false } },
+            "required": ["should_extract"]
+          },
+          "then": { "properties": { "strategy": { "const": "do_not_extract" } } }
+        },
+        {
+          "if": {
+            "properties": { "strategy": { "const": "do_not_extract" } },
+            "required": ["strategy"]
+          },
+          "then": { "properties": { "should_extract": { "const": false } } }
+        },
+        {
+          "if": {
+            "properties": {
+              "strategy": {
+                "enum": ["direct_crop", "foreground_extract", "advanced_required"]
+              }
+            },
+            "required": ["strategy"]
+          },
+          "then": { "properties": { "should_extract": { "const": true } } }
+        },
+        {
+          "if": {
+            "properties": { "strategy": { "const": "advanced_required" } },
+            "required": ["strategy"]
+          },
+          "then": { "properties": { "issues": { "minItems": 1 } } }
+        }
+      ]
+    }
+  }
+}
