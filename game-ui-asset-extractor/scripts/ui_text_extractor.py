@@ -70,8 +70,9 @@ class UITextExtractor:
         output_json_path: Path | str,
         output_mask_path: Path | str,
         debug_path: Path | str | None = None,
+        output_cleaned_path: Path | str | None = None,
     ) -> TextExtractionResult:
-        """Run Stage A and export JSON, a full-image hard mask, and debug image."""
+        """Run Stage A and export structured, mask, cleaned, and debug artifacts."""
 
         source_path = Path(image_path)
         image_bgr = self._read_image(source_path)
@@ -129,12 +130,86 @@ class UITextExtractor:
             count=len(items),
             items=items,
         )
-        self._write_json(Path(output_json_path), result)
-        self._write_image(Path(output_mask_path), hard_mask, force_png=True)
-        if debug_path is not None:
-            debug = self._draw_debug_visualization(image_bgr, result)
-            self._write_image(Path(debug_path), debug)
+        cleaned_image = self.inpaint_cleaned_image(image_rgb, hard_mask)
+        debug = (
+            self._draw_debug_visualization(image_bgr, result)
+            if debug_path is not None
+            else None
+        )
+        self.export_artifacts(
+            result=result,
+            raw_text_mask=hard_mask,
+            cleaned_image=cleaned_image,
+            output_json=Path(output_json_path),
+            output_mask=Path(output_mask_path),
+            output_cleaned=(
+                Path(output_cleaned_path)
+                if output_cleaned_path is not None
+                else None
+            ),
+            debug_image=debug,
+            output_debug=Path(debug_path) if debug_path is not None else None,
+        )
         return result
+
+    @staticmethod
+    def inpaint_cleaned_image(image: np.ndarray, mask: np.ndarray) -> np.ndarray:
+        """Remove the hard-mask region with radius-5 Telea inpainting.
+
+        Args:
+            image: Original RGB uint8 image with shape ``(H, W, 3)``.
+            mask: Full-image single-channel uint8 hard mask. Nonzero values are
+                treated as text pixels to remove.
+
+        Returns:
+            A new RGB uint8 image with the same shape as ``image``.
+        """
+
+        if not isinstance(image, np.ndarray) or image.ndim != 3 or image.shape[2] != 3:
+            raise ValueError("image must be an RGB array with shape (H, W, 3)")
+        if image.dtype != np.uint8:
+            raise ValueError("image must have dtype uint8")
+        if not isinstance(mask, np.ndarray) or mask.ndim != 2:
+            raise ValueError("mask must be a single-channel array with shape (H, W)")
+        if mask.shape != image.shape[:2]:
+            raise ValueError("mask dimensions must match image dimensions")
+        if mask.dtype != np.uint8:
+            raise ValueError("mask must have dtype uint8")
+        if not np.any(mask):
+            return image.copy()
+
+        binary_mask = np.where(mask > 0, 255, 0).astype(np.uint8)
+        image_bgr = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+        cleaned_bgr = cv2.inpaint(
+            image_bgr,
+            binary_mask,
+            inpaintRadius=5,
+            flags=cv2.INPAINT_TELEA,
+        )
+        return cv2.cvtColor(cleaned_bgr, cv2.COLOR_BGR2RGB)
+
+    @classmethod
+    def export_artifacts(
+        cls,
+        *,
+        result: TextExtractionResult,
+        raw_text_mask: np.ndarray,
+        cleaned_image: np.ndarray,
+        output_json: Path,
+        output_mask: Path,
+        output_cleaned: Path | None,
+        debug_image: np.ndarray | None = None,
+        output_debug: Path | None = None,
+    ) -> None:
+        """Write all requested Stage A artifacts with correct channel ordering."""
+
+        cls._write_json(output_json, result)
+        cls._write_image(output_mask, raw_text_mask, force_png=True)
+        if output_cleaned is not None:
+            cleaned_bgr = cv2.cvtColor(cleaned_image, cv2.COLOR_RGB2BGR)
+            cls._write_image(output_cleaned, cleaned_bgr, force_png=True)
+        if debug_image is not None and output_debug is not None:
+            cls._write_image(output_debug, debug_image)
 
     @staticmethod
     def _read_image(path: Path) -> np.ndarray:
@@ -545,6 +620,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument("--image", type=Path, help="Single input image")
     parser.add_argument("--output-json", type=Path)
     parser.add_argument("--output-mask", type=Path)
+    parser.add_argument("--output-cleaned", type=Path)
     parser.add_argument("--output-debug", type=Path)
     parser.add_argument(
         "--output-dir",
@@ -584,13 +660,14 @@ def _collect_input_images(input_path: Path) -> tuple[list[Path], bool]:
 def _automatic_output_paths(
     image_path: Path,
     output_dir: Path,
-) -> tuple[Path, Path, Path]:
+) -> tuple[Path, Path, Path, Path]:
     """Build all Stage A artifact paths from one source stem."""
 
     stem = image_path.stem
     return (
         output_dir / f"{stem}_texts.json",
         output_dir / f"{stem}_raw_text_mask.png",
+        output_dir / f"{stem}_cleaned.png",
         output_dir / f"{stem}_debug.png",
     )
 
@@ -608,7 +685,12 @@ def main(argv: list[str] | None = None) -> int:
         images, is_batch = _collect_input_images(input_path)
         if is_batch and any(
             path is not None
-            for path in (args.output_json, args.output_mask, args.output_debug)
+            for path in (
+                args.output_json,
+                args.output_mask,
+                args.output_cleaned,
+                args.output_debug,
+            )
         ):
             raise ValueError(
                 "Explicit output paths can only be used with a single image"
@@ -624,12 +706,13 @@ def main(argv: list[str] | None = None) -> int:
     total_items = 0
     total_images = len(images)
     for index, image_path in enumerate(images, start=1):
-        auto_json, auto_mask, auto_debug = _automatic_output_paths(
+        auto_json, auto_mask, auto_cleaned, auto_debug = _automatic_output_paths(
             image_path,
             args.output_dir,
         )
         output_json = args.output_json or auto_json
         output_mask = args.output_mask or auto_mask
+        output_cleaned = args.output_cleaned or auto_cleaned
         if args.output_debug is not None:
             output_debug: Path | None = args.output_debug
         elif is_batch or args.output_json is None or args.output_mask is None:
@@ -645,6 +728,7 @@ def main(argv: list[str] | None = None) -> int:
                 output_json,
                 output_mask,
                 output_debug,
+                output_cleaned_path=output_cleaned,
             )
         except Exception as exc:
             failed += 1
@@ -658,7 +742,7 @@ def main(argv: list[str] | None = None) -> int:
         total_items += result.count
         print(
             f"[{index}/{total_images}] Extracted {result.count} text item(s): "
-            f"{output_json} | {output_mask}"
+            f"{output_json} | {output_mask} | {output_cleaned}"
         )
 
     if is_batch:

@@ -152,6 +152,7 @@ def test_extract_serializes_contract_and_full_size_mask(tmp_path: Path) -> None:
     source = tmp_path / "界面.png"
     output_json = tmp_path / "artifacts" / "texts.json"
     output_mask = tmp_path / "artifacts" / "raw_text_mask.png"
+    output_cleaned = tmp_path / "artifacts" / "cleaned.png"
     output_debug = tmp_path / "artifacts" / "debug.png"
     _synthetic_source(source)
     ocr_rows = [
@@ -166,6 +167,7 @@ def test_extract_serializes_contract_and_full_size_mask(tmp_path: Path) -> None:
         output_json,
         output_mask,
         output_debug,
+        output_cleaned_path=output_cleaned,
     )
 
     assert isinstance(result, TextExtractionResult)
@@ -185,6 +187,12 @@ def test_extract_serializes_contract_and_full_size_mask(tmp_path: Path) -> None:
     assert mask.shape == (120, 180)
     assert set(np.unique(mask)).issubset({0, 255})
     assert np.count_nonzero(mask) > 0
+    cleaned = cv2.imdecode(
+        np.fromfile(str(output_cleaned), dtype=np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    assert cleaned is not None
+    assert cleaned.shape == (120, 180, 3)
     assert output_debug.is_file()
 
 
@@ -197,11 +205,39 @@ def test_empty_ocr_writes_empty_result_and_zero_mask(tmp_path: Path) -> None:
         source,
         tmp_path / "texts.json",
         tmp_path / "mask.png",
+        output_cleaned_path=tmp_path / "cleaned.png",
     )
 
     assert result.count == 0
     assert result.items == []
     assert np.count_nonzero(_read_gray(tmp_path / "mask.png")) == 0
+    assert (tmp_path / "cleaned.png").is_file()
+
+
+def test_telea_inpaint_removes_masked_text_color() -> None:
+    image = np.full((60, 80, 3), [80, 120, 160], dtype=np.uint8)
+    image[20:40, 35:45] = [250, 10, 10]
+    mask = np.zeros((60, 80), dtype=np.uint8)
+    mask[20:40, 35:45] = 255
+
+    cleaned = UITextExtractor.inpaint_cleaned_image(image, mask)
+
+    assert cleaned.shape == image.shape
+    assert cleaned.dtype == np.uint8
+    assert not np.array_equal(cleaned[mask > 0], image[mask > 0])
+    repaired_mean = cleaned[mask > 0].mean(axis=0)
+    np.testing.assert_allclose(repaired_mean, [80, 120, 160], atol=4)
+
+
+def test_empty_mask_returns_independent_image_copy() -> None:
+    image = np.full((12, 16, 3), 70, dtype=np.uint8)
+    mask = np.zeros((12, 16), dtype=np.uint8)
+
+    cleaned = UITextExtractor.inpaint_cleaned_image(image, mask)
+
+    assert np.array_equal(cleaned, image)
+    assert cleaned is not image
+    assert not np.shares_memory(cleaned, image)
 
 
 def test_pydantic_contract_rejects_invalid_style_and_count() -> None:
@@ -224,7 +260,7 @@ def test_pydantic_contract_rejects_invalid_style_and_count() -> None:
 
 
 def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
-    calls: list[tuple[Path, Path, Path, Path | None]] = []
+    calls: list[tuple[Path, Path, Path, Path | None, Path | None]] = []
 
     class FakeExtractor:
         def extract(
@@ -233,8 +269,17 @@ def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
             output_json: Path,
             output_mask: Path,
             output_debug: Path | None,
+            output_cleaned_path: Path | None = None,
         ) -> TextExtractionResult:
-            calls.append((image, output_json, output_mask, output_debug))
+            calls.append(
+                (
+                    image,
+                    output_json,
+                    output_mask,
+                    output_debug,
+                    output_cleaned_path,
+                )
+            )
             return TextExtractionResult(
                 image_width=1,
                 image_height=1,
@@ -247,6 +292,7 @@ def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
     image.write_bytes(b"placeholder")
     output_json = tmp_path / "texts.json"
     output_mask = tmp_path / "raw_text_mask.png"
+    output_cleaned = tmp_path / "cleaned.png"
     output_debug = tmp_path / "debug.png"
 
     code = extractor_module.main(
@@ -257,13 +303,17 @@ def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
             str(output_json),
             "--output-mask",
             str(output_mask),
+            "--output-cleaned",
+            str(output_cleaned),
             "--output-debug",
             str(output_debug),
         ]
     )
 
     assert code == 0
-    assert calls == [(image, output_json, output_mask, output_debug)]
+    assert calls == [
+        (image, output_json, output_mask, output_debug, output_cleaned)
+    ]
 
 
 def test_cli_batch_restores_positional_directory_and_output_dir(
@@ -271,7 +321,7 @@ def test_cli_batch_restores_positional_directory_and_output_dir(
     tmp_path: Path,
     capsys,
 ) -> None:
-    calls: list[tuple[Path, Path, Path, Path | None]] = []
+    calls: list[tuple[Path, Path, Path, Path | None, Path | None]] = []
 
     class FakeExtractor:
         def extract(
@@ -280,8 +330,17 @@ def test_cli_batch_restores_positional_directory_and_output_dir(
             output_json: Path,
             output_mask: Path,
             output_debug: Path | None,
+            output_cleaned_path: Path | None = None,
         ) -> TextExtractionResult:
-            calls.append((image, output_json, output_mask, output_debug))
+            calls.append(
+                (
+                    image,
+                    output_json,
+                    output_mask,
+                    output_debug,
+                    output_cleaned_path,
+                )
+            )
             return TextExtractionResult(
                 image_width=1,
                 image_height=1,
@@ -310,12 +369,49 @@ def test_cli_batch_restores_positional_directory_and_output_dir(
             outputs / "a_texts.json",
             outputs / "a_raw_text_mask.png",
             outputs / "a_debug.png",
+            outputs / "a_cleaned.png",
         ),
         (
             second,
             outputs / "b_texts.json",
             outputs / "b_raw_text_mask.png",
             outputs / "b_debug.png",
+            outputs / "b_cleaned.png",
         ),
     ]
     assert "Summary: 2 succeeded, 0 failed, 2 total" in capsys.readouterr().out
+
+
+def test_cli_output_cleaned_is_written_with_real_extractor(
+    monkeypatch,
+    tmp_path: Path,
+) -> None:
+    source = tmp_path / "source.png"
+    _synthetic_source(source)
+    actual = UITextExtractor(ocr_engine=lambda _image: (None, None))
+    monkeypatch.setattr(extractor_module, "UITextExtractor", lambda: actual)
+    output_cleaned = tmp_path / "explicit-cleaned.png"
+
+    code = extractor_module.main(
+        [
+            "--image",
+            str(source),
+            "--output-json",
+            str(tmp_path / "texts.json"),
+            "--output-mask",
+            str(tmp_path / "mask.png"),
+            "--output-cleaned",
+            str(output_cleaned),
+        ]
+    )
+
+    assert code == 0
+    encoded = np.fromfile(str(output_cleaned), dtype=np.uint8)
+    cleaned = cv2.imdecode(encoded, cv2.IMREAD_COLOR)
+    assert cleaned is not None
+    assert cleaned.shape == (120, 180, 3)
+    source_bgr = cv2.imdecode(
+        np.fromfile(str(source), dtype=np.uint8),
+        cv2.IMREAD_COLOR,
+    )
+    assert np.array_equal(cleaned, source_bgr)
