@@ -10,8 +10,9 @@ import os
 import re
 import sys
 from base64 import b64encode
+from io import BytesIO
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 from PIL import Image, ImageDraw
@@ -29,6 +30,7 @@ DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_OUTPUT_TOKENS = 8000
 TEMPERATURE = 0.1
+COMPOSITE_VIEW_MAX_WIDTH = 1280
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
 
@@ -105,6 +107,22 @@ Return exactly one pure JSON object matching the supplied LayerPlanResult JSON S
 Do not use Markdown fences, comments, prose outside JSON, extra fields, invented IDs, or
 non-normalized coordinates.
 """
+
+COMPOSITE_SYSTEM_PROMPT = SYSTEM_PROMPT.replace(
+    """You receive exactly two views of the same UI at the same resolution, in this order:
+1. the original high-resolution UI image, which is authoritative for text appearance and
+   original visual semantics;
+2. cleaned_image, the OCR-cleaned working image, which is authoritative for inspecting
+   material boundaries after ordinary editable text has been removed.
+You also receive a compact Stage 0 OCR list containing only id, text, and rect.""",
+    """You receive one comparison sheet containing two views of the same UI:
+1. LEFT, labelled IMAGE 1 - ORIGINAL: the original UI, authoritative for text appearance
+   and original visual semantics;
+2. RIGHT, labelled IMAGE 2 - CLEANED: cleaned_image, authoritative for inspecting material
+   boundaries after ordinary editable text has been removed.
+The two views preserve the same scale and are ordered left-to-right. You also receive a
+compact Stage 0 OCR list containing only id, text, and rect.""",
+)
 
 
 class VLMPlannerError(RuntimeError):
@@ -232,6 +250,59 @@ def _encode_image_as_data_url(path: Path) -> str:
     return f"data:{media_types[suffix]};base64,{encoded}"
 
 
+def _encode_comparison_as_data_url(
+    original_image_path: Path,
+    cleaned_image_path: Path,
+) -> str:
+    """Build a compact one-image comparison sheet for single-image relays."""
+
+    try:
+        with Image.open(original_image_path) as original_source:
+            original = original_source.convert("RGB")
+        with Image.open(cleaned_image_path) as cleaned_source:
+            cleaned = cleaned_source.convert("RGB")
+    except (FileNotFoundError, OSError) as exc:
+        raise PlannerInputError(f"Cannot build comparison image: {exc}") from exc
+
+    if original.size != cleaned.size:
+        raise PlannerInputError(
+            "Original and cleaned images must have identical dimensions"
+        )
+    source_width, source_height = original.size
+    scale = min(1.0, COMPOSITE_VIEW_MAX_WIDTH / source_width)
+    view_size = (
+        max(1, round(source_width * scale)),
+        max(1, round(source_height * scale)),
+    )
+    if original.size != view_size:
+        original = original.resize(view_size, Image.Resampling.LANCZOS)
+        cleaned = cleaned.resize(view_size, Image.Resampling.LANCZOS)
+
+    label_height = 40
+    sheet = Image.new(
+        "RGB",
+        (view_size[0] * 2, view_size[1] + label_height),
+        (20, 24, 32),
+    )
+    sheet.paste(original, (0, label_height))
+    sheet.paste(cleaned, (view_size[0], label_height))
+    draw = ImageDraw.Draw(sheet)
+    draw.text((12, 12), "IMAGE 1 - ORIGINAL", fill=(255, 255, 255))
+    draw.text(
+        (view_size[0] + 12, 12),
+        "IMAGE 2 - CLEANED",
+        fill=(255, 255, 255),
+    )
+    draw.line(
+        (view_size[0], 0, view_size[0], sheet.height - 1),
+        fill=(255, 196, 64),
+        width=3,
+    )
+    buffer = BytesIO()
+    sheet.save(buffer, format="JPEG", quality=85, optimize=True)
+    return "data:image/jpeg;base64," + b64encode(buffer.getvalue()).decode("ascii")
+
+
 def _responses_endpoint(base_url: str) -> str:
     """Accept root, ``/v1``, or full Responses relay base URLs."""
 
@@ -313,12 +384,15 @@ class OpenAICompatibleVLMClient:
         api_key: str,
         model: str = DEFAULT_MODEL,
         timeout: float = DEFAULT_TIMEOUT,
+        image_mode: Literal["dual", "composite"] = "dual",
         session: Any | None = None,
     ) -> None:
         if timeout <= 0:
             raise PlannerClientError("VLM timeout must be positive")
         if not api_key:
             raise PlannerClientError("API_KEY must not be empty")
+        if image_mode not in {"dual", "composite"}:
+            raise PlannerClientError(f"Unsupported image mode: {image_mode}")
         if session is None:
             if requests is None:
                 raise PlannerClientError("The requests package is required for VLM calls")
@@ -327,6 +401,7 @@ class OpenAICompatibleVLMClient:
         self.api_key = api_key
         self.model = model
         self.timeout = timeout
+        self.image_mode = image_mode
         self.session = session
 
     def infer_json(
@@ -345,6 +420,50 @@ class OpenAICompatibleVLMClient:
                 "\n\nRequired LayerPlanResult JSON Schema:\n"
                 + json.dumps(response_schema, ensure_ascii=False, separators=(",", ":"))
             )
+        content: list[dict[str, Any]] = [
+            {
+                "type": "input_text",
+                "text": user_prompt + schema_instruction,
+            }
+        ]
+        if self.image_mode == "dual":
+            content.extend(
+                [
+                    {"type": "input_text", "text": "Image 1: original UI image."},
+                    {
+                        "type": "input_image",
+                        "image_url": _encode_image_as_data_url(original_image_path),
+                    },
+                    {
+                        "type": "input_text",
+                        "text": "Image 2: OCR-cleaned working image (cleaned_image).",
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": _encode_image_as_data_url(cleaned_image_path),
+                    },
+                ]
+            )
+        else:
+            content.extend(
+                [
+                    {
+                        "type": "input_text",
+                        "text": (
+                            "One comparison sheet follows: original on the LEFT, "
+                            "cleaned_image on the RIGHT."
+                        ),
+                    },
+                    {
+                        "type": "input_image",
+                        "image_url": _encode_comparison_as_data_url(
+                            original_image_path,
+                            cleaned_image_path,
+                        ),
+                    },
+                ]
+            )
+
         payload = {
             "model": self.model,
             "temperature": TEMPERATURE,
@@ -354,25 +473,7 @@ class OpenAICompatibleVLMClient:
                 {
                     "type": "message",
                     "role": "user",
-                    "content": [
-                        {
-                            "type": "input_text",
-                            "text": user_prompt + schema_instruction,
-                        },
-                        {"type": "input_text", "text": "Image 1: original UI image."},
-                        {
-                            "type": "input_image",
-                            "image_url": _encode_image_as_data_url(original_image_path),
-                        },
-                        {
-                            "type": "input_text",
-                            "text": "Image 2: OCR-cleaned working image (cleaned_image).",
-                        },
-                        {
-                            "type": "input_image",
-                            "image_url": _encode_image_as_data_url(cleaned_image_path),
-                        },
-                    ],
+                    "content": content,
                 }
             ],
             "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
@@ -393,14 +494,12 @@ class OpenAICompatibleVLMClient:
         except Exception as exc:
             raise PlannerClientError(f"VLM request failed: {type(exc).__name__}") from exc
 
+        raw_response_body = getattr(response, "text", "")
+        if not isinstance(raw_response_body, str) or not raw_response_body.strip():
+            raise PlannerResponseError("VLM response body is empty")
         try:
-            provider_response = response.json()
-        except ValueError:
-            raw_response_body = getattr(response, "text", "")
-            if not isinstance(raw_response_body, str) or not raw_response_body.strip():
-                raise PlannerResponseError(
-                    "VLM response body is empty or is not valid JSON"
-                ) from None
+            provider_response = json.loads(raw_response_body)
+        except json.JSONDecodeError:
             response_text = _extract_unescaped_relay_output_text(raw_response_body)
         else:
             response_text = _extract_response_text(provider_response)
@@ -422,7 +521,10 @@ def _first_environment_value(*names: str) -> str:
     return ""
 
 
-def _create_default_client(model: str) -> OpenAICompatibleVLMClient:
+def _create_default_client(
+    model: str,
+    image_mode: Literal["dual", "composite"] = "dual",
+) -> OpenAICompatibleVLMClient:
     """Create a client from relay aliases or standard OpenAI environment names."""
 
     base_url = _first_environment_value(
@@ -446,15 +548,24 @@ def _create_default_client(model: str) -> OpenAICompatibleVLMClient:
         api_key=api_key,
         model=model,
         timeout=timeout,
+        image_mode=image_mode,
     )
 
 
 class UIVLMPlanner:
     """Create and export a semantic layer plan from original and cleaned images."""
 
-    def __init__(self, client: VLMClient | None = None, model: str = DEFAULT_MODEL) -> None:
+    def __init__(
+        self,
+        client: VLMClient | None = None,
+        model: str = DEFAULT_MODEL,
+        image_mode: Literal["dual", "composite"] = "dual",
+    ) -> None:
+        if image_mode not in {"dual", "composite"}:
+            raise ValueError(f"Unsupported image mode: {image_mode}")
         self.client = client
         self.model = model
+        self.image_mode = image_mode
 
     def plan(
         self,
@@ -480,12 +591,17 @@ class UIVLMPlanner:
             + json.dumps(text_summary, ensure_ascii=False, indent=2)
             + "\nPlan every confirmed extractable asset instance now."
         )
-        client = self.client or _create_default_client(self.model)
+        client = self.client or _create_default_client(self.model, self.image_mode)
+        system_prompt = (
+            COMPOSITE_SYSTEM_PROMPT
+            if self.image_mode == "composite"
+            else SYSTEM_PROMPT
+        )
         try:
             response = client.infer_json(
                 original_path,
                 cleaned_path,
-                SYSTEM_PROMPT,
+                system_prompt,
                 user_prompt,
                 _strict_response_schema(),
             )
@@ -627,6 +743,12 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--output-json", type=Path, required=True)
     parser.add_argument("--output-vis", type=Path, required=True)
     parser.add_argument("--model", default=DEFAULT_MODEL)
+    parser.add_argument(
+        "--image-mode",
+        choices=("dual", "composite"),
+        default="dual",
+        help="Send two images, or one left/right comparison sheet for limited relays",
+    )
     return parser
 
 
@@ -635,7 +757,7 @@ def main(argv: list[str] | None = None) -> int:
 
     args = build_argument_parser().parse_args(argv)
     try:
-        result = UIVLMPlanner(model=args.model).process(
+        result = UIVLMPlanner(model=args.model, image_mode=args.image_mode).process(
             args.original,
             args.cleaned,
             args.texts_json,

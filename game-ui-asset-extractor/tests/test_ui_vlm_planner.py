@@ -173,11 +173,14 @@ def test_planner_uses_dual_image_order_and_dehydrated_texts(tmp_path: Path) -> N
 
 
 class _FakeHTTPResponse:
+    def __init__(self) -> None:
+        self.text = json.dumps({"output_text": json.dumps(_plan_payload())})
+
     def raise_for_status(self) -> None:
         return None
 
     def json(self) -> dict[str, Any]:
-        return {"output_text": json.dumps(_plan_payload())}
+        raise AssertionError("client must parse the captured response.text directly")
 
 
 class _MalformedRelayHTTPResponse:
@@ -195,7 +198,8 @@ class _MalformedRelayHTTPResponse:
         return None
 
     def json(self) -> dict[str, Any]:
-        return json.loads(self.text)
+        self.text = ""
+        raise json.JSONDecodeError("relay envelope is malformed", "", 0)
 
 
 class _FakeSession:
@@ -234,6 +238,26 @@ def test_openai_compatible_client_sends_two_base64_images_in_order(
     assert image_urls[0] != image_urls[1]
 
 
+def test_composite_mode_sends_one_labelled_comparison_image(tmp_path: Path) -> None:
+    original, cleaned, _ = _write_inputs(tmp_path)
+    session = _FakeSession()
+    client = OpenAICompatibleVLMClient(
+        base_url="https://relay.example/v1",
+        api_key="secret",
+        image_mode="composite",
+        session=session,
+    )
+
+    client.infer_json(original, cleaned, "system", "user", None)
+
+    content = session.calls[0]["json"]["input"][0]["content"]
+    image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
+    assert len(image_urls) == 1
+    assert image_urls[0].startswith("data:image/jpeg;base64,")
+    labels = [item["text"] for item in content if item["type"] == "input_text"]
+    assert any("original on the LEFT" in label for label in labels)
+
+
 def test_client_recovers_unescaped_json_from_malformed_relay_envelope(
     tmp_path: Path,
 ) -> None:
@@ -259,7 +283,7 @@ def test_cli_exports_layer_plan_and_debug_visualization(
     monkeypatch.setattr(
         planner_module,
         "_create_default_client",
-        lambda model: fake_client,
+        lambda model, image_mode="dual": fake_client,
     )
     output_json = tmp_path / "artifacts" / "layer_plan.json"
     output_vis = tmp_path / "artifacts" / "plan_debug.png"
