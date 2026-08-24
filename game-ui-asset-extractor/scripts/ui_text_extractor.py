@@ -20,6 +20,7 @@ import numpy as np
 
 
 OCREngine = Callable[[np.ndarray], Any]
+SUPPORTED_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 
 class UITextExtractor:
@@ -452,28 +453,117 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract game UI text and inferred typography."
     )
-    parser.add_argument("image", help="Input game UI screenshot")
-    parser.add_argument("output_json", help="Output JSON path")
-    parser.add_argument("debug_visualization", help="Output annotated image path")
+    parser.add_argument(
+        "input",
+        type=Path,
+        help="Input image or a directory containing images",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("."),
+        help="Directory for automatically named outputs (default: current directory)",
+    )
+    parser.add_argument(
+        "--output-json",
+        type=Path,
+        help="Explicit JSON output path (single-image input only)",
+    )
+    parser.add_argument(
+        "--output-vis",
+        type=Path,
+        help="Explicit debug visualization path (single-image input only)",
+    )
     return parser.parse_args(argv)
 
 
+def _collect_input_images(input_path: Path) -> tuple[list[Path], bool]:
+    """Return supported input images and whether the input is a directory."""
+
+    if input_path.is_file():
+        if input_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
+            supported = ", ".join(sorted(SUPPORTED_IMAGE_SUFFIXES))
+            raise ValueError(
+                f"Unsupported image extension for {input_path}; expected one of: {supported}"
+            )
+        return [input_path], False
+    if input_path.is_dir():
+        images = sorted(
+            (
+                child
+                for child in input_path.iterdir()
+                if child.is_file() and child.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+            ),
+            key=lambda path: (path.name.casefold(), path.name),
+        )
+        if not images:
+            raise ValueError(f"No supported images found in directory: {input_path}")
+        return images, True
+    raise FileNotFoundError(f"Input path does not exist: {input_path}")
+
+
+def _automatic_output_paths(image_path: Path, output_dir: Path) -> tuple[Path, Path]:
+    """Build deterministic JSON and visualization paths for one image."""
+
+    stem = image_path.stem
+    return output_dir / f"{stem}_texts.json", output_dir / f"{stem}_debug.png"
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Run a local extraction from the command line."""
+    """Run single-image or fault-tolerant batch extraction from the CLI."""
 
     args = _parse_args(argv)
     try:
-        extractor = UITextExtractor()
-        layers = extractor.extract(
-            args.image,
-            args.output_json,
-            args.debug_visualization,
+        images, is_batch = _collect_input_images(args.input)
+        if is_batch and (args.output_json is not None or args.output_vis is not None):
+            raise ValueError(
+                "--output-json and --output-vis can only be used with a single image"
+            )
+
+        uses_output_dir = (
+            is_batch or args.output_json is None or args.output_vis is None
         )
-    except (FileNotFoundError, ValueError, RuntimeError) as exc:
+        if uses_output_dir:
+            args.output_dir.mkdir(parents=True, exist_ok=True)
+        extractor = UITextExtractor()
+    except (FileNotFoundError, OSError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(f"Extracted {len(layers)} text layer(s) to {args.output_json}")
-    return 0
+
+    succeeded = 0
+    failed = 0
+    total = len(images)
+    for index, image_path in enumerate(images, start=1):
+        automatic_json, automatic_vis = _automatic_output_paths(
+            image_path,
+            args.output_dir,
+        )
+        output_json = args.output_json or automatic_json
+        output_vis = args.output_vis or automatic_vis
+        if is_batch:
+            print(f"[{index}/{total}] Processing {image_path}")
+        try:
+            layers = extractor.extract(
+                str(image_path),
+                str(output_json),
+                str(output_vis),
+            )
+        # This is the per-item CLI isolation boundary: an unexpected provider
+        # error must not prevent the remaining images from being processed.
+        except Exception as exc:
+            failed += 1
+            print(f"[{index}/{total}] ERROR {image_path}: {exc}", file=sys.stderr)
+            continue
+
+        succeeded += 1
+        print(
+            f"[{index}/{total}] Extracted {len(layers)} text layer(s): "
+            f"{output_json} | {output_vis}"
+        )
+
+    if is_batch:
+        print(f"Summary: {succeeded} succeeded, {failed} failed, {total} total.")
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":
