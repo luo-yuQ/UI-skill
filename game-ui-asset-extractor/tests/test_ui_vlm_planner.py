@@ -180,13 +180,32 @@ class _FakeHTTPResponse:
         return {"output_text": json.dumps(_plan_payload())}
 
 
-class _FakeSession:
+class _MalformedRelayHTTPResponse:
     def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
+        model_json = json.dumps(_plan_payload(), ensure_ascii=False)
+        self.text = (
+            '{"id":"resp_test","object":"response","status":"completed",'
+            '"output":[{"type":"message","role":"assistant","content":['
+            '{"type":"output_text","text":"'
+            + model_json
+            + '"}]}],"usage":{"input_tokens":10,"output_tokens":20}}'
+        )
 
-    def post(self, url: str, **kwargs: Any) -> _FakeHTTPResponse:
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict[str, Any]:
+        return json.loads(self.text)
+
+
+class _FakeSession:
+    def __init__(self, response: Any | None = None) -> None:
+        self.calls: list[dict[str, Any]] = []
+        self.response = _FakeHTTPResponse() if response is None else response
+
+    def post(self, url: str, **kwargs: Any) -> Any:
         self.calls.append({"url": url, **kwargs})
-        return _FakeHTTPResponse()
+        return self.response
 
 
 def test_openai_compatible_client_sends_two_base64_images_in_order(
@@ -206,12 +225,29 @@ def test_openai_compatible_client_sends_two_base64_images_in_order(
     request = session.calls[0]
     assert request["url"] == "https://relay.example/v1/responses"
     assert request["json"]["temperature"] == 0.1
+    assert request["json"]["stream"] is False
     content = request["json"]["input"][0]["content"]
     image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
     assert len(image_urls) == 2
     assert image_urls[0].startswith("data:image/png;base64,")
     assert image_urls[1].startswith("data:image/png;base64,")
     assert image_urls[0] != image_urls[1]
+
+
+def test_client_recovers_unescaped_json_from_malformed_relay_envelope(
+    tmp_path: Path,
+) -> None:
+    original, cleaned, _ = _write_inputs(tmp_path)
+    session = _FakeSession(_MalformedRelayHTTPResponse())
+    client = OpenAICompatibleVLMClient(
+        base_url="https://relay.example/v1",
+        api_key="secret",
+        session=session,
+    )
+
+    result = client.infer_json(original, cleaned, "system", "user", None)
+
+    assert result == _plan_payload()
 
 
 def test_cli_exports_layer_plan_and_debug_visualization(

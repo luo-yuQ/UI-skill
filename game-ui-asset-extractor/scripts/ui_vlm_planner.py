@@ -7,6 +7,7 @@ import argparse
 import copy
 import json
 import os
+import re
 import sys
 from base64 import b64encode
 from pathlib import Path
@@ -271,6 +272,37 @@ def _extract_response_text(response: Any) -> str:
     raise PlannerResponseError("VLM response contains no assistant output text")
 
 
+_UNESCAPED_OUTPUT_TEXT_PATTERN = re.compile(
+    r'"type"\s*:\s*"output_text"\s*,\s*"text"\s*:\s*"'
+)
+
+
+def _extract_unescaped_relay_output_text(response_body: str) -> str:
+    """Recover JSON inserted unescaped into a relay's ``text`` string field.
+
+    Some Responses-compatible relays serialize an otherwise successful response as
+    ``"text":"{"key":...}"`` instead of escaping the inner JSON quotes. The full
+    envelope is invalid JSON, but the model's object remains a valid JSON prefix.
+    This fallback deliberately accepts only that narrow, recognizable shape.
+    """
+
+    decoder = json.JSONDecoder()
+    for match in _UNESCAPED_OUTPUT_TEXT_PATTERN.finditer(response_body):
+        candidate = response_body[match.end() :].lstrip()
+        if not candidate.startswith("{"):
+            continue
+        try:
+            value, end_index = decoder.raw_decode(candidate)
+        except json.JSONDecodeError:
+            continue
+        trailer = candidate[end_index:].lstrip()
+        if isinstance(value, dict) and trailer.startswith('"'):
+            return candidate[:end_index]
+    raise PlannerResponseError(
+        "VLM response body is invalid JSON and contains no recoverable output_text object"
+    )
+
+
 class OpenAICompatibleVLMClient:
     """Minimal dual-image client for OpenAI Responses-compatible relays."""
 
@@ -316,6 +348,7 @@ class OpenAICompatibleVLMClient:
         payload = {
             "model": self.model,
             "temperature": TEMPERATURE,
+            "stream": False,
             "instructions": system_prompt,
             "input": [
                 {
@@ -357,11 +390,21 @@ class OpenAICompatibleVLMClient:
                 timeout=self.timeout,
             )
             response.raise_for_status()
-            provider_response = response.json()
         except Exception as exc:
             raise PlannerClientError(f"VLM request failed: {type(exc).__name__}") from exc
 
-        response_text = _extract_response_text(provider_response).strip()
+        try:
+            provider_response = response.json()
+        except ValueError:
+            raw_response_body = getattr(response, "text", "")
+            if not isinstance(raw_response_body, str) or not raw_response_body.strip():
+                raise PlannerResponseError(
+                    "VLM response body is empty or is not valid JSON"
+                ) from None
+            response_text = _extract_unescaped_relay_output_text(raw_response_body)
+        else:
+            response_text = _extract_response_text(provider_response)
+        response_text = response_text.strip()
         try:
             result = json.loads(response_text)
         except json.JSONDecodeError as exc:
