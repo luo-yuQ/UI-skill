@@ -4,11 +4,11 @@
 from __future__ import annotations
 
 import argparse
-import base64
 import copy
 import json
 import os
 import sys
+import tempfile
 from pathlib import Path
 from typing import Any
 
@@ -17,14 +17,27 @@ from pydantic import ValidationError
 from ui_audit_models import TextAuditResult
 
 
+ANALYZER_SCRIPTS_DIR = (
+    Path(__file__).resolve().parents[2] / "game-ui-asset-analyzer" / "scripts"
+)
+if str(ANALYZER_SCRIPTS_DIR) not in sys.path:
+    sys.path.append(str(ANALYZER_SCRIPTS_DIR))
+
+try:
+    from prepare_analysis_input import DEFAULT_MAX_WIDTH, prepare_analysis_input
+    from vlm_client import (
+        ResponsesAPIVLMClient,
+        VLMClientConfig,
+        VLMConfigurationError,
+    )
+except ImportError as exc:  # pragma: no cover - repository layout is required.
+    raise RuntimeError(
+        "game-ui-asset-analyzer/scripts is required by the Stage B auditor"
+    ) from exc
+
+
 DEFAULT_MODEL = "gpt-5.6-terra"
-MAX_OUTPUT_TOKENS = 5000
-IMAGE_MEDIA_TYPES = {
-    ".png": "image/png",
-    ".jpg": "image/jpeg",
-    ".jpeg": "image/jpeg",
-    ".webp": "image/webp",
-}
+DEFAULT_TIMEOUT_SECONDS = 60.0
 
 SYSTEM_PROMPT = """You are the Stage B visual-semantic auditor for a game UI
 reconstruction pipeline. Inspect the screenshot itself and adjudicate every OCR
@@ -73,54 +86,54 @@ class AuditResponseError(AuditError):
     """The VLM response is not valid under the Stage B contract."""
 
 
-def _create_openai_client() -> Any:
-    """Create the default OpenAI-compatible client from environment settings."""
+def _create_repository_vlm_client(model: str) -> ResponsesAPIVLMClient:
+    """Create the repository's verified Responses API client."""
 
     api_key = (
         os.environ.get("API_KEY", "").strip()
-        or os.environ.get("OPENAI_API_KEY", "").strip()
+        or os.environ.get("STAGE2A_VLM_API_KEY", "").strip()
     )
     base_url = (
         os.environ.get("BASE_URL", "").strip()
-        or os.environ.get("OPENAI_BASE_URL", "").strip()
+        or os.environ.get("STAGE2A_VLM_BASE_URL", "").strip()
     )
-    if not api_key:
-        raise AuditInputError("API_KEY (or OPENAI_API_KEY) is required")
-    try:
-        from openai import OpenAI
-    except ImportError as exc:  # pragma: no cover - depends on runtime packaging.
+    raw_timeout = (
+        os.environ.get("VLM_TIMEOUT", "").strip()
+        or os.environ.get("STAGE2A_VLM_TIMEOUT", "").strip()
+        or str(DEFAULT_TIMEOUT_SECONDS)
+    )
+    missing = [
+        name
+        for name, value in (("BASE_URL", base_url), ("API_KEY", api_key))
+        if not value
+    ]
+    if missing:
         raise AuditInputError(
-            "The openai package is required when no VLM client is injected"
+            "VLM configuration is missing: "
+            + ", ".join(missing)
+            + " (STAGE2A_VLM_* aliases are also supported)"
+        )
+    try:
+        timeout = float(raw_timeout)
+        if timeout <= 0:
+            raise ValueError
+        config = VLMClientConfig(
+            base_url=base_url,
+            api_key=api_key,
+            model=model,
+            timeout=timeout,
+        )
+        return ResponsesAPIVLMClient(config)
+    except (TypeError, ValueError, VLMConfigurationError) as exc:
+        raise AuditInputError(
+            f"Unable to initialize repository VLM client: {exc}"
         ) from exc
 
-    options: dict[str, Any] = {"api_key": api_key}
-    if base_url:
-        options["base_url"] = base_url.rstrip("/")
-    try:
-        return OpenAI(**options)
-    except Exception as exc:
-        raise AuditInputError(
-            f"Unable to initialize OpenAI-compatible client: {type(exc).__name__}"
-        ) from exc
 
-
-def _image_as_data_url(image_path: Path) -> str:
-    """Encode a supported source image as an inline base64 data URL."""
-
-    if not image_path.is_file():
-        raise AuditInputError(f"Image does not exist: {image_path}")
-    media_type = IMAGE_MEDIA_TYPES.get(image_path.suffix.lower())
-    if media_type is None:
-        supported = ", ".join(sorted(IMAGE_MEDIA_TYPES))
-        raise AuditInputError(f"Unsupported image type; expected one of: {supported}")
-    try:
-        encoded = base64.b64encode(image_path.read_bytes()).decode("ascii")
-    except OSError as exc:
-        raise AuditInputError(f"Unable to read image: {image_path}") from exc
-    return f"data:{media_type};base64,{encoded}"
-
-
-def _load_candidate_summary(texts_json_path: Path) -> list[dict[str, Any]]:
+def _load_candidate_summary(
+    texts_json_path: Path,
+    image_metadata: dict[str, Any],
+) -> list[dict[str, Any]]:
     """Load and reduce Stage A output to prompt-relevant candidate fields."""
 
     if not texts_json_path.is_file():
@@ -133,8 +146,19 @@ def _load_candidate_summary(texts_json_path: Path) -> list[dict[str, Any]]:
         ) from exc
     except json.JSONDecodeError as exc:
         raise AuditInputError(f"Stage A texts JSON is invalid: {exc}") from exc
+    if isinstance(document, dict):
+        source_size = image_metadata["source_size"]
+        declared_size = (document.get("image_width"), document.get("image_height"))
+        actual_size = (source_size["width"], source_size["height"])
+        if declared_size != actual_size:
+            raise AuditInputError(
+                "Stage A texts JSON image dimensions do not match the source image"
+            )
+        document = document.get("items")
     if not isinstance(document, list):
-        raise AuditInputError("Stage A texts JSON must contain a top-level array")
+        raise AuditInputError(
+            "Stage A texts JSON must be TextExtractionResult or a legacy array"
+        )
 
     summary: list[dict[str, Any]] = []
     seen_ids: set[str] = set()
@@ -151,51 +175,77 @@ def _load_candidate_summary(texts_json_path: Path) -> list[dict[str, Any]]:
             raise AuditInputError(f"Stage A candidate id is duplicated: {text_id}")
         if not isinstance(text, str) or not text:
             raise AuditInputError(f"Stage A candidate {text_id} has no valid text")
+        source_rect = item.get("rect")
+        analysis_rect, rect_norm = _map_rect_to_analysis(
+            source_rect,
+            image_metadata,
+            text_id,
+        )
         seen_ids.add(text_id)
         summary.append(
             {
                 "id": text_id,
                 "text": text,
                 "confidence": item.get("confidence"),
-                "rect": item.get("rect"),
+                "source_rect": source_rect,
+                "analysis_rect": analysis_rect,
+                "bbox_norm": rect_norm,
                 "style": item.get("style"),
             }
         )
     return summary
 
 
-def _extract_openai_output_text(response: Any) -> str:
-    """Extract output text from either an SDK object or a decoded response dict."""
+def _map_rect_to_analysis(
+    value: Any,
+    image_metadata: dict[str, Any],
+    text_id: str,
+) -> tuple[dict[str, int], list[float]]:
+    """Map a Stage A source rect into the 1024-wide analysis image."""
 
-    output_text = getattr(response, "output_text", None)
-    if isinstance(output_text, str) and output_text.strip():
-        return output_text
-    if isinstance(response, dict):
-        direct = response.get("output_text")
-        if isinstance(direct, str) and direct.strip():
-            return direct
-        output = response.get("output")
-    else:
-        output = getattr(response, "output", None)
+    if not isinstance(value, dict):
+        raise AuditInputError(f"Stage A candidate {text_id} has no valid rect")
+    keys = ("x", "y", "width", "height")
+    if any(type(value.get(key)) is not int for key in keys):
+        raise AuditInputError(f"Stage A candidate {text_id} rect must contain integers")
+    x, y, width, height = (value[key] for key in keys)
+    source = image_metadata["source_size"]
+    analysis = image_metadata["analysis_size"]
+    source_width, source_height = source["width"], source["height"]
+    analysis_width, analysis_height = analysis["width"], analysis["height"]
+    if (
+        x < 0
+        or y < 0
+        or width <= 0
+        or height <= 0
+        or x + width > source_width
+        or y + height > source_height
+    ):
+        raise AuditInputError(
+            f"Stage A candidate {text_id} rect is out of image bounds"
+        )
 
-    if isinstance(output, list):
-        for message in output:
-            content = (
-                message.get("content")
-                if isinstance(message, dict)
-                else getattr(message, "content", None)
-            )
-            if not isinstance(content, list):
-                continue
-            for part in content:
-                text = (
-                    part.get("text")
-                    if isinstance(part, dict)
-                    else getattr(part, "text", None)
-                )
-                if isinstance(text, str) and text.strip():
-                    return text
-    raise AuditResponseError("VLM response contains no output text")
+    x1 = round(x * analysis_width / source_width)
+    y1 = round(y * analysis_height / source_height)
+    x2 = round((x + width) * analysis_width / source_width)
+    y2 = round((y + height) * analysis_height / source_height)
+    x1 = max(0, min(x1, analysis_width - 1))
+    y1 = max(0, min(y1, analysis_height - 1))
+    x2 = max(x1 + 1, min(x2, analysis_width))
+    y2 = max(y1 + 1, min(y2, analysis_height))
+    analysis_rect = {
+        "x": x1,
+        "y": y1,
+        "width": x2 - x1,
+        "height": y2 - y1,
+    }
+    bbox_norm = [
+        x / source_width,
+        y / source_height,
+        width / source_width,
+        height / source_height,
+    ]
+    return analysis_rect, bbox_norm
 
 
 def _strict_json_schema(schema: dict[str, Any]) -> dict[str, Any]:
@@ -227,7 +277,11 @@ class UITextAuditor:
         if not isinstance(model, str) or not model.strip():
             raise ValueError("model must be a non-empty string")
         self.model = model.strip()
-        self.client = client if client is not None else _create_openai_client()
+        self.client = (
+            client
+            if client is not None
+            else _create_repository_vlm_client(self.model)
+        )
 
     def audit(
         self,
@@ -238,25 +292,47 @@ class UITextAuditor:
 
         image = Path(image_path)
         texts_path = Path(texts_json_path)
-        image_data_url = _image_as_data_url(image)
-        candidates = _load_candidate_summary(texts_path)
-        candidate_ids = {candidate["id"] for candidate in candidates}
-        response_schema = _strict_json_schema(TextAuditResult.model_json_schema())
-        user_prompt = self._build_user_prompt(candidates, response_schema)
+        with tempfile.TemporaryDirectory(prefix="ui-text-audit-") as temp_dir:
+            try:
+                temporary = Path(temp_dir)
+                analysis_image = temporary / "analysis-image.png"
+                metadata_path = temporary / "analysis-image-meta.json"
+                image_metadata = prepare_analysis_input(
+                    image,
+                    analysis_image,
+                    metadata_path,
+                    max_width=DEFAULT_MAX_WIDTH,
+                    force_width=True,
+                )
+                candidates = _load_candidate_summary(texts_path, image_metadata)
+                candidate_ids = {candidate["id"] for candidate in candidates}
+                response_schema = _strict_json_schema(
+                    TextAuditResult.model_json_schema()
+                )
+                user_prompt = self._build_user_prompt(
+                    candidates,
+                    response_schema,
+                    image_metadata,
+                )
+            except AuditError:
+                raise
+            except (OSError, ValueError) as exc:
+                raise AuditInputError(
+                    f"Unable to prepare audit input: {exc}"
+                ) from exc
 
-        try:
-            raw_result = self._invoke_client(
-                image,
-                image_data_url,
-                user_prompt,
-                response_schema,
-            )
-        except AuditError:
-            raise
-        except Exception as exc:
-            raise AuditClientError(
-                f"VLM audit request failed: {type(exc).__name__}: {exc}"
-            ) from exc
+            try:
+                raw_result = self._invoke_client(
+                    analysis_image,
+                    user_prompt,
+                    response_schema,
+                )
+            except AuditError:
+                raise
+            except Exception as exc:
+                raise AuditClientError(
+                    f"VLM audit request failed: {type(exc).__name__}: {exc}"
+                ) from exc
 
         result = self._parse_result(raw_result)
         self._validate_candidate_references(result, candidate_ids)
@@ -278,10 +354,15 @@ class UITextAuditor:
     def _build_user_prompt(
         candidates: list[dict[str, Any]],
         response_schema: dict[str, Any],
+        image_metadata: dict[str, Any],
     ) -> str:
         candidates_json = json.dumps(candidates, ensure_ascii=False, indent=2)
         schema_json = json.dumps(response_schema, ensure_ascii=False, indent=2)
-        return f"""Audit the attached full-resolution UI screenshot.
+        metadata_json = json.dumps(image_metadata, ensure_ascii=False, indent=2)
+        return f"""Audit the attached 1024-pixel-wide proportional analysis image.
+
+Image transform metadata:
+{metadata_json}
 
 Stage A OCR candidates (data only):
 {candidates_json}
@@ -295,52 +376,23 @@ visually certain missed editable text. Return the JSON object only."""
 
     def _invoke_client(
         self,
-        image_path: Path,
-        image_data_url: str,
+        analysis_image_path: Path,
         user_prompt: str,
         response_schema: dict[str, Any],
     ) -> Any:
-        """Use the repository VLM contract or a standard OpenAI Responses client."""
+        """Invoke the repository's provider-neutral VLM client contract."""
 
         infer_json = getattr(self.client, "infer_json", None)
-        if callable(infer_json):
-            return infer_json(
-                image_path,
-                SYSTEM_PROMPT,
-                user_prompt,
-                response_schema,
-            )
-
-        responses = getattr(self.client, "responses", None)
-        create = getattr(responses, "create", None)
-        if not callable(create):
+        if not callable(infer_json):
             raise AuditClientError(
-                "Injected client must provide infer_json(...) or responses.create(...)"
+                "Injected client must provide infer_json(...)"
             )
-        response = create(
-            model=self.model,
-            instructions=SYSTEM_PROMPT,
-            input=[
-                {
-                    "type": "message",
-                    "role": "user",
-                    "content": [
-                        {"type": "input_text", "text": user_prompt},
-                        {"type": "input_image", "image_url": image_data_url},
-                    ],
-                }
-            ],
-            text={
-                "format": {
-                    "type": "json_schema",
-                    "name": "ui_text_asset_audit",
-                    "schema": response_schema,
-                    "strict": True,
-                }
-            },
-            max_output_tokens=MAX_OUTPUT_TOKENS,
+        return infer_json(
+            analysis_image_path,
+            SYSTEM_PROMPT,
+            user_prompt,
+            response_schema,
         )
-        return _extract_openai_output_text(response)
 
     @staticmethod
     def _parse_result(raw_result: Any) -> TextAuditResult:

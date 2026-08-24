@@ -2,11 +2,11 @@ from __future__ import annotations
 
 import json
 import sys
-from base64 import b64decode
 from pathlib import Path
 from typing import Any
 
 import pytest
+from PIL import Image
 from pydantic import ValidationError
 
 
@@ -93,9 +93,14 @@ class FakeVLMClient:
         user_prompt: str,
         response_schema: dict[str, Any] | None = None,
     ) -> Any:
+        with Image.open(image_path) as analysis_image:
+            analysis_size = analysis_image.size
+            analysis_format = analysis_image.format
         self.calls.append(
             {
                 "image_path": image_path,
+                "analysis_size": analysis_size,
+                "analysis_format": analysis_format,
                 "system_prompt": system_prompt,
                 "user_prompt": user_prompt,
                 "response_schema": response_schema,
@@ -106,26 +111,21 @@ class FakeVLMClient:
         return self.response
 
 
-class _FakeResponsesEndpoint:
-    def __init__(self) -> None:
-        self.calls: list[dict[str, Any]] = []
-
-    def create(self, **kwargs: Any) -> dict[str, str]:
-        self.calls.append(kwargs)
-        return {"output_text": json.dumps(_valid_audit_payload(), ensure_ascii=False)}
-
-
-class _FakeOpenAIClient:
-    def __init__(self) -> None:
-        self.responses = _FakeResponsesEndpoint()
-
-
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
     image = tmp_path / "source.png"
-    image.write_bytes(b"synthetic-png-bytes")
+    Image.new("RGB", (2048, 1080), "navy").save(image)
     texts_json = tmp_path / "texts.json"
+    candidates = _stage_a_candidates()
     texts_json.write_text(
-        json.dumps(_stage_a_candidates(), ensure_ascii=False),
+        json.dumps(
+            {
+                "image_width": 2048,
+                "image_height": 1080,
+                "count": len(candidates),
+                "items": candidates,
+            },
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
     return image, texts_json
@@ -140,9 +140,13 @@ def test_normal_audit_parses_and_validates_pydantic_result(tmp_path: Path) -> No
     assert isinstance(result, TextAuditResult)
     assert result.scene_summary.startswith("A store panel")
     assert result.text_corrections[0].text == "重置"
-    assert client.calls[0]["image_path"] == image
+    assert client.calls[0]["image_path"].name == "analysis-image.png"
+    assert client.calls[0]["analysis_size"] == (1024, 540)
+    assert client.calls[0]["analysis_format"] == "PNG"
     assert "button labels" in client.calls[0]["system_prompt"]
     assert '"text": "$99.99"' in client.calls[0]["user_prompt"]
+    assert '"width": 1024' in client.calls[0]["user_prompt"]
+    assert '"analysis_rect"' in client.calls[0]["user_prompt"]
     assert client.calls[0]["response_schema"]["title"] == "TextAuditResult"
     stripped_schema = client.calls[0]["response_schema"]["$defs"]["StrippedSymbol"]
     assert "role" in stripped_schema["required"]
@@ -219,26 +223,3 @@ def test_network_failure_is_wrapped_as_client_error(tmp_path: Path) -> None:
 def test_pydantic_rejects_invalid_normalized_bbox() -> None:
     with pytest.raises(ValidationError):
         TextCorrection(text="重置", bbox_norm=[-0.1, 0.2, 0.3, 0.4])
-
-
-def test_openai_responses_client_receives_base64_image_and_model(
-    tmp_path: Path,
-) -> None:
-    image, texts_json = _write_inputs(tmp_path)
-    client = _FakeOpenAIClient()
-
-    result = UITextAuditor(client=client, model="gpt-5.6-terra").audit(
-        image,
-        texts_json,
-    )
-
-    assert result.raster_text_ids == ["text_000", "text_001"]
-    call = client.responses.calls[0]
-    assert call["model"] == "gpt-5.6-terra"
-    message = call["input"][0]
-    assert message["type"] == "message"
-    image_url = message["content"][1]["image_url"]
-    prefix, encoded = image_url.split(",", maxsplit=1)
-    assert prefix == "data:image/png;base64"
-    assert b64decode(encoded) == image.read_bytes()
-    assert call["text"]["format"]["strict"] is True

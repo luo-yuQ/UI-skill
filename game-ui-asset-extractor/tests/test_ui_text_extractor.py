@@ -6,221 +6,260 @@ from pathlib import Path
 
 import cv2
 import numpy as np
+import pytest
+from pydantic import ValidationError
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-import ui_text_extractor as ui_text_module  # noqa: E402
+import ui_text_extractor as extractor_module  # noqa: E402
 from ui_text_extractor import UITextExtractor  # noqa: E402
+from ui_text_models import (  # noqa: E402
+    Rect,
+    TextExtractionResult,
+    TextStyle,
+)
 
 
-def _write_source(path: Path) -> None:
-    image = np.full((100, 180, 3), 32, dtype=np.uint8)
-    cv2.rectangle(image, (18, 18), (28, 40), (245, 245, 245), cv2.FILLED)
-    cv2.rectangle(image, (36, 18), (46, 40), (245, 245, 245), cv2.FILLED)
-    success, encoded = cv2.imencode(".png", image)
+def _write_rgb(path: Path, image_rgb: np.ndarray) -> None:
+    image_bgr = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2BGR)
+    success, encoded = cv2.imencode(".png", image_bgr)
     assert success
     encoded.tofile(str(path))
 
 
-def test_extract_filters_candidates_and_writes_outputs(tmp_path: Path) -> None:
-    source = tmp_path / "界面.png"
-    output_json = tmp_path / "result" / "texts.json"
-    debug_image = tmp_path / "result" / "debug.png"
-    _write_source(source)
+def _read_gray(path: Path) -> np.ndarray:
+    encoded = np.fromfile(str(path), dtype=np.uint8)
+    image = cv2.imdecode(encoded, cv2.IMREAD_GRAYSCALE)
+    assert image is not None
+    return image
 
+
+def _synthetic_source(path: Path) -> None:
+    image = np.full((120, 180, 3), [24, 32, 40], dtype=np.uint8)
+    image[30:50, 20:28] = [244, 212, 20]
+    image[30:50, 36:44] = [244, 212, 20]
+    _write_rgb(path, image)
+
+
+def test_filter_rejects_low_letter_and_vertical_decoration() -> None:
+    assert not UITextExtractor._passes_filter("A", 0.84, 20, 20)
+    assert UITextExtractor._passes_filter("A", 0.85, 20, 20)
+    assert not UITextExtractor._passes_filter("装饰", 0.84, 5, 20)
+    assert UITextExtractor._passes_filter("装饰", 0.85, 5, 20)
+    assert not UITextExtractor._passes_filter("按钮", 0.34, 40, 20)
+
+
+def test_edge_median_background_and_otsu_glyph_separation() -> None:
+    crop = np.full((24, 40, 3), [18, 34, 50], dtype=np.uint8)
+    crop[8:16, 10:30] = [210, 100, 70]
+    allowed = np.full((24, 40), 255, dtype=np.uint8)
+
+    background = UITextExtractor._estimate_background(crop, allowed)
+    mask, mode = UITextExtractor._extract_glyph_mask(
+        crop,
+        background,
+        allowed,
+    )
+
+    np.testing.assert_array_equal(background, np.array([18, 34, 50]))
+    assert mode == "estimated_glyphs"
+    assert np.all(mask[9:15, 11:29] == 255)
+    assert np.all(mask[:3] == 0)
+
+
+def test_color_quantization_and_rec709_stroke_inference() -> None:
+    crop = np.full((40, 40, 3), [20, 24, 28], dtype=np.uint8)
+    crop[10:30, 10:30] = [250, 210, 20]
+    glyph_mask = np.zeros((40, 40), dtype=np.uint8)
+    glyph_mask[10:30, 10:30] = 255
+
+    style = UITextExtractor._estimate_typography(
+        "Price",
+        40,
+        glyph_mask,
+        crop,
+        np.array([20, 24, 28], dtype=np.float32),
+    )
+
+    assert style.color == "#F0D010"
+    assert style.fontFamily == "Arial"
+    assert style.fontSize == 33
+    assert style.fontWeight == 700
+    assert style.strokeColor == "#1e2322"
+    assert style.strokeWidth == 2
+
+    dark_crop = np.full((20, 20, 3), 240, dtype=np.uint8)
+    dark_crop[5:15, 5:15] = [10, 20, 30]
+    dark_mask = np.zeros((20, 20), dtype=np.uint8)
+    dark_mask[5:15, 5:15] = 255
+    dark_style = UITextExtractor._estimate_typography(
+        "12",
+        20,
+        dark_mask,
+        dark_crop,
+        np.array([240, 240, 240], dtype=np.float32),
+    )
+    assert dark_style.color == "#101010"
+    assert dark_style.strokeColor == "#f0f4f1"
+
+
+def test_mask_mode_switches_between_estimated_and_coarse() -> None:
+    background = np.array([30, 30, 30], dtype=np.float32)
+    separated = np.full((20, 40, 3), 30, dtype=np.uint8)
+    separated[6:14, 10:30] = 220
+    estimated, estimated_mode = UITextExtractor._extract_glyph_mask(
+        separated,
+        background,
+    )
+
+    uniform = np.full((20, 40, 3), 30, dtype=np.uint8)
+    coarse, coarse_mode = UITextExtractor._extract_glyph_mask(
+        uniform,
+        background,
+    )
+
+    assert estimated_mode == "estimated_glyphs"
+    assert np.count_nonzero(estimated) < estimated.size
+    assert coarse_mode == "coarse"
+    assert np.all(coarse == 255)
+
+
+def test_single_chinese_uses_larger_elliptical_dilation() -> None:
+    rect = Rect(x=20, y=20, width=20, height=40)
+    glyph = np.zeros((40, 20), dtype=np.uint8)
+    glyph[20, 10] = 255
+
+    chinese = UITextExtractor._build_dilated_full_mask(
+        glyph,
+        rect,
+        "中",
+        (80, 80),
+    )
+    latin = UITextExtractor._build_dilated_full_mask(
+        glyph,
+        rect,
+        "AB",
+        (80, 80),
+    )
+
+    assert np.count_nonzero(chinese) > np.count_nonzero(latin)
+    assert np.all(latin[chinese == 0] == 0)
+
+
+def test_extract_serializes_contract_and_full_size_mask(tmp_path: Path) -> None:
+    source = tmp_path / "界面.png"
+    output_json = tmp_path / "artifacts" / "texts.json"
+    output_mask = tmp_path / "artifacts" / "raw_text_mask.png"
+    output_debug = tmp_path / "artifacts" / "debug.png"
+    _synthetic_source(source)
     ocr_rows = [
-        [[[10, 10], [60, 10], [60, 50], [10, 50]], "开始", 0.96],
-        [[[70, 10], [90, 10], [90, 30], [70, 30]], "X", 0.80],
-        [[[100, 10], [105, 10], [105, 40], [100, 40]], "装饰", 0.60],
-        [[[110, 10], [150, 10], [150, 30], [110, 30]], "忽略", 0.20],
+        [[[10, 20], [70, 20], [70, 60], [10, 60]], "开始", 0.96],
+        [[[80, 20], [100, 20], [100, 40], [80, 40]], "X", 0.80],
+        [[[110, 10], [115, 10], [115, 50], [110, 50]], "装饰", 0.60],
     ]
     extractor = UITextExtractor(ocr_engine=lambda _image: (ocr_rows, [0.01]))
 
-    layers = extractor.extract(str(source), str(output_json), str(debug_image))
+    result = extractor.extract(
+        source,
+        output_json,
+        output_mask,
+        output_debug,
+    )
 
-    assert len(layers) == 1
-    layer = layers[0]
-    assert layer["id"] == "text_000"
-    assert layer["text"] == "开始"
-    assert layer["rect"] == {"x": 10, "y": 10, "width": 50, "height": 40}
-    assert layer["style"]["fontFamily"] == "Microsoft YaHei"
-    assert layer["style"]["fontSize"] == 33
-    assert layer["style"]["color"] == "#F0F0F0"
-    assert layer["style"]["strokeColor"] == "#1E2322"
-    assert json.loads(output_json.read_text(encoding="utf-8")) == layers
-    assert cv2.imdecode(np.fromfile(str(debug_image), dtype=np.uint8), cv2.IMREAD_COLOR) is not None
+    assert isinstance(result, TextExtractionResult)
+    assert result.image_width == 180
+    assert result.image_height == 120
+    assert result.count == 1
+    assert result.items[0].id == "text_000"
+    assert result.items[0].text == "开始"
+    assert result.items[0].style.fontFamily == "Microsoft YaHei"
+    assert result.items[0].style.strokeColor == "#1e2322"
+    assert result.items[0].mask_mode == "estimated_glyphs"
+
+    serialized = json.loads(output_json.read_text(encoding="utf-8"))
+    assert serialized == result.model_dump(mode="json")
+    assert serialized["count"] == len(serialized["items"])
+    mask = _read_gray(output_mask)
+    assert mask.shape == (120, 180)
+    assert set(np.unique(mask)).issubset({0, 255})
+    assert np.count_nonzero(mask) > 0
+    assert output_debug.is_file()
 
 
-def test_empty_ocr_still_writes_empty_json_and_debug_image(tmp_path: Path) -> None:
+def test_empty_ocr_writes_empty_result_and_zero_mask(tmp_path: Path) -> None:
     source = tmp_path / "source.png"
-    output_json = tmp_path / "texts.json"
-    debug_image = tmp_path / "debug.png"
-    _write_source(source)
+    _synthetic_source(source)
     extractor = UITextExtractor(ocr_engine=lambda _image: (None, None))
 
-    assert extractor.extract(str(source), str(output_json), str(debug_image)) == []
-    assert json.loads(output_json.read_text(encoding="utf-8")) == []
-    assert debug_image.is_file()
-
-
-def test_bbox_is_clamped_and_single_chinese_uses_height_factor(tmp_path: Path) -> None:
-    source = tmp_path / "source.png"
-    _write_source(source)
-    ocr_rows = [
-        [[[-5, -4], [25, -4], [25, 21], [-5, 21]], "中", 0.99],
-    ]
-    extractor = UITextExtractor(ocr_engine=lambda _image: (ocr_rows, None))
-
-    layers = extractor.extract(
-        str(source),
-        str(tmp_path / "texts.json"),
-        str(tmp_path / "debug.png"),
+    result = extractor.extract(
+        source,
+        tmp_path / "texts.json",
+        tmp_path / "mask.png",
     )
 
-    assert layers[0]["rect"] == {"x": 0, "y": 0, "width": 25, "height": 21}
-    assert layers[0]["style"]["fontSize"] == 18
+    assert result.count == 0
+    assert result.items == []
+    assert np.count_nonzero(_read_gray(tmp_path / "mask.png")) == 0
 
 
-def test_missing_image_raises_even_with_injected_ocr(tmp_path: Path) -> None:
-    extractor = UITextExtractor(ocr_engine=lambda _image: ([], None))
-
-    try:
-        extractor.extract(
-            str(tmp_path / "missing.png"),
-            str(tmp_path / "texts.json"),
-            str(tmp_path / "debug.png"),
+def test_pydantic_contract_rejects_invalid_style_and_count() -> None:
+    with pytest.raises(ValidationError):
+        TextStyle(
+            color="white",
+            fontFamily="Arial",
+            fontSize=7,
+            fontWeight=500,
+            strokeColor="#000000",
+            strokeWidth=3,
         )
-    except FileNotFoundError:
-        pass
-    else:
-        raise AssertionError("Expected FileNotFoundError")
-
-
-def test_cjk_family_detection_covers_kana_and_hangul() -> None:
-    assert UITextExtractor._is_cjk("カ")
-    assert UITextExtractor._is_cjk("한")
-    assert not UITextExtractor._is_chinese_ideograph("カ")
-    assert UITextExtractor._is_chinese_ideograph("中")
-
-
-class _FakeCLIExtractor:
-    def __init__(self, failing_names: set[str] | None = None) -> None:
-        self.calls: list[tuple[Path, Path, Path]] = []
-        self.failing_names = failing_names or set()
-
-    def extract(
-        self,
-        image_path: str,
-        output_json_path: str,
-        debug_vis_path: str,
-    ) -> list[dict[str, object]]:
-        paths = (Path(image_path), Path(output_json_path), Path(debug_vis_path))
-        self.calls.append(paths)
-        if paths[0].name in self.failing_names:
-            raise ValueError("synthetic per-image failure")
-        return [{"id": "text_000"}]
-
-
-def test_cli_single_image_uses_automatic_output_names(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    source = tmp_path / "my_bag.png"
-    source.write_bytes(b"placeholder")
-    output_dir = tmp_path / "outputs"
-    fake = _FakeCLIExtractor()
-    monkeypatch.setattr(ui_text_module, "UITextExtractor", lambda: fake)
-
-    result = ui_text_module.main(
-        [str(source), "--output-dir", str(output_dir)]
-    )
-
-    assert result == 0
-    assert fake.calls == [
-        (
-            source,
-            output_dir / "my_bag_texts.json",
-            output_dir / "my_bag_debug.png",
+    with pytest.raises(ValidationError, match="count"):
+        TextExtractionResult(
+            image_width=100,
+            image_height=100,
+            count=1,
+            items=[],
         )
-    ]
-    assert output_dir.is_dir()
 
 
-def test_cli_single_image_explicit_outputs_take_priority(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    source = tmp_path / "screen.webp"
-    source.write_bytes(b"placeholder")
-    explicit_json = tmp_path / "custom" / "result.json"
-    explicit_vis = tmp_path / "custom" / "result.jpg"
-    fake = _FakeCLIExtractor()
-    monkeypatch.setattr(ui_text_module, "UITextExtractor", lambda: fake)
+def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
+    calls: list[tuple[Path, Path, Path, Path | None]] = []
 
-    result = ui_text_module.main(
+    class FakeExtractor:
+        def extract(
+            self,
+            image: Path,
+            output_json: Path,
+            output_mask: Path,
+            output_debug: Path | None,
+        ) -> TextExtractionResult:
+            calls.append((image, output_json, output_mask, output_debug))
+            return TextExtractionResult(
+                image_width=1,
+                image_height=1,
+                count=0,
+                items=[],
+            )
+
+    monkeypatch.setattr(extractor_module, "UITextExtractor", FakeExtractor)
+    image = tmp_path / "source.png"
+    output_json = tmp_path / "texts.json"
+    output_mask = tmp_path / "raw_text_mask.png"
+    output_debug = tmp_path / "debug.png"
+
+    code = extractor_module.main(
         [
-            str(source),
-            "--output-dir",
-            str(tmp_path / "unused"),
+            "--image",
+            str(image),
             "--output-json",
-            str(explicit_json),
-            "--output-vis",
-            str(explicit_vis),
+            str(output_json),
+            "--output-mask",
+            str(output_mask),
+            "--output-debug",
+            str(output_debug),
         ]
     )
 
-    assert result == 0
-    assert fake.calls == [(source, explicit_json, explicit_vis)]
-
-
-def test_cli_directory_continues_after_image_failure(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    input_dir = tmp_path / "inputs"
-    input_dir.mkdir()
-    failed_image = input_dir / "a_bad.JPG"
-    good_image = input_dir / "b_good.jpeg"
-    failed_image.write_bytes(b"placeholder")
-    good_image.write_bytes(b"placeholder")
-    (input_dir / "ignored.txt").write_text("not an image", encoding="utf-8")
-    output_dir = tmp_path / "outputs"
-    fake = _FakeCLIExtractor(failing_names={failed_image.name})
-    monkeypatch.setattr(ui_text_module, "UITextExtractor", lambda: fake)
-
-    result = ui_text_module.main(
-        [str(input_dir), "--output-dir", str(output_dir)]
-    )
-    captured = capsys.readouterr()
-
-    assert result == 1
-    assert [call[0] for call in fake.calls] == [failed_image, good_image]
-    assert fake.calls[1][1:] == (
-        output_dir / "b_good_texts.json",
-        output_dir / "b_good_debug.png",
-    )
-    assert "synthetic per-image failure" in captured.err
-    assert "Summary: 1 succeeded, 1 failed, 2 total." in captured.out
-
-
-def test_cli_rejects_explicit_output_for_directory(
-    tmp_path: Path,
-    monkeypatch,
-    capsys,
-) -> None:
-    input_dir = tmp_path / "inputs"
-    input_dir.mkdir()
-    (input_dir / "screen.png").write_bytes(b"placeholder")
-    fake = _FakeCLIExtractor()
-    monkeypatch.setattr(ui_text_module, "UITextExtractor", lambda: fake)
-
-    result = ui_text_module.main(
-        [str(input_dir), "--output-json", str(tmp_path / "result.json")]
-    )
-
-    assert result == 2
-    assert not fake.calls
-    assert "single image" in capsys.readouterr().err
+    assert code == 0
+    assert calls == [(image, output_json, output_mask, output_debug)]
