@@ -229,8 +229,10 @@ def test_openai_compatible_client_sends_two_base64_images_in_order(
     request = session.calls[0]
     assert request["url"] == "https://relay.example/v1/responses"
     assert request["json"]["temperature"] == 0.1
-    assert request["json"]["stream"] is False
+    assert request["json"]["top_p"] == 1
+    assert "stream" not in request["json"]
     content = request["json"]["input"][0]["content"]
+    assert len([item for item in content if item["type"] == "input_text"]) == 1
     image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
     assert len(image_urls) == 2
     assert image_urls[0].startswith("data:image/png;base64,")
@@ -255,6 +257,7 @@ def test_composite_mode_sends_one_labelled_comparison_image(tmp_path: Path) -> N
     assert len(image_urls) == 1
     assert image_urls[0].startswith("data:image/jpeg;base64,")
     labels = [item["text"] for item in content if item["type"] == "input_text"]
+    assert len(labels) == 1
     assert any("original on the LEFT" in label for label in labels)
 
 

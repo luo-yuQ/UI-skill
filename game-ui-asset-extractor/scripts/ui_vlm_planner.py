@@ -28,7 +28,7 @@ except ModuleNotFoundError:  # pragma: no cover - production-only dependency gua
 
 DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_TIMEOUT = 60.0
-DEFAULT_MAX_OUTPUT_TOKENS = 8000
+DEFAULT_MAX_OUTPUT_TOKENS = 4000
 TEMPERATURE = 0.1
 COMPOSITE_VIEW_MAX_WIDTH = 1280
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
@@ -420,54 +420,40 @@ class OpenAICompatibleVLMClient:
                 "\n\nRequired LayerPlanResult JSON Schema:\n"
                 + json.dumps(response_schema, ensure_ascii=False, separators=(",", ":"))
             )
-        content: list[dict[str, Any]] = [
-            {
-                "type": "input_text",
-                "text": user_prompt + schema_instruction,
-            }
-        ]
+        input_text = user_prompt + schema_instruction
+        content: list[dict[str, Any]]
         if self.image_mode == "dual":
-            content.extend(
-                [
-                    {"type": "input_text", "text": "Image 1: original UI image."},
-                    {
-                        "type": "input_image",
-                        "image_url": _encode_image_as_data_url(original_image_path),
-                    },
-                    {
-                        "type": "input_text",
-                        "text": "Image 2: OCR-cleaned working image (cleaned_image).",
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": _encode_image_as_data_url(cleaned_image_path),
-                    },
-                ]
-            )
+            content = [
+                {"type": "input_text", "text": input_text},
+                {
+                    "type": "input_image",
+                    "image_url": _encode_image_as_data_url(original_image_path),
+                },
+                {
+                    "type": "input_image",
+                    "image_url": _encode_image_as_data_url(cleaned_image_path),
+                },
+            ]
         else:
-            content.extend(
-                [
-                    {
-                        "type": "input_text",
-                        "text": (
-                            "One comparison sheet follows: original on the LEFT, "
-                            "cleaned_image on the RIGHT."
-                        ),
-                    },
-                    {
-                        "type": "input_image",
-                        "image_url": _encode_comparison_as_data_url(
-                            original_image_path,
-                            cleaned_image_path,
-                        ),
-                    },
-                ]
+            input_text += (
+                "\n\nOne comparison sheet follows: original on the LEFT, "
+                "cleaned_image on the RIGHT."
             )
+            content = [
+                {"type": "input_text", "text": input_text},
+                {
+                    "type": "input_image",
+                    "image_url": _encode_comparison_as_data_url(
+                        original_image_path,
+                        cleaned_image_path,
+                    ),
+                },
+            ]
 
         payload = {
             "model": self.model,
             "temperature": TEMPERATURE,
-            "stream": False,
+            "top_p": 1,
             "instructions": system_prompt,
             "input": [
                 {
@@ -482,6 +468,8 @@ class OpenAICompatibleVLMClient:
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
             "Accept": "application/json",
+            "Accept-Encoding": "identity",
+            "User-Agent": "UIVLMPlanner/1.0",
         }
         try:
             response = self.session.post(
@@ -496,7 +484,23 @@ class OpenAICompatibleVLMClient:
 
         raw_response_body = getattr(response, "text", "")
         if not isinstance(raw_response_body, str) or not raw_response_body.strip():
-            raise PlannerResponseError("VLM response body is empty")
+            status_code = getattr(response, "status_code", "unknown")
+            response_headers = getattr(response, "headers", {})
+            content_type = (
+                response_headers.get("Content-Type", "unknown")
+                if hasattr(response_headers, "get")
+                else "unknown"
+            )
+            request_bytes = len(
+                json.dumps(payload, ensure_ascii=False, separators=(",", ":")).encode(
+                    "utf-8"
+                )
+            )
+            raise PlannerResponseError(
+                "VLM response body is empty "
+                f"(HTTP {status_code}, content_type={content_type}, "
+                f"request_bytes={request_bytes}, endpoint={self.endpoint})"
+            )
         try:
             provider_response = json.loads(raw_response_body)
         except json.JSONDecodeError:
