@@ -19,6 +19,7 @@ from ui_text_models import Rect, TextExtractionResult, TextItem, TextStyle
 
 OCREngine = Callable[[np.ndarray], Any]
 MaskMode = Literal["estimated_glyphs", "coarse"]
+SUPPORTED_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
 
 @dataclass(frozen=True)
@@ -535,32 +536,137 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Extract Stage A UI text, typography, and a hard text mask."
     )
-    parser.add_argument("--image", required=True, type=Path)
-    parser.add_argument("--output-json", required=True, type=Path)
-    parser.add_argument("--output-mask", required=True, type=Path)
+    parser.add_argument(
+        "input",
+        nargs="?",
+        type=Path,
+        help="Compatibility input: one image or a directory of images",
+    )
+    parser.add_argument("--image", type=Path, help="Single input image")
+    parser.add_argument("--output-json", type=Path)
+    parser.add_argument("--output-mask", type=Path)
     parser.add_argument("--output-debug", type=Path)
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=Path("."),
+        help="Directory for automatically named single or batch outputs",
+    )
     return parser.parse_args(argv)
 
 
+def _collect_input_images(input_path: Path) -> tuple[list[Path], bool]:
+    """Resolve one supported image or a sorted, non-recursive image directory."""
+
+    if input_path.is_file():
+        if input_path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
+            supported = ", ".join(sorted(SUPPORTED_IMAGE_SUFFIXES))
+            raise ValueError(
+                f"Unsupported input extension; expected one of: {supported}"
+            )
+        return [input_path], False
+    if input_path.is_dir():
+        images = sorted(
+            (
+                path
+                for path in input_path.iterdir()
+                if path.is_file()
+                and path.suffix.lower() in SUPPORTED_IMAGE_SUFFIXES
+            ),
+            key=lambda path: (path.name.casefold(), path.name),
+        )
+        if not images:
+            raise ValueError(f"No supported images found in directory: {input_path}")
+        return images, True
+    raise FileNotFoundError(f"Input path does not exist: {input_path}")
+
+
+def _automatic_output_paths(
+    image_path: Path,
+    output_dir: Path,
+) -> tuple[Path, Path, Path]:
+    """Build all Stage A artifact paths from one source stem."""
+
+    stem = image_path.stem
+    return (
+        output_dir / f"{stem}_texts.json",
+        output_dir / f"{stem}_raw_text_mask.png",
+        output_dir / f"{stem}_debug.png",
+    )
+
+
 def main(argv: list[str] | None = None) -> int:
-    """Run one Stage A extraction from the command line."""
+    """Run one Stage A extraction or a fault-tolerant directory batch."""
 
     args = _parse_args(argv)
     try:
-        result = UITextExtractor().extract(
-            args.image,
-            args.output_json,
-            args.output_mask,
-            args.output_debug,
-        )
+        if args.input is not None and args.image is not None:
+            raise ValueError("Use either positional input or --image, not both")
+        input_path = args.image or args.input
+        if input_path is None:
+            raise ValueError("An input image or directory is required")
+        images, is_batch = _collect_input_images(input_path)
+        if is_batch and any(
+            path is not None
+            for path in (args.output_json, args.output_mask, args.output_debug)
+        ):
+            raise ValueError(
+                "Explicit output paths can only be used with a single image"
+            )
+        args.output_dir.mkdir(parents=True, exist_ok=True)
+        extractor = UITextExtractor()
     except (FileNotFoundError, OSError, ValueError, RuntimeError) as exc:
         print(str(exc), file=sys.stderr)
         return 2
-    print(
-        f"Extracted {result.count} text item(s); "
-        f"wrote {args.output_json} and {args.output_mask}"
-    )
-    return 0
+
+    succeeded = 0
+    failed = 0
+    total_items = 0
+    total_images = len(images)
+    for index, image_path in enumerate(images, start=1):
+        auto_json, auto_mask, auto_debug = _automatic_output_paths(
+            image_path,
+            args.output_dir,
+        )
+        output_json = args.output_json or auto_json
+        output_mask = args.output_mask or auto_mask
+        if args.output_debug is not None:
+            output_debug: Path | None = args.output_debug
+        elif is_batch or args.output_json is None or args.output_mask is None:
+            output_debug = auto_debug
+        else:
+            output_debug = None
+
+        if is_batch:
+            print(f"[{index}/{total_images}] Processing {image_path}")
+        try:
+            result = extractor.extract(
+                image_path,
+                output_json,
+                output_mask,
+                output_debug,
+            )
+        except Exception as exc:
+            failed += 1
+            print(
+                f"[{index}/{total_images}] ERROR {image_path}: {exc}",
+                file=sys.stderr,
+            )
+            continue
+
+        succeeded += 1
+        total_items += result.count
+        print(
+            f"[{index}/{total_images}] Extracted {result.count} text item(s): "
+            f"{output_json} | {output_mask}"
+        )
+
+    if is_batch:
+        print(
+            f"Summary: {succeeded} succeeded, {failed} failed, "
+            f"{total_images} total, {total_items} text item(s)."
+        )
+    return 0 if failed == 0 else 1
 
 
 if __name__ == "__main__":

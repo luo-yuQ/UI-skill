@@ -244,6 +244,7 @@ def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
 
     monkeypatch.setattr(extractor_module, "UITextExtractor", FakeExtractor)
     image = tmp_path / "source.png"
+    image.write_bytes(b"placeholder")
     output_json = tmp_path / "texts.json"
     output_mask = tmp_path / "raw_text_mask.png"
     output_debug = tmp_path / "debug.png"
@@ -263,3 +264,58 @@ def test_cli_uses_required_stage_a_paths(monkeypatch, tmp_path: Path) -> None:
 
     assert code == 0
     assert calls == [(image, output_json, output_mask, output_debug)]
+
+
+def test_cli_batch_restores_positional_directory_and_output_dir(
+    monkeypatch,
+    tmp_path: Path,
+    capsys,
+) -> None:
+    calls: list[tuple[Path, Path, Path, Path | None]] = []
+
+    class FakeExtractor:
+        def extract(
+            self,
+            image: Path,
+            output_json: Path,
+            output_mask: Path,
+            output_debug: Path | None,
+        ) -> TextExtractionResult:
+            calls.append((image, output_json, output_mask, output_debug))
+            return TextExtractionResult(
+                image_width=1,
+                image_height=1,
+                count=0,
+                items=[],
+            )
+
+    monkeypatch.setattr(extractor_module, "UITextExtractor", FakeExtractor)
+    inputs = tmp_path / "inputs"
+    inputs.mkdir()
+    first = inputs / "a.png"
+    second = inputs / "b.JPG"
+    first.write_bytes(b"placeholder")
+    second.write_bytes(b"placeholder")
+    (inputs / "ignore.txt").write_text("ignored", encoding="utf-8")
+    outputs = tmp_path / "outputs"
+
+    code = extractor_module.main(
+        [str(inputs), "--output-dir", str(outputs)]
+    )
+
+    assert code == 0
+    assert calls == [
+        (
+            first,
+            outputs / "a_texts.json",
+            outputs / "a_raw_text_mask.png",
+            outputs / "a_debug.png",
+        ),
+        (
+            second,
+            outputs / "b_texts.json",
+            outputs / "b_raw_text_mask.png",
+            outputs / "b_debug.png",
+        ),
+    ]
+    assert "Summary: 2 succeeded, 0 failed, 2 total" in capsys.readouterr().out
