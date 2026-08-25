@@ -179,6 +179,40 @@ def test_coarse_long_text_fallback_is_inset_center_band() -> None:
     assert np.count_nonzero(mask) / mask.size < 0.60
 
 
+def test_coarse_fallback_recovers_glyph_detail_from_textured_button() -> None:
+    height, width = 36, 220
+    horizontal = np.linspace(0, 24, width, dtype=np.uint8)
+    crop = np.empty((height, width, 3), dtype=np.uint8)
+    crop[:, :, 0] = 142 + horizontal
+    crop[:, :, 1] = 104 + horizontal // 2
+    crop[:, :, 2] = 36
+    cv2.rectangle(crop, (0, 0), (width - 1, height - 1), (245, 205, 90), 2)
+    cv2.putText(
+        crop,
+        "VIEW POOL",
+        (30, 25),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (250, 225, 130),
+        2,
+        cv2.LINE_AA,
+    )
+    allowed = np.ones((height, width), dtype=bool)
+
+    mask = UITextExtractor._build_coarse_fallback_mask(crop, allowed)
+
+    coverage = np.count_nonzero(mask) / mask.size
+    assert UITextExtractor.MIN_GLYPH_COVERAGE <= coverage <= 0.50
+    assert not np.any(np.all(mask == 255, axis=1))
+    assert np.count_nonzero(mask[:2]) == 0
+    assert np.count_nonzero(mask[-2:]) == 0
+
+
+def test_long_text_uses_smaller_dilation_radius() -> None:
+    assert UITextExtractor._dilation_radius("查看畅玩池", 40) == 2
+    assert UITextExtractor._dilation_radius("OK", 40) == 4
+
+
 def test_single_chinese_uses_larger_elliptical_dilation() -> None:
     rect = Rect(x=20, y=20, width=20, height=40)
     glyph = np.zeros((40, 20), dtype=np.uint8)

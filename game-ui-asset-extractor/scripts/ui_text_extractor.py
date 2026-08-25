@@ -399,7 +399,7 @@ class UITextExtractor:
         scaled_distance = np.clip(3.0 * distance, 0, 255).astype(np.uint8)
         allowed_distances = scaled_distance[allowed]
         if allowed_distances.size == 0:
-            return cls._build_coarse_fallback_mask(allowed), "coarse"
+            return cls._build_coarse_fallback_mask(crop_rgb, allowed), "coarse"
         otsu_threshold, _ = cv2.threshold(
             allowed_distances,
             0,
@@ -415,15 +415,91 @@ class UITextExtractor:
 
         coverage = float(np.count_nonzero(mask)) / float(mask.size)
         if coverage < cls.MIN_GLYPH_COVERAGE or coverage > cls.MAX_GLYPH_COVERAGE:
-            return cls._build_coarse_fallback_mask(allowed), "coarse"
+            return cls._build_coarse_fallback_mask(crop_rgb, allowed), "coarse"
         return mask, "estimated_glyphs"
 
-    @staticmethod
-    def _build_coarse_fallback_mask(allowed: np.ndarray) -> np.ndarray:
-        """Return a centered safe band instead of a destructive solid rectangle."""
+    @classmethod
+    def _build_coarse_fallback_mask(
+        cls,
+        crop_rgb: np.ndarray,
+        allowed: np.ndarray,
+    ) -> np.ndarray:
+        """Recover conservative glyph-like detail without filling the OCR box."""
 
         allowed_bool = allowed.astype(bool, copy=False)
         height, width = allowed_bool.shape
+        gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY)
+        blur_size = max(3, min(9, int(round(min(height, width) * 0.20))))
+        if blur_size % 2 == 0:
+            blur_size += 1
+        blurred = cv2.GaussianBlur(gray, (blur_size, blur_size), 0)
+        local_contrast = cv2.absdiff(gray, blurred).astype(np.float32)
+        blurred_rgb = cv2.GaussianBlur(crop_rgb, (blur_size, blur_size), 0)
+        local_color_contrast = np.linalg.norm(
+            crop_rgb.astype(np.float32) - blurred_rgb.astype(np.float32),
+            axis=2,
+        )
+        gradient_x = cv2.Sobel(gray, cv2.CV_32F, 1, 0, ksize=3)
+        gradient_y = cv2.Sobel(gray, cv2.CV_32F, 0, 1, ksize=3)
+        gradient = cv2.magnitude(gradient_x, gradient_y)
+        response = np.maximum.reduce(
+            (local_contrast * 3.0, local_color_contrast * 3.0, gradient)
+        )
+        allowed_response = response[allowed_bool]
+
+        if allowed_response.size and float(np.max(allowed_response)) >= 8.0:
+            high = max(1.0, float(np.percentile(allowed_response, 95)))
+            normalized = np.clip(response * (255.0 / high), 0, 255).astype(
+                np.uint8
+            )
+            otsu_threshold, _ = cv2.threshold(
+                normalized[allowed_bool],
+                0,
+                255,
+                cv2.THRESH_BINARY | cv2.THRESH_OTSU,
+            )
+            threshold = max(20, int(round(float(otsu_threshold) * 0.80)))
+            fallback = np.where(
+                (normalized >= threshold) & allowed_bool,
+                255,
+                0,
+            ).astype(np.uint8)
+            kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (3, 3))
+            fallback = cv2.morphologyEx(fallback, cv2.MORPH_CLOSE, kernel)
+            fallback[~allowed_bool] = 0
+            component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+                (fallback > 0).astype(np.uint8),
+                connectivity=8,
+            )
+            filtered = np.zeros_like(fallback)
+            for label in range(1, component_count):
+                left = int(stats[label, cv2.CC_STAT_LEFT])
+                top = int(stats[label, cv2.CC_STAT_TOP])
+                component_width = int(stats[label, cv2.CC_STAT_WIDTH])
+                component_height = int(stats[label, cv2.CC_STAT_HEIGHT])
+                component_area = int(stats[label, cv2.CC_STAT_AREA])
+                boundary_hits = sum(
+                    (
+                        left == 0,
+                        top == 0,
+                        left + component_width >= width,
+                        top + component_height >= height,
+                    )
+                )
+                is_surface_border = boundary_hits >= 2 and (
+                    component_width >= 0.70 * width
+                    or component_height >= 0.70 * height
+                )
+                if is_surface_border or component_area > 0.50 * fallback.size:
+                    continue
+                filtered[labels == label] = 255
+            fallback = filtered
+            coverage = float(np.count_nonzero(fallback)) / float(fallback.size)
+            if cls.MIN_GLYPH_COVERAGE <= coverage <= 0.50:
+                return fallback
+
+        # With no trustworthy visual separation, a centered and horizontally
+        # inset band is safer than destroying the full button or prompt surface.
         fallback = np.zeros((height, width), dtype=np.uint8)
         band_height = max(1, int(round(height * 0.60)))
         y0 = max(0, (height - band_height) // 2)
@@ -449,6 +525,37 @@ class UITextExtractor:
         return _GlyphExtraction(mask=mask, mode=mode, background_rgb=background)
 
     @classmethod
+    def rebuild_text_mask(
+        cls,
+        image_rgb: np.ndarray,
+        rect: Rect,
+        text: str,
+    ) -> np.ndarray:
+        """Rebuild one text mask from source pixels without OCR geometry."""
+
+        crop_rgb = cls._crop(image_rgb, rect)
+        allowed = np.full(crop_rgb.shape[:2], 255, dtype=np.uint8)
+        background = cls._estimate_background(crop_rgb, allowed)
+        glyph_mask, _ = cls._extract_glyph_mask(crop_rgb, background, allowed)
+        return cls._build_dilated_full_mask(
+            glyph_mask,
+            rect,
+            text,
+            image_rgb.shape[:2],
+        )
+
+    @classmethod
+    def _dilation_radius(cls, text: str, bbox_height: int) -> int:
+        """Choose halo coverage without merging long text into a solid strip."""
+
+        single_chinese = len(text) == 1 and cls._is_chinese_ideograph(text)
+        if single_chinese:
+            return int(np.clip(round(0.16 * bbox_height), 3, 8))
+        if len(text) >= 5:
+            return int(np.clip(round(0.04 * bbox_height), 1, 3))
+        return int(np.clip(round(0.09 * bbox_height), 2, 6))
+
+    @classmethod
     def _build_dilated_full_mask(
         cls,
         glyph_mask: np.ndarray,
@@ -458,11 +565,7 @@ class UITextExtractor:
     ) -> np.ndarray:
         """Place local glyphs and dilate them with the prescribed ellipse radius."""
 
-        single_chinese = len(text) == 1 and cls._is_chinese_ideograph(text)
-        if single_chinese:
-            radius = int(np.clip(round(0.16 * rect.height), 3, 8))
-        else:
-            radius = int(np.clip(round(0.09 * rect.height), 2, 6))
+        radius = cls._dilation_radius(text, rect.height)
         full_mask = np.zeros(image_shape, dtype=np.uint8)
         full_mask[
             rect.y : rect.y + rect.height,

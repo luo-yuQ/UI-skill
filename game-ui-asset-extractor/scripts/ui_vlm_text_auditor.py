@@ -17,6 +17,8 @@ import numpy as np
 from pydantic import ValidationError
 
 from ui_audit_models import Rect, TextAuditResult, TextItem, TextStyle
+from ui_text_extractor import UITextExtractor
+from ui_text_models import Rect as StageATextRect
 
 
 DEFAULT_MODEL = "gpt-5.6-terra"
@@ -318,6 +320,174 @@ def _correction_pixel_rect(
     return x0, y0, x1, y1
 
 
+def _tight_correction_pixel_rect(
+    bbox_norm: list[float],
+    image_width: int,
+    image_height: int,
+) -> tuple[int, int, int, int]:
+    """Convert a normalized correction box to a valid tight pixel rectangle."""
+
+    x0 = min(image_width - 1, max(0, int(round(bbox_norm[0] * image_width))))
+    y0 = min(image_height - 1, max(0, int(round(bbox_norm[1] * image_height))))
+    x1 = min(
+        image_width,
+        max(x0 + 1, int(round(bbox_norm[2] * image_width))),
+    )
+    y1 = min(
+        image_height,
+        max(y0 + 1, int(round(bbox_norm[3] * image_height))),
+    )
+    return x0, y0, x1, y1
+
+
+def _normalize_feature(feature: np.ndarray) -> np.ndarray:
+    """Robustly scale a non-negative local image feature to uint8."""
+
+    high = float(np.percentile(feature, 95))
+    if high < 1.0:
+        return np.zeros(feature.shape, dtype=np.uint8)
+    return np.clip(feature * (255.0 / high), 0, 255).astype(np.uint8)
+
+
+def _build_correction_glyph_mask(
+    original_img: np.ndarray,
+    tight_rect: tuple[int, int, int, int],
+    padded_rect: tuple[int, int, int, int],
+) -> np.ndarray:
+    """Extract correction glyphs and their halo inside a padded local ROI."""
+
+    image_height, image_width = original_img.shape[:2]
+    px0, py0, px1, py1 = padded_rect
+    tx0, ty0, tx1, ty1 = tight_rect
+    roi = original_img[py0:py1, px0:px1]
+    roi_height, roi_width = roi.shape[:2]
+    local_core = np.zeros((roi_height, roi_width), dtype=bool)
+    local_core[ty0 - py0 : ty1 - py0, tx0 - px0 : tx1 - px0] = True
+
+    border_width = max(1, min(3, min(roi_height, roi_width) // 5))
+    border = np.zeros((roi_height, roi_width), dtype=bool)
+    border[:border_width, :] = True
+    border[-border_width:, :] = True
+    border[:, :border_width] = True
+    border[:, -border_width:] = True
+
+    lab = cv2.cvtColor(roi, cv2.COLOR_RGB2LAB).astype(np.float32)
+    background_lab = np.median(lab[border], axis=0)
+    color_distance = np.linalg.norm(
+        lab - background_lab.reshape(1, 1, 3),
+        axis=2,
+    )
+    gray = cv2.cvtColor(roi, cv2.COLOR_RGB2GRAY)
+    blur_size = max(3, min(9, int(round(min(roi_height, roi_width) * 0.25))))
+    if blur_size % 2 == 0:
+        blur_size += 1
+    blurred = cv2.GaussianBlur(gray, (blur_size, blur_size), 0)
+    local_contrast = cv2.absdiff(gray, blurred).astype(np.float32)
+    score = np.maximum(
+        _normalize_feature(color_distance),
+        _normalize_feature(local_contrast * 3.0),
+    )
+
+    otsu_threshold, _ = cv2.threshold(
+        score.reshape(-1),
+        0,
+        255,
+        cv2.THRESH_BINARY | cv2.THRESH_OTSU,
+    )
+    threshold = max(20, int(round(float(otsu_threshold) * 0.80)))
+    candidate = np.where(score >= threshold, 255, 0).astype(np.uint8)
+    close_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    candidate = cv2.morphologyEx(candidate, cv2.MORPH_CLOSE, close_kernel)
+
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        (candidate > 0).astype(np.uint8),
+        connectivity=8,
+    )
+    selected = np.zeros((roi_height, roi_width), dtype=np.uint8)
+    roi_area = roi_height * roi_width
+    for label in range(1, component_count):
+        component = labels == label
+        if not np.any(component & local_core):
+            continue
+        left = int(stats[label, cv2.CC_STAT_LEFT])
+        top = int(stats[label, cv2.CC_STAT_TOP])
+        width = int(stats[label, cv2.CC_STAT_WIDTH])
+        height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        touches_border = (
+            left == 0
+            or top == 0
+            or left + width >= roi_width
+            or top + height >= roi_height
+        )
+        if touches_border or area > 0.60 * roi_area:
+            continue
+        selected[component] = 255
+
+    tight_width = tx1 - tx0
+    tight_height = ty1 - ty0
+    if np.count_nonzero(selected) < max(2, round(0.005 * roi_area)):
+        # The VLM correction is authoritative. If local segmentation has no
+        # trustworthy component, use its tight box rather than the padded ROI.
+        selected[local_core] = 255
+
+    halo_radius = int(
+        np.clip(round(0.12 * min(tight_width, tight_height)), 2, 6)
+    )
+    halo_kernel = cv2.getStructuringElement(
+        cv2.MORPH_ELLIPSE,
+        (2 * halo_radius + 1, 2 * halo_radius + 1),
+    )
+    selected = cv2.dilate(selected, halo_kernel)
+    full_mask = np.zeros((image_height, image_width), dtype=np.uint8)
+    full_mask[py0:py1, px0:px1] = selected
+    return full_mask
+
+
+def _rebuild_unsafe_stage_a_masks(
+    original_img: np.ndarray,
+    raw_mask: np.ndarray,
+    texts: list[TextItem],
+    audit_result: TextAuditResult,
+) -> np.ndarray:
+    """Replace stale coarse or over-dilated long-text masks from Stage A."""
+
+    image_height, image_width = original_img.shape[:2]
+    editable_by_id = {item.id: item for item in audit_result.editable_texts}
+    rebuilt_mask = raw_mask.copy()
+    for source_item in texts:
+        audited = editable_by_id.get(source_item.id)
+        if audited is None:
+            continue
+        is_long_text = len(audited.text) >= 5
+        if source_item.mask_mode != "coarse" and not is_long_text:
+            continue
+
+        rect = source_item.rect
+        # Older Stage A versions dilated ordinary text by up to 6px. Clear that
+        # stale footprint before inserting the current glyph-aware mask.
+        clear_radius = 8
+        clear_x0 = max(0, rect.x - clear_radius)
+        clear_y0 = max(0, rect.y - clear_radius)
+        clear_x1 = min(image_width, rect.x + rect.width + clear_radius)
+        clear_y1 = min(image_height, rect.y + rect.height + clear_radius)
+        rebuilt_mask[clear_y0:clear_y1, clear_x0:clear_x1] = 0
+
+        stage_a_rect = StageATextRect(
+            x=rect.x,
+            y=rect.y,
+            width=rect.width,
+            height=rect.height,
+        )
+        local_mask = UITextExtractor.rebuild_text_mask(
+            original_img,
+            stage_a_rect,
+            source_item.text,
+        )
+        rebuilt_mask = cv2.bitwise_or(rebuilt_mask, local_mask)
+    return rebuilt_mask
+
+
 class UIVLMTextAuditor:
     """Audit OCR semantics, compensate misses, and rebuild a clean UI image."""
 
@@ -451,7 +621,12 @@ class UIVLMTextAuditor:
         item_by_id = {item.id: item for item in texts}
         if len(item_by_id) != len(texts):
             raise TextAuditInputError("texts must contain unique IDs")
-        final_mask = raw_mask.copy()
+        final_mask = _rebuild_unsafe_stage_a_masks(
+            original_img,
+            raw_mask,
+            texts,
+            audit_result,
+        )
 
         for text_id in audit_result.raster_text_ids:
             item = item_by_id.get(text_id)
@@ -484,12 +659,22 @@ class UIVLMTextAuditor:
 
         correction_rects: list[tuple[int, int, int, int]] = []
         for correction in audit_result.text_corrections:
+            tight_rect = _tight_correction_pixel_rect(
+                correction.bbox_norm,
+                image_width,
+                image_height,
+            )
             x0, y0, x1, y1 = _correction_pixel_rect(
                 correction.bbox_norm,
                 image_width,
                 image_height,
             )
-            cv2.rectangle(final_mask, (x0, y0), (x1, y1), 255, -1)
+            correction_mask = _build_correction_glyph_mask(
+                original_img,
+                tight_rect,
+                (x0, y0, x1, y1),
+            )
+            final_mask = cv2.bitwise_or(final_mask, correction_mask)
             correction_rects.append((x0, y0, x1, y1))
 
         if np.any(final_mask):

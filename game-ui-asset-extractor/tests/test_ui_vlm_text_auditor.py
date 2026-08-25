@@ -164,8 +164,13 @@ def _make_arrays() -> tuple[np.ndarray, np.ndarray]:
     raw_mask[59:62, 80:94] = 255
     raw_mask[54:68, 85:89] = 255
 
-    image[80:92, 110:118] = (245, 245, 245)
-    image[80:92, 130:136] = (245, 245, 245)
+    font = cv2.FONT_HERSHEY_SIMPLEX
+    cv2.putText(image, "7", (110, 91), font, 0.35, (18, 18, 18), 3, cv2.LINE_AA)
+    cv2.putText(image, "7", (110, 91), font, 0.35, (245, 245, 245), 1,
+                cv2.LINE_AA)
+    cv2.putText(image, "1", (130, 91), font, 0.35, (18, 18, 18), 3, cv2.LINE_AA)
+    cv2.putText(image, "1", (130, 91), font, 0.35, (245, 245, 245), 1,
+                cv2.LINE_AA)
     return image, raw_mask
 
 
@@ -248,10 +253,24 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
         image, raw_mask, _text_items(), result
     )
 
-    assert np.all(final_mask[77:96, 107:122] == 255)
-    assert np.all(final_mask[77:96, 127:140] == 255)
-    assert np.all(final_mask[80:92, 110:118] == 255)
-    np.testing.assert_allclose(cleaned[86, 114], [70, 110, 150], atol=4)
+    background = np.array([70, 110, 150], dtype=np.uint8)
+    first_roi = image[77:96, 107:122]
+    first_mask = final_mask[77:96, 107:122]
+    first_digit_pixels = np.any(first_roi != background, axis=2)
+    assert np.all(first_mask[first_digit_pixels] == 255)
+    assert np.count_nonzero(first_mask) < first_mask.size
+
+    second_roi = image[77:96, 127:140]
+    second_mask = final_mask[77:96, 127:140]
+    second_digit_pixels = np.any(second_roi != background, axis=2)
+    assert np.all(second_mask[second_digit_pixels] == 255)
+    assert np.count_nonzero(second_mask) < second_mask.size
+
+    original_error = np.abs(first_roi.astype(int) - background).sum()
+    cleaned_error = np.abs(
+        cleaned[77:96, 107:122].astype(int) - background
+    ).sum()
+    assert cleaned_error < 0.10 * original_error
     assert [item.id for item in unified] == [
         "text_001", "text_002", "text_corr_001", "text_corr_002"
     ]
@@ -271,6 +290,58 @@ def test_stripped_plus_connected_component_is_protected() -> None:
     assert np.all(final_mask[59:62, 80:94] == 0)
     assert np.all(final_mask[54:68, 85:89] == 0)
     assert np.all(final_mask[53:67, 24:65] == 255)
+
+
+def test_stale_coarse_long_text_mask_is_rebuilt_from_source_pixels() -> None:
+    height, width = 70, 240
+    horizontal = np.linspace(0, 30, width, dtype=np.uint8)
+    clean_background = np.empty((height, width, 3), dtype=np.uint8)
+    clean_background[:, :, 0] = 70 + horizontal
+    clean_background[:, :, 1] = 95 + horizontal // 2
+    clean_background[:, :, 2] = 130
+    image = clean_background.copy()
+    cv2.putText(
+        image,
+        "VIEW POOL",
+        (28, 43),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.65,
+        (245, 235, 180),
+        2,
+        cv2.LINE_AA,
+    )
+    raw_mask = np.zeros((height, width), dtype=np.uint8)
+    raw_mask[12:58, 14:226] = 255
+    source = TextItem.model_validate(
+        {
+            "id": "text_100",
+            "text": "VIEW POOL",
+            "confidence": 0.99,
+            "rect": {"x": 20, "y": 18, "width": 200, "height": 34},
+            "style": _style(),
+            "mask_mode": "coarse",
+        }
+    )
+    result = TextAuditResult(
+        scene_summary="Textured button",
+        editable_texts=[
+            {"id": "text_100", "text": "VIEW POOL", "role": "button_label"}
+        ],
+    )
+
+    cleaned, final_mask, _ = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image,
+        raw_mask,
+        [source],
+        result,
+    )
+
+    mask_roi = final_mask[12:58, 14:226]
+    assert 0 < np.count_nonzero(mask_roi) < 0.50 * mask_roi.size
+    assert not np.any(np.all(mask_roi == 255, axis=1))
+    original_error = np.abs(image.astype(int) - clean_background).sum()
+    cleaned_error = np.abs(cleaned.astype(int) - clean_background).sum()
+    assert cleaned_error < original_error
 
 
 def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> None:
@@ -298,7 +369,7 @@ def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> 
         str(output_dir / "final_inpaint_mask.png"), cv2.IMREAD_GRAYSCALE
     )
     assert final_mask is not None
-    assert np.all(final_mask[77:96, 107:122] == 255)
+    assert 0 < np.count_nonzero(final_mask[77:96, 107:122]) < 19 * 15
 
 
 def test_empty_ocr_and_empty_corrections_are_safe() -> None:
@@ -329,7 +400,8 @@ def test_correction_padding_clamps_safely_at_image_edge() -> None:
         image, raw_mask, [], result
     )
 
-    assert np.all(final_mask[15:20, 26:30] == 255)
+    assert np.all(final_mask[18:20, 29:30] == 255)
+    assert 0 < np.count_nonzero(final_mask[15:20, 26:30]) < 20
     assert unified[0].rect.model_dump() == {
         "x": 26,
         "y": 15,
