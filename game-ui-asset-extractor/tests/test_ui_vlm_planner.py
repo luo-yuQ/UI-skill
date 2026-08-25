@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 import sys
+from base64 import b64decode
+from io import BytesIO
 from pathlib import Path
 from typing import Any
 
@@ -235,9 +237,36 @@ def test_openai_compatible_client_sends_two_base64_images_in_order(
     assert len([item for item in content if item["type"] == "input_text"]) == 1
     image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
     assert len(image_urls) == 2
-    assert image_urls[0].startswith("data:image/png;base64,")
-    assert image_urls[1].startswith("data:image/png;base64,")
+    assert image_urls[0].startswith("data:image/webp;base64,")
+    assert image_urls[1].startswith("data:image/webp;base64,")
     assert image_urls[0] != image_urls[1]
+
+
+def test_dual_images_are_independently_downscaled_to_1024_webp(
+    tmp_path: Path,
+) -> None:
+    original = tmp_path / "original.jpg"
+    cleaned = tmp_path / "cleaned.png"
+    Image.new("RGB", (3200, 1440), (20, 40, 60)).save(original)
+    Image.new("RGB", (3200, 1440), (25, 45, 65)).save(cleaned)
+    session = _FakeSession()
+    client = OpenAICompatibleVLMClient(
+        base_url="https://relay.example/v1",
+        api_key="secret",
+        session=session,
+    )
+
+    client.infer_json(original, cleaned, "system", "user", None)
+
+    content = session.calls[0]["json"]["input"][0]["content"]
+    image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
+    assert len(image_urls) == 2
+    for image_url in image_urls:
+        header, encoded = image_url.split(",", 1)
+        assert header == "data:image/webp;base64"
+        with Image.open(BytesIO(b64decode(encoded))) as image:
+            assert image.format == "WEBP"
+            assert image.size == (1024, 461)
 
 
 def test_composite_mode_sends_one_labelled_comparison_image(tmp_path: Path) -> None:

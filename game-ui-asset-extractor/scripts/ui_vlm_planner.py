@@ -15,7 +15,7 @@ from pathlib import Path
 from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
-from PIL import Image, ImageDraw
+from PIL import Image, ImageDraw, ImageOps
 from pydantic import ValidationError
 
 from ui_plan_models import LayerPlanResult
@@ -30,6 +30,8 @@ DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_TIMEOUT = 60.0
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
 TEMPERATURE = 0.1
+DUAL_IMAGE_MAX_WIDTH = 1024
+DUAL_IMAGE_WEBP_QUALITY = 85
 COMPOSITE_VIEW_MAX_WIDTH = 1280
 SUPPORTED_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
 
@@ -232,22 +234,33 @@ def _inspect_image(path: Path) -> tuple[int, int]:
 
 
 def _encode_image_as_data_url(path: Path) -> str:
-    """Encode one local input image as a Base64 data URL."""
+    """Downscale one input to the relay-tested 1024px WebP data URL."""
 
-    media_types = {
-        ".png": "image/png",
-        ".jpg": "image/jpeg",
-        ".jpeg": "image/jpeg",
-        ".webp": "image/webp",
-    }
-    suffix = path.suffix.lower()
-    if suffix not in media_types:
+    if path.suffix.lower() not in SUPPORTED_IMAGE_SUFFIXES:
         raise PlannerInputError(f"Unsupported image extension: {path.suffix}")
     try:
-        encoded = b64encode(path.read_bytes()).decode("ascii")
-    except OSError as exc:
-        raise PlannerInputError(f"Cannot read image {path}: {exc}") from exc
-    return f"data:{media_types[suffix]};base64,{encoded}"
+        with Image.open(path) as source:
+            image = ImageOps.exif_transpose(source).convert("RGB")
+            if image.width > DUAL_IMAGE_MAX_WIDTH:
+                target_height = max(
+                    1,
+                    round(image.height * DUAL_IMAGE_MAX_WIDTH / image.width),
+                )
+                image = image.resize(
+                    (DUAL_IMAGE_MAX_WIDTH, target_height),
+                    Image.Resampling.LANCZOS,
+                )
+            buffer = BytesIO()
+            image.save(
+                buffer,
+                format="WEBP",
+                quality=DUAL_IMAGE_WEBP_QUALITY,
+                method=6,
+            )
+    except (FileNotFoundError, OSError) as exc:
+        raise PlannerInputError(f"Cannot preprocess image {path}: {exc}") from exc
+    encoded = b64encode(buffer.getvalue()).decode("ascii")
+    return f"data:image/webp;base64,{encoded}"
 
 
 def _encode_comparison_as_data_url(
