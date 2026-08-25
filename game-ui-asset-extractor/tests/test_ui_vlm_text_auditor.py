@@ -15,7 +15,13 @@ from pydantic import ValidationError
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from ui_audit_models import TextAuditResult, TextCorrection, TextItem  # noqa: E402
+from ui_audit_models import (  # noqa: E402
+    StrippedSymbol,
+    TextAuditResult,
+    TextCorrection,
+    TextItem,
+    TextStyle,
+)
 from ui_vlm_text_auditor import (  # noqa: E402
     SYSTEM_PROMPT,
     TextAuditClientError,
@@ -44,10 +50,10 @@ def _stage_a_items() -> list[dict[str, Any]]:
     return [
         {
             "id": "text_000",
-            "text": "HERO",
+            "text": "英雄",
             "confidence": 0.99,
             "rect": {"x": 10, "y": 10, "width": 30, "height": 20},
-            "style": _style(),
+            "style": _style("Microsoft YaHei"),
             "mask_mode": "estimated_glyphs",
         },
         {
@@ -87,13 +93,20 @@ def _audit_payload(*, include_corrections: bool = True) -> dict[str, Any]:
             {
                 "text": "1",
                 "bbox_norm": [130 / IMAGE_WIDTH, 80 / IMAGE_HEIGHT,
-                              136 / IMAGE_WIDTH, 92 / IMAGE_HEIGHT],
+                               136 / IMAGE_WIDTH, 92 / IMAGE_HEIGHT],
+                "confidence": 0.95,
+                "estimated_role": "slot_count",
+            },
+            {
+                "text": "2",
+                "bbox_norm": [145 / IMAGE_WIDTH, 80 / IMAGE_HEIGHT,
+                               153 / IMAGE_WIDTH, 92 / IMAGE_HEIGHT],
                 "confidence": 0.95,
                 "estimated_role": "slot_count",
             },
         ]
     return {
-        "scene_summary": "Store and inventory UI with a team logo.",
+        "scene_summary": "Inventory UI with text embedded in a chest.",
         "raster_text_ids": ["text_000"],
         "editable_texts": [
             {"id": "text_001", "text": "$99.99", "role": "button_label"},
@@ -171,6 +184,9 @@ def _make_arrays() -> tuple[np.ndarray, np.ndarray]:
     cv2.putText(image, "1", (130, 91), font, 0.35, (18, 18, 18), 3, cv2.LINE_AA)
     cv2.putText(image, "1", (130, 91), font, 0.35, (245, 245, 245), 1,
                 cv2.LINE_AA)
+    cv2.putText(image, "2", (145, 91), font, 0.35, (18, 18, 18), 3, cv2.LINE_AA)
+    cv2.putText(image, "2", (145, 91), font, 0.35, (245, 245, 245), 1,
+                cv2.LINE_AA)
     return image, raw_mask
 
 
@@ -207,6 +223,25 @@ def test_data_contract_rejects_invalid_normalized_bbox() -> None:
         TextCorrection(text="7", bbox_norm=[0.5, 0.2, 0.4, 0.3])
 
 
+def test_data_contract_keeps_general_typography_and_declared_defaults() -> None:
+    style = TextStyle(
+        fontFamily="Noto Sans CJK SC",
+        fontSize=21,
+        color="rgba(255, 255, 255, 0.9)",
+        fontWeight=500,
+        strokeColor="transparent",
+        strokeWidth=3,
+    )
+    correction = TextCorrection(text="4", bbox_norm=[0.1, 0.2, 0.2, 0.3])
+    symbol = StrippedSymbol(source_text_id="text_001", symbol="×")
+
+    assert style.fontFamily == "Noto Sans CJK SC"
+    assert correction.confidence == 0.95
+    assert correction.estimated_role == "slot_count"
+    assert symbol.role == "button"
+    assert symbol.estimated_bbox_norm is None
+
+
 def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     image_path, texts_path, _ = _write_inputs(tmp_path)
     client = FakeVLMClient()
@@ -214,14 +249,16 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     result = UIVLMTextAuditor(client=client).audit(image_path, texts_path)
 
     assert isinstance(result, TextAuditResult)
-    assert [item.text for item in result.text_corrections] == ["7", "1"]
+    assert [item.text for item in result.text_corrections] == ["7", "1", "2"]
     call = client.calls[0]
     assert call["image_size"] == (1024, 768)
     assert call["image_format"] == "PNG"
-    assert "逐个检查" in SYSTEM_PROMPT
-    assert "HERO" in call["user_prompt"]
+    assert "空间依附载体 + 艺术特征" in SYSTEM_PROMPT
+    assert "条件 A (道具与箱体贴图内嵌字)" in SYSTEM_PROMPT
+    assert "自左向右、自上而下" in SYSTEM_PROMPT
+    assert "英雄" in call["user_prompt"]
     assert "VLM 分析图尺寸：1024x768" in call["user_prompt"]
-    assert '[text_000, "HERO", (64,64,192,128)]' in call["user_prompt"]
+    assert '[text_000, "英雄", (64,64,192,128)]' in call["user_prompt"]
     assert "BBox 已换算为分析图像素坐标" in call["user_prompt"]
     assert "bbox_norm 必须使用原图归一化坐标" in call["user_prompt"]
     assert "fontFamily" not in call["user_prompt"].split("Required JSON Schema:")[0]
@@ -243,6 +280,7 @@ def test_raster_mask_is_removed_and_original_pixels_are_preserved() -> None:
     assert np.all(final_mask[10:31, 10:41] == 0)
     assert np.array_equal(cleaned[12:28, 12:38], image[12:28, 12:38])
     assert not np.array_equal(cleaned[12:28, 62:98], image[12:28, 62:98])
+    assert final_mask[11, 62] == 255
 
 
 def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
@@ -266,15 +304,25 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
     assert np.all(second_mask[second_digit_pixels] == 255)
     assert np.count_nonzero(second_mask) < second_mask.size
 
+    third_roi = image[77:96, 142:157]
+    third_mask = final_mask[77:96, 142:157]
+    third_digit_pixels = np.any(third_roi != background, axis=2)
+    assert np.all(third_mask[third_digit_pixels] == 255)
+    assert np.count_nonzero(third_mask) < third_mask.size
+
     original_error = np.abs(first_roi.astype(int) - background).sum()
     cleaned_error = np.abs(
         cleaned[77:96, 107:122].astype(int) - background
     ).sum()
     assert cleaned_error < 0.10 * original_error
     assert [item.id for item in unified] == [
-        "text_001", "text_002", "text_corr_001", "text_corr_002"
+        "text_001",
+        "text_002",
+        "text_corr_001",
+        "text_corr_002",
+        "text_corr_003",
     ]
-    assert [item.text for item in unified[-2:]] == ["7", "1"]
+    assert [item.text for item in unified[-3:]] == ["7", "1", "2"]
     assert unified[-1].style.fontFamily == "Microsoft YaHei"
     assert unified[-1].style.fontSize >= 8
 
@@ -352,7 +400,7 @@ def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> 
         image_path, texts_path, mask_path, output_dir
     )
 
-    assert len(result.text_corrections) == 2
+    assert len(result.text_corrections) == 3
     assert {path.name for path in output_dir.iterdir()} == {
         "audit_result.json",
         "final_inpaint_mask.png",
@@ -360,11 +408,11 @@ def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> 
         "filtered_texts.json",
     }
     filtered = json.loads((output_dir / "filtered_texts.json").read_text("utf-8"))
-    assert filtered["count"] == 4
-    assert [item["id"] for item in filtered["items"]][-2:] == [
-        "text_corr_001", "text_corr_002"
+    assert filtered["count"] == 5
+    assert [item["id"] for item in filtered["items"]][-3:] == [
+        "text_corr_001", "text_corr_002", "text_corr_003"
     ]
-    assert filtered["items"][-2]["text"] == "7"
+    assert [item["text"] for item in filtered["items"][-3:]] == ["7", "1", "2"]
     final_mask = cv2.imread(
         str(output_dir / "final_inpaint_mask.png"), cv2.IMREAD_GRAYSCALE
     )
@@ -403,10 +451,10 @@ def test_correction_padding_clamps_safely_at_image_edge() -> None:
     assert np.all(final_mask[18:20, 29:30] == 255)
     assert 0 < np.count_nonzero(final_mask[15:20, 26:30]) < 20
     assert unified[0].rect.model_dump() == {
-        "x": 26,
-        "y": 15,
-        "width": 4,
-        "height": 5,
+        "x": 29,
+        "y": 18,
+        "width": 1,
+        "height": 2,
     }
 
 

@@ -25,12 +25,12 @@ class Rect(_AuditModel):
 class TextStyle(_AuditModel):
     """Typography contract aligned with the Stage 2.1.3 output."""
 
-    fontFamily: Literal["Microsoft YaHei", "Arial"]
-    fontSize: int = Field(ge=8)
-    color: str = Field(pattern=r"^#[0-9A-Fa-f]{6}$")
-    fontWeight: Literal[600, 700]
-    strokeColor: Literal["#1e2322", "#f0f4f1"]
-    strokeWidth: int = Field(ge=0, le=2)
+    fontFamily: str
+    fontSize: int
+    color: str
+    fontWeight: int
+    strokeColor: str
+    strokeWidth: int
 
 
 class TextItem(_AuditModel):

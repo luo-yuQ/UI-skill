@@ -45,26 +45,26 @@ except ImportError:  # pragma: no cover - only relevant to incomplete deployment
     VLMClientConfig = None
 
 
-SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉与排版审计专家。你的任务是对输入的原始 UI 截图及 Stage A 的 OCR 候选文本列表进行严格的语义审计与漏检补齐。
+SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉排版与美术资产审计专家。你的任务是对输入的原始 UI 截图及 Stage A 提取的 OCR 文本候选列表进行严格的语义审计与漏检补齐。
 
-【审计规则】
-1. 栅格美术资产 (raster_text_ids):
-   - 仅包含具有专属艺术设计、手绘几何、战队品牌 Logo (如 HERO, DYG)、立体浮雕游戏标题 (如 "精灵大作战", "VICTORY")、以及道具角标上的专属图章 (如 "元流", "皮肤")。
-   - 只有这些 ID 才能放入 raster_text_ids。系统将保护这些像素不被擦除。
-   - 严禁将普通按钮文字 ($99.99, "确定", "重置") 或带描边的常规数值误判为美术资产！
-2. 普通可编辑文本 (editable_texts):
-   - 界面标题、说明文案、商品价格、按钮文字、动态计数必须放入 editable_texts。
+【核心分类准则：空间依附载体 + 艺术特征】
+
+1. 栅格美术资产 (raster_text_ids - 强制 100% 保留原始像素):
+   满足以下任一条件的文本 ID，必须全量放入 raster_text_ids：
+   - 条件 A (道具与箱体贴图内嵌字): 凡是物理上直接绘制/依附在宝箱箱体、道具卡面、装备插画、战队队徽内部的修饰文字与状态标（例如宝箱正面的“英雄”、战令宝箱上的“战令”和“1级”、战队标“HERO”/“DYG”、道具角标“元流”/“皮肤”）。此类文字是道具插画的有机组成部分，擦除会破坏物品美术质感，必须保留！
+   - 条件 B (强风格化艺术字): 具有手绘几何外轮廓、多色渐变填充、3D立体浮雕或镶嵌吉祥物的游戏主标题与结算大字。
+
+2. 普通可编辑文本 (editable_texts - 允许擦除底图并重建):
+   仅限于独立承载于通用 UI 容器、按钮底板、导航栏或空白背景上的文本（如界面标题“背包”、按钮文案“批量使用”/“查看畅玩池”、货币数值“176”/“638050”、卡片描述段落、以及已被 OCR 检出的卡槽右下角纯数字）。
+
 3. 复合按键符号剥离 (stripped_symbols):
-   - 当 OCR 将数值与相邻操作按钮识别为一体时（例如 "176+"），将 "+" 剥离为 stripped_symbols (role="button")，并将数值 "176" 放入 editable_texts。
-4. 角标数量与单字符漏检补齐 (text_corrections - 核心重点):
-   - 仔细逐个检查背包/网格中每个道具卡槽右下角的堆叠数量（如 "7", "1", "2", "4", "20", "27" 等）。
-   - 如果 OCR 候选列表中遗漏了某个道具格子右下角的单字符数字，必须在 text_corrections 中输出：
-     * text: 识别的真实数字内容
-     * bbox_norm: 紧密包围该数字字符的归一化包围盒 [x0, y0, x1, y1] (0.0 ~ 1.0)
-     * confidence: 0.95
-     * estimated_role: "slot_count"
+   若 OCR 将数值与相邻操作按钮合并识别（如 "176+"），将 "+" 剥离至 stripped_symbols (role="button")，数值 "176" 放入 editable_texts。
 
-请直接返回严格符合 JSON Schema 的纯 JSON 结果，严禁附加任何解释性文字。"""
+4. 5x4 网格角标全覆盖补漏 (text_corrections - 核心重点):
+   必须严格按照“自左向右、自上而下”的顺序，逐行扫描 5x4 道具网格中的每一个卡槽。
+   只要卡槽右下角肉眼可见白色堆叠数量（如 7, 1, 2, 4 等）且未在 OCR 列表中出现的，必须在 text_corrections 中 100% 补齐并输出其归一化紧凑包围盒 bbox_norm [x0, y0, x1, y1] (0.0~1.0)。
+
+请严格返回符合 JSON Schema 的纯 JSON，严禁输出任何 Markdown 标记或多余解释。"""
 
 
 class VLMClient(Protocol):
@@ -311,8 +311,8 @@ def _correction_pixel_rect(
     x1 = int(round(bbox_norm[2] * image_width))
     y1 = int(round(bbox_norm[3] * image_height))
 
-    pad_x = max(3, int(round((x1 - x0) * 0.25)))
-    pad_y = max(3, int(round((y1 - y0) * 0.25)))
+    pad_x = max(4, int(round((x1 - x0) * 0.35)))
+    pad_y = max(4, int(round((y1 - y0) * 0.35)))
     x0 = max(0, x0 - pad_x)
     y0 = max(0, y0 - pad_y)
     x1 = min(image_width, x1 + pad_x)
@@ -404,10 +404,16 @@ def _build_correction_glyph_mask(
         connectivity=8,
     )
     selected = np.zeros((roi_height, roi_width), dtype=np.uint8)
+    association_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    associated_core = cv2.dilate(
+        local_core.astype(np.uint8),
+        association_kernel,
+        iterations=3,
+    ).astype(bool)
     roi_area = roi_height * roi_width
     for label in range(1, component_count):
         component = labels == label
-        if not np.any(component & local_core):
+        if not np.any(component & associated_core):
             continue
         left = int(stats[label, cv2.CC_STAT_LEFT])
         top = int(stats[label, cv2.CC_STAT_TOP])
@@ -431,14 +437,12 @@ def _build_correction_glyph_mask(
         # trustworthy component, use its tight box rather than the padded ROI.
         selected[local_core] = 255
 
-    halo_radius = int(
-        np.clip(round(0.12 * min(tight_width, tight_height)), 2, 6)
-    )
-    halo_kernel = cv2.getStructuringElement(
-        cv2.MORPH_ELLIPSE,
-        (2 * halo_radius + 1, 2 * halo_radius + 1),
-    )
-    selected = cv2.dilate(selected, halo_kernel)
+    # Repeated 3x3 elliptical dilation grows by one pixel per iteration. A
+    # 2-3px adaptive halo is enough to consume antialiasing, dark outlines,
+    # and short drop shadows without turning the padded ROI into a solid box.
+    halo_radius = 2 if min(tight_width, tight_height) <= 8 else 3
+    halo_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    selected = cv2.dilate(selected, halo_kernel, iterations=halo_radius)
     full_mask = np.zeros((image_height, image_width), dtype=np.uint8)
     full_mask[py0:py1, px0:px1] = selected
     return full_mask
@@ -621,26 +625,28 @@ class UIVLMTextAuditor:
         item_by_id = {item.id: item for item in texts}
         if len(item_by_id) != len(texts):
             raise TextAuditInputError("texts must contain unique IDs")
+        final_mask = raw_mask.copy()
         final_mask = _rebuild_unsafe_stage_a_masks(
             original_img,
-            raw_mask,
+            final_mask,
             texts,
             audit_result,
         )
+        protected_mask = np.zeros_like(final_mask)
 
         for text_id in audit_result.raster_text_ids:
             item = item_by_id.get(text_id)
             if item is None:
                 raise TextAuditInputError(f"Unknown raster text ID: {text_id}")
             rect = item.rect
-            cv2.rectangle(
-                final_mask,
-                (rect.x, rect.y),
-                (min(image_width, rect.x + rect.width),
-                 min(image_height, rect.y + rect.height)),
-                0,
-                -1,
-            )
+            x0 = min(image_width, max(0, rect.x))
+            y0 = min(image_height, max(0, rect.y))
+            x1 = min(image_width, max(x0, rect.x + rect.width))
+            y1 = min(image_height, max(y0, rect.y + rect.height))
+            if x1 <= x0 or y1 <= y0:
+                continue
+            cv2.rectangle(final_mask, (x0, y0), (x1 - 1, y1 - 1), 0, -1)
+            cv2.rectangle(protected_mask, (x0, y0), (x1 - 1, y1 - 1), 255, -1)
 
         for stripped in audit_result.stripped_symbols:
             item = item_by_id.get(stripped.source_text_id)
@@ -648,7 +654,7 @@ class UIVLMTextAuditor:
                 raise TextAuditInputError(
                     f"Unknown stripped-symbol source ID: {stripped.source_text_id}"
                 )
-            self._protect_symbol_component(
+            symbol_mask = self._protect_symbol_component(
                 final_mask,
                 item,
                 stripped.symbol,
@@ -656,6 +662,13 @@ class UIVLMTextAuditor:
                 image_width,
                 image_height,
             )
+            protected_mask = cv2.bitwise_or(protected_mask, symbol_mask)
+
+        # Stage A masks describe glyph cores. Grow the remaining ordinary text
+        # by 2px so Telea also consumes antialiasing, outlines, and shadows.
+        ordinary_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+        final_mask = cv2.dilate(final_mask, ordinary_kernel, iterations=2)
+        final_mask[protected_mask > 0] = 0
 
         correction_rects: list[tuple[int, int, int, int]] = []
         for correction in audit_result.text_corrections:
@@ -675,14 +688,19 @@ class UIVLMTextAuditor:
                 (x0, y0, x1, y1),
             )
             final_mask = cv2.bitwise_or(final_mask, correction_mask)
-            correction_rects.append((x0, y0, x1, y1))
+            correction_rects.append(tight_rect)
+
+        # A correction can overlap a raster item or stripped control symbol.
+        # Protection always wins because those pixels must remain byte-identical.
+        final_mask[protected_mask > 0] = 0
+        final_mask = np.where(final_mask > 0, 255, 0).astype(np.uint8)
 
         if np.any(final_mask):
             image_bgr = cv2.cvtColor(original_img, cv2.COLOR_RGB2BGR)
             cleaned_bgr = cv2.inpaint(
                 image_bgr,
                 final_mask,
-                inpaintRadius=5,
+                inpaintRadius=3,
                 flags=cv2.INPAINT_TELEA,
             )
             cleaned_image = cv2.cvtColor(cleaned_bgr, cv2.COLOR_BGR2RGB)
@@ -704,16 +722,17 @@ class UIVLMTextAuditor:
         estimated_bbox_norm: list[float] | None,
         image_width: int,
         image_height: int,
-    ) -> None:
+    ) -> np.ndarray:
         """Clear the connected mask component nearest the stripped symbol."""
 
+        protected = np.zeros_like(mask)
         rect = source_item.rect
         x0 = min(image_width, max(0, rect.x))
         y0 = min(image_height, max(0, rect.y))
         x1 = min(image_width, max(x0, rect.x + rect.width))
         y1 = min(image_height, max(y0, rect.y + rect.height))
         if x1 <= x0 or y1 <= y0:
-            return
+            return protected
         roi = mask[y0:y1, x0:x1]
         binary = (roi > 0).astype(np.uint8)
         component_count, labels, stats, centroids = cv2.connectedComponentsWithStats(
@@ -721,7 +740,7 @@ class UIVLMTextAuditor:
             connectivity=8,
         )
         if component_count <= 1:
-            return
+            return protected
 
         if estimated_bbox_norm is not None:
             target_x = (
@@ -765,6 +784,9 @@ class UIVLMTextAuditor:
             column_gate[:, left:right] = True
             selected_pixels &= column_gate
         roi[selected_pixels] = 0
+        protected_roi = protected[y0:y1, x0:x1]
+        protected_roi[selected_pixels] = 255
+        return protected
 
     @staticmethod
     def _merge_text_metadata(
