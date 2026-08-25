@@ -19,6 +19,7 @@ from ui_text_models import Rect, TextExtractionResult, TextItem, TextStyle
 
 
 OCREngine = Callable[[np.ndarray], Any]
+OCRParameter = int | float | str
 MaskMode = Literal["estimated_glyphs", "coarse"]
 SUPPORTED_IMAGE_SUFFIXES = frozenset({".png", ".jpg", ".jpeg", ".webp"})
 
@@ -48,14 +49,19 @@ class UITextExtractor:
 
     MIN_CONFIDENCE = 0.35
     LOW_CONFIDENCE = 0.85
-    RAPIDOCR_BOX_THRESH = 0.5
-    RAPIDOCR_UNCLIP_RATIO = 1.6
+    RAPIDOCR_MIN_LIMIT_SIDE_LEN = 1920
+    RAPIDOCR_DET_DB_THRESH = 0.15
+    RAPIDOCR_DET_DB_BOX_THRESH = 0.25
+    RAPIDOCR_DET_DB_UNCLIP_RATIO = 2.2
+    RAPIDOCR_DET_DB_SCORE_MODE = "slow"
     VERTICAL_ASPECT_RATIO = 2.4
     MIN_GLYPH_COVERAGE = 0.015
     MAX_GLYPH_COVERAGE = 0.68
 
     def __init__(self, ocr_engine: OCREngine | None = None) -> None:
-        self._ocr_call_kwargs: dict[str, float] = {}
+        self._ocr_call_kwargs: dict[str, Any] = {}
+        self._rapidocr_factory: Callable[..., OCREngine] | None = None
+        self._rapidocr_limit_side_len = 0
         if ocr_engine is not None:
             self._ocr = ocr_engine
             return
@@ -66,21 +72,8 @@ class UITextExtractor:
                 "rapidocr-onnxruntime is required for real OCR; inject a "
                 "RapidOCR-compatible callable for tests."
             ) from exc
-        detection_options = {
-            "box_thresh": self.RAPIDOCR_BOX_THRESH,
-            "unclip_ratio": self.RAPIDOCR_UNCLIP_RATIO,
-        }
-        init_kwargs = self._supported_kwargs(RapidOCR, detection_options)
-        self._ocr = RapidOCR(**init_kwargs)
-        remaining_options = {
-            name: value
-            for name, value in detection_options.items()
-            if name not in init_kwargs
-        }
-        self._ocr_call_kwargs = self._supported_kwargs(
-            self._ocr,
-            remaining_options,
-        )
+        self._ocr = None
+        self._rapidocr_factory = RapidOCR
 
     def extract(
         self,
@@ -95,6 +88,9 @@ class UITextExtractor:
         source_path = Path(image_path)
         image_bgr = self._read_image(source_path)
         try:
+            self._ensure_ocr_engine(image_bgr)
+            if self._ocr is None:  # pragma: no cover - defensive invariant
+                raise RuntimeError("RapidOCR engine was not initialized")
             raw_output = self._ocr(image_bgr, **self._ocr_call_kwargs)
         except Exception as exc:
             raise RuntimeError(f"OCR failed for {source_path}: {exc}") from exc
@@ -229,26 +225,85 @@ class UITextExtractor:
         if debug_image is not None and output_debug is not None:
             cls._write_image(output_debug, debug_image)
 
+    @classmethod
+    def _rapidocr_detection_options(
+        cls,
+        image: np.ndarray,
+    ) -> dict[str, OCRParameter]:
+        """Build high-resolution DB-detector options for small game UI copy."""
+
+        image_long_side = int(max(image.shape[:2]))
+        return {
+            "det_limit_side_len": max(
+                cls.RAPIDOCR_MIN_LIMIT_SIDE_LEN,
+                image_long_side,
+            ),
+            "det_db_thresh": cls.RAPIDOCR_DET_DB_THRESH,
+            "det_db_box_thresh": cls.RAPIDOCR_DET_DB_BOX_THRESH,
+            "det_db_unclip_ratio": cls.RAPIDOCR_DET_DB_UNCLIP_RATIO,
+            "det_db_score_mode": cls.RAPIDOCR_DET_DB_SCORE_MODE,
+        }
+
+    def _ensure_ocr_engine(self, image: np.ndarray) -> None:
+        """Lazily initialize RapidOCR and route tuning to init or inference."""
+
+        options = self._rapidocr_detection_options(image)
+        required_limit = int(options["det_limit_side_len"])
+        if (
+            self._ocr is not None
+            and (
+                self._rapidocr_factory is None
+                or required_limit <= self._rapidocr_limit_side_len
+            )
+        ):
+            return
+        if self._rapidocr_factory is None:  # pragma: no cover - defensive invariant
+            raise RuntimeError("RapidOCR factory is unavailable")
+
+        init_kwargs, remaining = self._route_supported_options(
+            self._rapidocr_factory,
+            options,
+        )
+        self._ocr = self._rapidocr_factory(**init_kwargs)
+        self._ocr_call_kwargs, _ = self._route_supported_options(
+            self._ocr,
+            remaining,
+        )
+        self._rapidocr_limit_side_len = required_limit
+
     @staticmethod
-    def _supported_kwargs(
+    def _route_supported_options(
         target: Callable[..., Any],
-        options: dict[str, float],
-    ) -> dict[str, float]:
-        """Return RapidOCR tuning options accepted by a callable's signature."""
+        options: dict[str, OCRParameter],
+    ) -> tuple[dict[str, Any], dict[str, OCRParameter]]:
+        """Split options into accepted kwargs and options for the next route.
+
+        RapidOCR releases expose detector tuning either as direct keyword
+        arguments or as one ``params`` mapping. Unsupported options are returned
+        so callers can retry them against the inference callable.
+        """
 
         try:
-            parameters = inspect.signature(target).parameters.values()
+            parameters = inspect.signature(target).parameters
         except (TypeError, ValueError):
-            return {}
-        if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
-            return dict(options)
+            return {}, dict(options)
+        if any(
+            parameter.kind is inspect.Parameter.VAR_KEYWORD
+            for parameter in parameters.values()
+        ):
+            return dict(options), {}
         accepted_names = {
             parameter.name
-            for parameter in parameters
+            for parameter in parameters.values()
             if parameter.kind
             in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
         }
-        return {name: value for name, value in options.items() if name in accepted_names}
+        direct = {name: value for name, value in options.items() if name in accepted_names}
+        remaining = {name: value for name, value in options.items() if name not in direct}
+        if remaining and "params" in accepted_names:
+            direct["params"] = remaining
+            remaining = {}
+        return direct, remaining
 
     @staticmethod
     def _read_image(path: Path) -> np.ndarray:
