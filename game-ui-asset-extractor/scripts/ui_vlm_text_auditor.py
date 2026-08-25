@@ -219,8 +219,12 @@ def _create_default_client(model: str) -> VLMClient:
     return ResponsesAPIVLMClient(config)
 
 
-def _compact_candidates(items: list[TextItem]) -> str:
-    """Build a compact Markdown candidate list without redundant style data."""
+def _compact_candidates(
+    items: list[TextItem],
+    scale_x: float,
+    scale_y: float,
+) -> str:
+    """Build a compact candidate list in analysis-image pixel coordinates."""
 
     if not items:
         return "(empty)"
@@ -228,11 +232,58 @@ def _compact_candidates(items: list[TextItem]) -> str:
     for item in items:
         safe_text = item.text.replace("\\", "\\\\").replace("\n", "\\n")
         rect = item.rect
+        analysis_x = round(rect.x * scale_x)
+        analysis_y = round(rect.y * scale_y)
+        analysis_width = max(1, round(rect.width * scale_x))
+        analysis_height = max(1, round(rect.height * scale_y))
         rows.append(
             f'- [{item.id}, "{safe_text}", '
-            f"({rect.x},{rect.y},{rect.width},{rect.height})]"
+            f"({analysis_x},{analysis_y},{analysis_width},{analysis_height})]"
         )
     return "\n".join(rows)
+
+
+def _validate_analysis_input(
+    analysis_image_path: Path,
+    metadata: Any,
+    source_width: int,
+    source_height: int,
+) -> tuple[int, int, float, float]:
+    """Verify the shared Stage 2 preparation result and return its transform."""
+
+    if not isinstance(metadata, dict):
+        raise TextAuditInputError("Analysis-image metadata must be an object")
+    source_size = metadata.get("source_size")
+    analysis_size = metadata.get("analysis_size")
+    if not isinstance(source_size, dict) or not isinstance(analysis_size, dict):
+        raise TextAuditInputError("Analysis-image metadata has no size records")
+    try:
+        metadata_source_width = int(source_size["width"])
+        metadata_source_height = int(source_size["height"])
+        analysis_width = int(analysis_size["width"])
+        analysis_height = int(analysis_size["height"])
+    except (KeyError, TypeError, ValueError) as exc:
+        raise TextAuditInputError("Analysis-image metadata sizes are invalid") from exc
+    if (metadata_source_width, metadata_source_height) != (
+        source_width,
+        source_height,
+    ):
+        raise TextAuditInputError("Analysis metadata does not match the source image")
+    if analysis_width != DEFAULT_MAX_IMAGE_WIDTH or analysis_height <= 0:
+        raise TextAuditInputError(
+            "VLM analysis image must be proportionally resized to width 1024"
+        )
+    prepared_image = _load_rgb_image(analysis_image_path)
+    if prepared_image.shape[:2] != (analysis_height, analysis_width):
+        raise TextAuditInputError(
+            "Prepared VLM image dimensions do not match its metadata"
+        )
+    return (
+        analysis_width,
+        analysis_height,
+        analysis_width / source_width,
+        analysis_height / source_height,
+    )
 
 
 def _validate_image_and_mask(original_img: np.ndarray, raw_mask: np.ndarray) -> None:
@@ -306,14 +357,6 @@ class UIVLMTextAuditor:
                 )
 
         schema = _strict_response_schema()
-        user_prompt = (
-            f"原图尺寸：{image_width}x{image_height}。\n"
-            "Stage A OCR 候选格式：[ID, Text, BBox(x,y,width,height)]。\n\n"
-            f"候选列表：\n{_compact_candidates(texts)}\n\n"
-            "请完成语义审计，并逐个检查所有道具卡槽右下角的数量角标。\n"
-            "Required JSON Schema:\n"
-            f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
-        )
         client = self.client or _create_default_client(self.model)
         if prepare_analysis_input is None:
             raise TextAuditClientError(
@@ -323,12 +366,36 @@ class UIVLMTextAuditor:
             with tempfile.TemporaryDirectory(prefix="ui-text-audit-") as temp_dir:
                 analysis_image = Path(temp_dir) / "analysis.png"
                 metadata_path = Path(temp_dir) / "analysis.metadata.json"
-                prepare_analysis_input(
+                metadata = prepare_analysis_input(
                     image_path,
                     analysis_image,
                     metadata_path,
                     max_width=DEFAULT_MAX_IMAGE_WIDTH,
                     force_width=True,
+                )
+                (
+                    analysis_width,
+                    analysis_height,
+                    scale_x,
+                    scale_y,
+                ) = _validate_analysis_input(
+                    analysis_image,
+                    metadata,
+                    image_width,
+                    image_height,
+                )
+                user_prompt = (
+                    f"原图尺寸：{image_width}x{image_height}。\n"
+                    f"VLM 分析图尺寸：{analysis_width}x{analysis_height}。\n"
+                    "Stage A OCR 候选格式：[ID, Text, "
+                    "BBox(x,y,width,height)]。BBox 已换算为分析图像素坐标。\n"
+                    "text_corrections.bbox_norm 必须使用原图归一化坐标。\n\n"
+                    "候选列表：\n"
+                    f"{_compact_candidates(texts, scale_x, scale_y)}\n\n"
+                    "请完成语义审计，并逐个检查所有道具卡槽右下角的"
+                    "数量角标。\n"
+                    "Required JSON Schema:\n"
+                    f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
                 )
                 payload = client.infer_json(
                     image_path=analysis_image,

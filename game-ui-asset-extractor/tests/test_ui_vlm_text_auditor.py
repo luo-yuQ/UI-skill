@@ -215,6 +215,10 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     assert call["image_format"] == "PNG"
     assert "逐个检查" in SYSTEM_PROMPT
     assert "HERO" in call["user_prompt"]
+    assert "VLM 分析图尺寸：1024x768" in call["user_prompt"]
+    assert '[text_000, "HERO", (64,64,192,128)]' in call["user_prompt"]
+    assert "BBox 已换算为分析图像素坐标" in call["user_prompt"]
+    assert "bbox_norm 必须使用原图归一化坐标" in call["user_prompt"]
     assert "fontFamily" not in call["user_prompt"].split("Required JSON Schema:")[0]
     assert "text_corrections" in call["response_schema"]["required"]
     correction_schema = call["response_schema"]["$defs"]["TextCorrection"]
