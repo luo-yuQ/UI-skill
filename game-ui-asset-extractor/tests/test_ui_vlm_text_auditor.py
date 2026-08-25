@@ -9,17 +9,35 @@ import cv2
 import numpy as np
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPTS_DIR))
 
-from ui_audit_models import TextAuditResult  # noqa: E402
+from ui_audit_models import TextAuditResult, TextCorrection, TextItem  # noqa: E402
 from ui_vlm_text_auditor import (  # noqa: E402
+    SYSTEM_PROMPT,
     TextAuditClientError,
     TextAuditResponseError,
     UIRasterTextProcessor,
+    UIVLMTextAuditor,
 )
+
+
+IMAGE_WIDTH = 160
+IMAGE_HEIGHT = 120
+
+
+def _style(font_family: str = "Arial") -> dict[str, Any]:
+    return {
+        "fontFamily": font_family,
+        "fontSize": 18,
+        "color": "#FFFFFF",
+        "fontWeight": 700,
+        "strokeColor": "#1e2322",
+        "strokeWidth": 1,
+    }
 
 
 def _stage_a_items() -> list[dict[str, Any]]:
@@ -28,40 +46,68 @@ def _stage_a_items() -> list[dict[str, Any]]:
             "id": "text_000",
             "text": "HERO",
             "confidence": 0.99,
-            "rect": {"x": 10, "y": 15, "width": 50, "height": 25},
-            "style": {"fontFamily": "Arial", "fontSize": 20},
+            "rect": {"x": 10, "y": 10, "width": 30, "height": 20},
+            "style": _style(),
             "mask_mode": "estimated_glyphs",
         },
         {
             "id": "text_001",
             "text": "$99.99",
             "confidence": 0.98,
-            "rect": {"x": 90, "y": 15, "width": 60, "height": 25},
-            "style": {"fontFamily": "Arial", "fontSize": 20},
+            "rect": {"x": 60, "y": 10, "width": 40, "height": 20},
+            "style": _style(),
             "mask_mode": "estimated_glyphs",
         },
         {
             "id": "text_002",
             "text": "176+",
             "confidence": 0.97,
-            "rect": {"x": 90, "y": 60, "width": 70, "height": 25},
-            "style": {"fontFamily": "Arial", "fontSize": 20},
+            "rect": {"x": 20, "y": 50, "width": 80, "height": 20},
+            "style": _style(),
             "mask_mode": "estimated_glyphs",
         },
     ]
 
 
-def _audit_payload() -> dict[str, Any]:
+def _text_items() -> list[TextItem]:
+    return [TextItem.model_validate(item) for item in _stage_a_items()]
+
+
+def _audit_payload(*, include_corrections: bool = True) -> dict[str, Any]:
+    corrections = []
+    if include_corrections:
+        corrections = [
+            {
+                "text": "7",
+                "bbox_norm": [110 / IMAGE_WIDTH, 80 / IMAGE_HEIGHT,
+                              118 / IMAGE_WIDTH, 92 / IMAGE_HEIGHT],
+                "confidence": 0.95,
+                "estimated_role": "slot_count",
+            },
+            {
+                "text": "1",
+                "bbox_norm": [130 / IMAGE_WIDTH, 80 / IMAGE_HEIGHT,
+                              136 / IMAGE_WIDTH, 92 / IMAGE_HEIGHT],
+                "confidence": 0.95,
+                "estimated_role": "slot_count",
+            },
+        ]
     return {
-        "scene_summary": "Store UI with a team logo, price, and currency value.",
+        "scene_summary": "Store and inventory UI with a team logo.",
         "raster_text_ids": ["text_000"],
         "editable_texts": [
             {"id": "text_001", "text": "$99.99", "role": "button_label"},
             {"id": "text_002", "text": "176", "role": "value"},
         ],
         "stripped_symbols": [
-            {"source_text_id": "text_002", "symbol": "+", "role": "button"}
+            {
+                "source_text_id": "text_002",
+                "symbol": "+",
+                "role": "button",
+                "estimated_bbox_norm": None,
+            }
         ],
+        "text_corrections": corrections,
     }
 
 
@@ -73,6 +119,7 @@ class FakeVLMClient:
 
     def infer_json(
         self,
+        *,
         image_path: Path,
         system_prompt: str,
         user_prompt: str,
@@ -95,22 +142,47 @@ class FakeVLMClient:
         return self.response
 
 
-def _write_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
-    image_path = tmp_path / "source.png"
-    image_rgb = np.full((100, 200, 3), (70, 110, 150), dtype=np.uint8)
-    image_rgb[20:35, 20:50] = (230, 30, 30)
-    image_rgb[20:35, 100:140] = (245, 245, 245)
-    image_rgb[65:80, 100:130] = (245, 245, 245)
-    image_rgb[65:80, 150:158] = (245, 245, 245)
-    Image.fromarray(image_rgb, mode="RGB").save(image_path)
+def _make_arrays() -> tuple[np.ndarray, np.ndarray]:
+    image = np.full(
+        (IMAGE_HEIGHT, IMAGE_WIDTH, 3),
+        (70, 110, 150),
+        dtype=np.uint8,
+    )
+    raw_mask = np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH), dtype=np.uint8)
 
-    texts_json = tmp_path / "texts.json"
+    image[12:28, 12:38] = (230, 30, 30)
+    raw_mask[12:28, 12:38] = 255
+
+    image[12:28, 62:98] = (245, 245, 245)
+    raw_mask[12:28, 62:98] = 255
+
+    image[53:67, 24:65] = (245, 245, 245)
+    raw_mask[53:67, 24:65] = 255
+
+    image[59:62, 80:94] = (245, 245, 245)
+    image[54:68, 85:89] = (245, 245, 245)
+    raw_mask[59:62, 80:94] = 255
+    raw_mask[54:68, 85:89] = 255
+
+    image[80:92, 110:118] = (245, 245, 245)
+    image[80:92, 130:136] = (245, 245, 245)
+    return image, raw_mask
+
+
+def _write_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
+    image, raw_mask = _make_arrays()
+    image_path = tmp_path / "source.png"
+    success, encoded = cv2.imencode(".png", cv2.cvtColor(image, cv2.COLOR_RGB2BGR))
+    assert success
+    encoded.tofile(image_path)
+
+    texts_path = tmp_path / "texts.json"
     items = _stage_a_items()
-    texts_json.write_text(
+    texts_path.write_text(
         json.dumps(
             {
-                "image_width": 200,
-                "image_height": 100,
+                "image_width": IMAGE_WIDTH,
+                "image_height": IMAGE_HEIGHT,
                 "count": len(items),
                 "items": items,
             },
@@ -118,121 +190,134 @@ def _write_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
         ),
         encoding="utf-8",
     )
-
-    raw_mask = np.zeros((100, 200), dtype=np.uint8)
-    raw_mask[20:35, 20:50] = 255
-    raw_mask[20:35, 100:140] = 255
-    raw_mask[65:80, 100:130] = 255
-    raw_mask[65:80, 150:158] = 255
-    raw_mask_path = tmp_path / "raw_text_mask.png"
-    assert cv2.imwrite(str(raw_mask_path), raw_mask)
-    return image_path, texts_json, raw_mask_path
+    mask_path = tmp_path / "raw_text_mask.png"
+    success, encoded = cv2.imencode(".png", raw_mask)
+    assert success
+    encoded.tofile(mask_path)
+    return image_path, texts_path, mask_path
 
 
-def test_audit_parses_pydantic_and_classifies_raster_and_editable(
-    tmp_path: Path,
-) -> None:
-    image_path, texts_json, _ = _write_inputs(tmp_path)
+def test_data_contract_rejects_invalid_normalized_bbox() -> None:
+    with pytest.raises(ValidationError, match="x0 < x1"):
+        TextCorrection(text="7", bbox_norm=[0.5, 0.2, 0.4, 0.3])
+
+
+def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
     client = FakeVLMClient()
 
-    result = UIRasterTextProcessor(client=client).audit(image_path, texts_json)
+    result = UIVLMTextAuditor(client=client).audit(image_path, texts_path)
 
     assert isinstance(result, TextAuditResult)
-    assert result.raster_text_ids == ["text_000"]
-    editable = {item.id: item.text for item in result.editable_texts}
-    assert editable == {"text_001": "$99.99", "text_002": "176"}
-    assert result.stripped_symbols[0].symbol == "+"
-    assert client.calls[0]["image_size"] == (1024, 512)
-    assert client.calls[0]["image_format"] == "PNG"
-    assert "HERO" in client.calls[0]["system_prompt"]
-    assert '"text": "$99.99"' in client.calls[0]["user_prompt"]
-    symbol_schema = client.calls[0]["response_schema"]["$defs"]["StrippedSymbol"]
-    assert "role" in symbol_schema["required"]
-    assert "default" not in symbol_schema["properties"]["role"]
+    assert [item.text for item in result.text_corrections] == ["7", "1"]
+    call = client.calls[0]
+    assert call["image_size"] == (1024, 768)
+    assert call["image_format"] == "PNG"
+    assert "逐个检查" in SYSTEM_PROMPT
+    assert "HERO" in call["user_prompt"]
+    assert "fontFamily" not in call["user_prompt"].split("Required JSON Schema:")[0]
+    assert "text_corrections" in call["response_schema"]["required"]
+    correction_schema = call["response_schema"]["$defs"]["TextCorrection"]
+    assert set(correction_schema["required"]) == {
+        "text", "bbox_norm", "confidence", "estimated_role"
+    }
 
 
-def test_mask_difference_protects_raster_region(tmp_path: Path) -> None:
-    image_path, texts_json, raw_mask_path = _write_inputs(tmp_path)
-    image = np.asarray(Image.open(image_path).convert("RGB"))
-    raw_mask = cv2.imread(str(raw_mask_path), cv2.IMREAD_GRAYSCALE)
-    result = TextAuditResult.model_validate(_audit_payload())
+def test_raster_mask_is_removed_and_original_pixels_are_preserved() -> None:
+    image, raw_mask = _make_arrays()
+    result = TextAuditResult.model_validate(_audit_payload(include_corrections=False))
 
-    _, final_mask = UIRasterTextProcessor().filter_mask_and_inpaint(
-        image, raw_mask, texts_json, result
+    cleaned, final_mask, _ = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image, raw_mask, _text_items(), result
     )
 
-    assert np.all(final_mask[15:40, 10:60] == 0)
-    assert np.all(final_mask[20:35, 100:140] == 255)
+    assert np.all(final_mask[10:31, 10:41] == 0)
+    assert np.array_equal(cleaned[12:28, 12:38], image[12:28, 12:38])
+    assert not np.array_equal(cleaned[12:28, 62:98], image[12:28, 62:98])
 
 
-def test_symbol_component_is_removed_but_numeric_components_remain(
-    tmp_path: Path,
-) -> None:
-    image_path, texts_json, raw_mask_path = _write_inputs(tmp_path)
-    image = np.asarray(Image.open(image_path).convert("RGB"))
-    raw_mask = cv2.imread(str(raw_mask_path), cv2.IMREAD_GRAYSCALE)
+def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
+    image, raw_mask = _make_arrays()
     result = TextAuditResult.model_validate(_audit_payload())
 
-    _, final_mask = UIRasterTextProcessor().filter_mask_and_inpaint(
-        image, raw_mask, texts_json, result
+    _, final_mask, unified = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image, raw_mask, _text_items(), result
     )
 
-    assert np.all(final_mask[65:80, 150:158] == 0)
-    assert np.all(final_mask[65:80, 100:130] == 255)
+    assert np.all(final_mask[79:94, 109:120] == 255)
+    assert np.all(final_mask[79:94, 129:138] == 255)
+    assert [item.id for item in unified] == [
+        "text_001", "text_002", "text_corr_001", "text_corr_002"
+    ]
+    assert [item.text for item in unified[-2:]] == ["7", "1"]
+    assert unified[-1].style.fontFamily == "Microsoft YaHei"
+    assert unified[-1].style.fontSize >= 8
 
 
-def test_inpaint_preserves_raster_pixels_and_fills_editable_text(
-    tmp_path: Path,
-) -> None:
-    image_path, texts_json, raw_mask_path = _write_inputs(tmp_path)
-    image = np.asarray(Image.open(image_path).convert("RGB"))
-    raw_mask = cv2.imread(str(raw_mask_path), cv2.IMREAD_GRAYSCALE)
-    result = TextAuditResult.model_validate(_audit_payload())
+def test_stripped_plus_connected_component_is_protected() -> None:
+    image, raw_mask = _make_arrays()
+    result = TextAuditResult.model_validate(_audit_payload(include_corrections=False))
 
-    cleaned, _ = UIRasterTextProcessor().filter_mask_and_inpaint(
-        image, raw_mask, texts_json, result
+    _, final_mask, _ = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image, raw_mask, _text_items(), result
     )
 
-    assert cleaned.shape == image.shape
-    assert np.array_equal(cleaned[20:35, 20:50], image[20:35, 20:50])
-    assert not np.array_equal(cleaned[20:35, 100:140], image[20:35, 100:140])
-    background = np.array([70, 110, 150])
-    original_error = np.abs(image[27, 120].astype(int) - background).sum()
-    cleaned_error = np.abs(cleaned[27, 120].astype(int) - background).sum()
-    assert cleaned_error < original_error
+    assert np.all(final_mask[59:62, 80:94] == 0)
+    assert np.all(final_mask[54:68, 85:89] == 0)
+    assert np.all(final_mask[53:67, 24:65] == 255)
 
 
-def test_process_exports_all_artifacts_and_filtered_texts(tmp_path: Path) -> None:
-    image_path, texts_json, raw_mask_path = _write_inputs(tmp_path)
+def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> None:
+    image_path, texts_path, mask_path = _write_inputs(tmp_path)
     output_dir = tmp_path / "stage_b"
 
     result = UIRasterTextProcessor(client=FakeVLMClient()).process(
-        image_path, texts_json, raw_mask_path, output_dir
+        image_path, texts_path, mask_path, output_dir
     )
 
-    assert result.raster_text_ids == ["text_000"]
-    expected = {
+    assert len(result.text_corrections) == 2
+    assert {path.name for path in output_dir.iterdir()} == {
         "audit_result.json",
         "final_inpaint_mask.png",
         "cleaned_image.png",
         "filtered_texts.json",
     }
-    assert {path.name for path in output_dir.iterdir()} == expected
     filtered = json.loads((output_dir / "filtered_texts.json").read_text("utf-8"))
-    assert filtered["count"] == 2
-    assert [item["id"] for item in filtered["items"]] == ["text_001", "text_002"]
-    assert filtered["items"][1]["text"] == "176"
+    assert filtered["count"] == 4
+    assert [item["id"] for item in filtered["items"]][-2:] == [
+        "text_corr_001", "text_corr_002"
+    ]
+    assert filtered["items"][-2]["text"] == "7"
+    final_mask = cv2.imread(
+        str(output_dir / "final_inpaint_mask.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert final_mask is not None
+    assert np.all(final_mask[79:94, 109:120] == 255)
+
+
+def test_empty_ocr_and_empty_corrections_are_safe() -> None:
+    image = np.full((20, 30, 3), 80, dtype=np.uint8)
+    raw_mask = np.zeros((20, 30), dtype=np.uint8)
+    result = TextAuditResult(scene_summary="Empty UI")
+
+    cleaned, final_mask, unified = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image, raw_mask, [], result
+    )
+
+    assert np.array_equal(cleaned, image)
+    assert np.array_equal(final_mask, raw_mask)
+    assert unified == []
 
 
 def test_invalid_json_and_network_failures_are_wrapped(tmp_path: Path) -> None:
-    image_path, texts_json, _ = _write_inputs(tmp_path)
+    image_path, texts_path, _ = _write_inputs(tmp_path)
 
     with pytest.raises(TextAuditResponseError, match="Invalid VLM audit response"):
-        UIRasterTextProcessor(client=FakeVLMClient(response="not-json")).audit(
-            image_path, texts_json
+        UIVLMTextAuditor(client=FakeVLMClient(response="not-json")).audit(
+            image_path, texts_path
         )
 
     with pytest.raises(TextAuditClientError, match="relay unavailable"):
-        UIRasterTextProcessor(
+        UIVLMTextAuditor(
             client=FakeVLMClient(error=ConnectionError("relay unavailable"))
-        ).audit(image_path, texts_json)
+        ).audit(image_path, texts_path)
