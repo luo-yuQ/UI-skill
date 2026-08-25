@@ -177,9 +177,21 @@ def test_planner_uses_dual_image_order_and_dehydrated_texts(tmp_path: Path) -> N
 class _FakeHTTPResponse:
     def __init__(self) -> None:
         self.text = json.dumps({"output_text": json.dumps(_plan_payload())})
+        self.status_code = 200
+        self.headers = {"Content-Type": "text/event-stream"}
 
     def raise_for_status(self) -> None:
         return None
+
+    def iter_lines(self, decode_unicode: bool = False) -> Any:
+        model_json = json.dumps(_plan_payload())
+        midpoint = len(model_json) // 2
+        for delta in (model_json[:midpoint], model_json[midpoint:]):
+            event = json.dumps(
+                {"type": "response.output_text.delta", "delta": delta}
+            )
+            yield f"data: {event}" if decode_unicode else f"data: {event}".encode()
+        yield "data: [DONE]" if decode_unicode else b"data: [DONE]"
 
     def json(self) -> dict[str, Any]:
         raise AssertionError("client must parse the captured response.text directly")
@@ -232,7 +244,8 @@ def test_openai_compatible_client_sends_two_base64_images_in_order(
     assert request["url"] == "https://relay.example/v1/responses"
     assert request["json"]["temperature"] == 0.1
     assert request["json"]["top_p"] == 1
-    assert "stream" not in request["json"]
+    assert request["json"]["stream"] is True
+    assert request["stream"] is True
     content = request["json"]["input"][0]["content"]
     assert len([item for item in content if item["type"] == "input_text"]) == 1
     image_urls = [item["image_url"] for item in content if item["type"] == "input_image"]
@@ -253,6 +266,7 @@ def test_dual_images_are_independently_downscaled_to_1024_webp(
     client = OpenAICompatibleVLMClient(
         base_url="https://relay.example/v1",
         api_key="secret",
+        use_streaming=False,
         session=session,
     )
 
@@ -298,6 +312,7 @@ def test_client_recovers_unescaped_json_from_malformed_relay_envelope(
     client = OpenAICompatibleVLMClient(
         base_url="https://relay.example/v1",
         api_key="secret",
+        use_streaming=False,
         session=session,
     )
 

@@ -27,7 +27,7 @@ except ModuleNotFoundError:  # pragma: no cover - production-only dependency gua
 
 
 DEFAULT_MODEL = "gpt-5.6-terra"
-DEFAULT_TIMEOUT = 60.0
+DEFAULT_TIMEOUT = 300.0
 DEFAULT_MAX_OUTPUT_TOKENS = 4000
 TEMPERATURE = 0.1
 DUAL_IMAGE_MAX_WIDTH = 1024
@@ -356,6 +356,58 @@ def _extract_response_text(response: Any) -> str:
     raise PlannerResponseError("VLM response contains no assistant output text")
 
 
+def _extract_sse_response_text(response: Any) -> str:
+    """Collect model text from a Responses API SSE stream."""
+
+    deltas: list[str] = []
+    completed_response: dict[str, Any] | None = None
+    try:
+        lines = response.iter_lines(decode_unicode=True)
+        for raw_line in lines:
+            if isinstance(raw_line, bytes):
+                line = raw_line.decode("utf-8", errors="replace")
+            else:
+                line = str(raw_line or "")
+            if not line.startswith("data:"):
+                continue
+            data = line[5:].strip()
+            if not data or data == "[DONE]":
+                continue
+            try:
+                event = json.loads(data)
+            except json.JSONDecodeError as exc:
+                raise PlannerResponseError("VLM SSE event is not valid JSON") from exc
+            if not isinstance(event, dict):
+                continue
+            event_type = event.get("type")
+            if event_type == "response.output_text.delta" and isinstance(
+                event.get("delta"), str
+            ):
+                deltas.append(event["delta"])
+            elif event_type == "response.completed" and isinstance(
+                event.get("response"), dict
+            ):
+                completed_response = event["response"]
+            elif event_type in {"error", "response.failed"}:
+                detail = event.get("error") or event.get("response") or event
+                raise PlannerClientError(
+                    "VLM stream failed: "
+                    + json.dumps(detail, ensure_ascii=False, separators=(",", ":"))[:1000]
+                )
+    except (PlannerClientError, PlannerResponseError):
+        raise
+    except Exception as exc:
+        raise PlannerClientError(
+            f"VLM stream interrupted: {type(exc).__name__}: {exc}"
+        ) from exc
+
+    if deltas:
+        return "".join(deltas)
+    if completed_response is not None:
+        return _extract_response_text(completed_response)
+    raise PlannerResponseError("VLM SSE stream contains no assistant output text")
+
+
 _UNESCAPED_OUTPUT_TEXT_PATTERN = re.compile(
     r'"type"\s*:\s*"output_text"\s*,\s*"text"\s*:\s*"'
 )
@@ -398,6 +450,7 @@ class OpenAICompatibleVLMClient:
         model: str = DEFAULT_MODEL,
         timeout: float = DEFAULT_TIMEOUT,
         image_mode: Literal["dual", "composite"] = "dual",
+        use_streaming: bool = True,
         session: Any | None = None,
     ) -> None:
         if timeout <= 0:
@@ -415,6 +468,7 @@ class OpenAICompatibleVLMClient:
         self.model = model
         self.timeout = timeout
         self.image_mode = image_mode
+        self.use_streaming = use_streaming
         self.session = session
 
     def infer_json(
@@ -476,11 +530,14 @@ class OpenAICompatibleVLMClient:
                 }
             ],
             "max_output_tokens": DEFAULT_MAX_OUTPUT_TOKENS,
+            "stream": self.use_streaming,
         }
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": (
+                "text/event-stream" if self.use_streaming else "application/json"
+            ),
             "Accept-Encoding": "identity",
             "User-Agent": "UIVLMPlanner/1.0",
         }
@@ -490,10 +547,26 @@ class OpenAICompatibleVLMClient:
                 headers=headers,
                 json=payload,
                 timeout=self.timeout,
+                stream=self.use_streaming,
             )
             response.raise_for_status()
         except Exception as exc:
-            raise PlannerClientError(f"VLM request failed: {type(exc).__name__}") from exc
+            response_body = getattr(locals().get("response"), "text", "")
+            detail = response_body.strip()[:1000] if isinstance(response_body, str) else ""
+            suffix = f": {detail}" if detail else ""
+            raise PlannerClientError(
+                f"VLM request failed: {type(exc).__name__}{suffix}"
+            ) from exc
+
+        if self.use_streaming:
+            response_text = _extract_sse_response_text(response).strip()
+            try:
+                result = json.loads(response_text)
+            except json.JSONDecodeError as exc:
+                raise PlannerResponseError("VLM output is not pure valid JSON") from exc
+            if not isinstance(result, dict):
+                raise PlannerResponseError("VLM output JSON must be an object")
+            return result
 
         raw_response_body = getattr(response, "text", "")
         if not isinstance(raw_response_body, str) or not raw_response_body.strip():
