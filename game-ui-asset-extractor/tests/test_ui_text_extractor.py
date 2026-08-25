@@ -133,7 +133,50 @@ def test_mask_mode_switches_between_estimated_and_coarse() -> None:
     assert estimated_mode == "estimated_glyphs"
     assert np.count_nonzero(estimated) < estimated.size
     assert coarse_mode == "coarse"
-    assert np.all(coarse == 255)
+    assert np.count_nonzero(coarse) < coarse.size
+    assert np.all(coarse[:4] == 0)
+    assert np.all(coarse[16:] == 0)
+    assert np.all(coarse[4:16, 1:39] == 255)
+
+
+def test_relaxed_coverage_keeps_small_and_dense_otsu_glyph_masks() -> None:
+    background = np.array([30, 30, 30], dtype=np.float32)
+
+    small = np.full((100, 100, 3), 30, dtype=np.uint8)
+    small[45:54, 45:54] = 220
+    small_mask, small_mode = UITextExtractor._extract_glyph_mask(
+        small,
+        background,
+    )
+
+    dense = np.full((20, 100, 3), 30, dtype=np.uint8)
+    dense[:, 10:89] = 220
+    dense_mask, dense_mode = UITextExtractor._extract_glyph_mask(
+        dense,
+        background,
+    )
+
+    assert UITextExtractor.MIN_GLYPH_COVERAGE == 0.008
+    assert UITextExtractor.MAX_GLYPH_COVERAGE == 0.80
+    assert small_mode == "estimated_glyphs"
+    assert np.count_nonzero(small_mask) == 81
+    assert dense_mode == "estimated_glyphs"
+    assert np.count_nonzero(dense_mask) == 1580
+
+
+def test_coarse_long_text_fallback_is_inset_center_band() -> None:
+    crop = np.full((20, 200, 3), 30, dtype=np.uint8)
+    background = np.array([30, 30, 30], dtype=np.float32)
+
+    mask, mode = UITextExtractor._extract_glyph_mask(crop, background)
+
+    assert mode == "coarse"
+    assert np.all(mask[:4] == 0)
+    assert np.all(mask[16:] == 0)
+    assert np.all(mask[4:16, :4] == 0)
+    assert np.all(mask[4:16, 196:] == 0)
+    assert np.all(mask[4:16, 4:196] == 255)
+    assert np.count_nonzero(mask) / mask.size < 0.60
 
 
 def test_single_chinese_uses_larger_elliptical_dilation() -> None:

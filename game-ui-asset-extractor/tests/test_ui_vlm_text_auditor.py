@@ -244,12 +244,14 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
     image, raw_mask = _make_arrays()
     result = TextAuditResult.model_validate(_audit_payload())
 
-    _, final_mask, unified = UIVLMTextAuditor().filter_mask_and_inpaint(
+    cleaned, final_mask, unified = UIVLMTextAuditor().filter_mask_and_inpaint(
         image, raw_mask, _text_items(), result
     )
 
-    assert np.all(final_mask[79:94, 109:120] == 255)
-    assert np.all(final_mask[79:94, 129:138] == 255)
+    assert np.all(final_mask[77:96, 107:122] == 255)
+    assert np.all(final_mask[77:96, 127:140] == 255)
+    assert np.all(final_mask[80:92, 110:118] == 255)
+    np.testing.assert_allclose(cleaned[86, 114], [70, 110, 150], atol=4)
     assert [item.id for item in unified] == [
         "text_001", "text_002", "text_corr_001", "text_corr_002"
     ]
@@ -296,7 +298,7 @@ def test_process_exports_four_artifacts_and_correction_items(tmp_path: Path) -> 
         str(output_dir / "final_inpaint_mask.png"), cv2.IMREAD_GRAYSCALE
     )
     assert final_mask is not None
-    assert np.all(final_mask[79:94, 109:120] == 255)
+    assert np.all(final_mask[77:96, 107:122] == 255)
 
 
 def test_empty_ocr_and_empty_corrections_are_safe() -> None:
@@ -311,6 +313,29 @@ def test_empty_ocr_and_empty_corrections_are_safe() -> None:
     assert np.array_equal(cleaned, image)
     assert np.array_equal(final_mask, raw_mask)
     assert unified == []
+
+
+def test_correction_padding_clamps_safely_at_image_edge() -> None:
+    image = np.full((20, 30, 3), 80, dtype=np.uint8)
+    raw_mask = np.zeros((20, 30), dtype=np.uint8)
+    result = TextAuditResult(
+        scene_summary="Edge digit",
+        text_corrections=[
+            TextCorrection(text="1", bbox_norm=[0.98, 0.90, 1.0, 1.0])
+        ],
+    )
+
+    _, final_mask, unified = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image, raw_mask, [], result
+    )
+
+    assert np.all(final_mask[15:20, 26:30] == 255)
+    assert unified[0].rect.model_dump() == {
+        "x": 26,
+        "y": 15,
+        "width": 4,
+        "height": 5,
+    }
 
 
 def test_invalid_json_and_network_failures_are_wrapped(tmp_path: Path) -> None:

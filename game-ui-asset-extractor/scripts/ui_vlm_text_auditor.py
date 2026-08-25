@@ -303,22 +303,18 @@ def _correction_pixel_rect(
     bbox_norm: list[float],
     image_width: int,
     image_height: int,
-    *,
-    dilate: bool,
 ) -> tuple[int, int, int, int]:
     x0 = int(round(bbox_norm[0] * image_width))
     y0 = int(round(bbox_norm[1] * image_height))
     x1 = int(round(bbox_norm[2] * image_width))
     y1 = int(round(bbox_norm[3] * image_height))
-    if dilate:
-        x0 -= 1
-        y0 -= 1
-        x1 += 1
-        y1 += 1
-    x0 = min(image_width - 1, max(0, x0))
-    y0 = min(image_height - 1, max(0, y0))
-    x1 = min(image_width, max(x0 + 1, x1))
-    y1 = min(image_height, max(y0 + 1, y1))
+
+    pad_x = max(3, int(round((x1 - x0) * 0.25)))
+    pad_y = max(3, int(round((y1 - y0) * 0.25)))
+    x0 = max(0, x0 - pad_x)
+    y0 = max(0, y0 - pad_y)
+    x1 = min(image_width, x1 + pad_x)
+    y1 = min(image_height, y1 + pad_y)
     return x0, y0, x1, y1
 
 
@@ -492,7 +488,6 @@ class UIVLMTextAuditor:
                 correction.bbox_norm,
                 image_width,
                 image_height,
-                dilate=True,
             )
             cv2.rectangle(final_mask, (x0, y0), (x1, y1), 255, -1)
             correction_rects.append((x0, y0, x1, y1))

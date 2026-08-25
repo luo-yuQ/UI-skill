@@ -51,8 +51,8 @@ class UITextExtractor:
     RAPIDOCR_BOX_THRESH = 0.5
     RAPIDOCR_UNCLIP_RATIO = 1.6
     VERTICAL_ASPECT_RATIO = 2.4
-    MIN_GLYPH_COVERAGE = 0.015
-    MAX_GLYPH_COVERAGE = 0.68
+    MIN_GLYPH_COVERAGE = 0.008
+    MAX_GLYPH_COVERAGE = 0.80
 
     def __init__(self, ocr_engine: OCREngine | None = None) -> None:
         self._ocr_call_kwargs: dict[str, float] = {}
@@ -399,7 +399,7 @@ class UITextExtractor:
         scaled_distance = np.clip(3.0 * distance, 0, 255).astype(np.uint8)
         allowed_distances = scaled_distance[allowed]
         if allowed_distances.size == 0:
-            return np.full(crop_rgb.shape[:2], 255, dtype=np.uint8), "coarse"
+            return cls._build_coarse_fallback_mask(allowed), "coarse"
         otsu_threshold, _ = cv2.threshold(
             allowed_distances,
             0,
@@ -415,8 +415,26 @@ class UITextExtractor:
 
         coverage = float(np.count_nonzero(mask)) / float(mask.size)
         if coverage < cls.MIN_GLYPH_COVERAGE or coverage > cls.MAX_GLYPH_COVERAGE:
-            return np.full(mask.shape, 255, dtype=np.uint8), "coarse"
+            return cls._build_coarse_fallback_mask(allowed), "coarse"
         return mask, "estimated_glyphs"
+
+    @staticmethod
+    def _build_coarse_fallback_mask(allowed: np.ndarray) -> np.ndarray:
+        """Return a centered safe band instead of a destructive solid rectangle."""
+
+        allowed_bool = allowed.astype(bool, copy=False)
+        height, width = allowed_bool.shape
+        fallback = np.zeros((height, width), dtype=np.uint8)
+        band_height = max(1, int(round(height * 0.60)))
+        y0 = max(0, (height - band_height) // 2)
+        y1 = min(height, y0 + band_height)
+        horizontal_inset = max(1, int(round(width * 0.02))) if width > 2 else 0
+        x0 = min(width, horizontal_inset)
+        x1 = max(x0, width - horizontal_inset)
+        fallback[y0:y1, x0:x1] = 255
+        if np.any(allowed_bool):
+            fallback[~allowed_bool] = 0
+        return fallback
 
     @classmethod
     def _extract_candidate_glyphs(
