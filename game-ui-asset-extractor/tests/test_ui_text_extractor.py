@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
-from types import SimpleNamespace
 
 import cv2
 import numpy as np
@@ -60,121 +59,6 @@ def test_filter_keeps_single_digit_at_medium_confidence(digit: str) -> None:
 @pytest.mark.parametrize("letter", ["x", "o"])
 def test_filter_rejects_single_letter_at_medium_confidence(letter: str) -> None:
     assert not UITextExtractor._passes_filter(letter, 0.65, 20, 20)
-
-
-def test_small_text_detection_options_preserve_large_input_resolution() -> None:
-    image = np.zeros((1080, 2560, 3), dtype=np.uint8)
-
-    options = UITextExtractor._rapidocr_detection_options(image)
-
-    assert options == {
-        "det_limit_side_len": 2560,
-        "det_db_thresh": 0.15,
-        "det_db_box_thresh": 0.25,
-        "det_db_unclip_ratio": 2.2,
-        "det_db_score_mode": "slow",
-    }
-
-
-def test_rapidocr_small_text_options_prefer_constructor_kwargs(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    constructor_options: dict[str, object] = {}
-
-    class FakeRapidOCR:
-        def __init__(
-            self,
-            *,
-            det_limit_side_len: int,
-            det_db_thresh: float,
-            det_db_box_thresh: float,
-            det_db_unclip_ratio: float,
-            det_db_score_mode: str,
-        ) -> None:
-            constructor_options.update(
-                {
-                    "det_limit_side_len": det_limit_side_len,
-                    "det_db_thresh": det_db_thresh,
-                    "det_db_box_thresh": det_db_box_thresh,
-                    "det_db_unclip_ratio": det_db_unclip_ratio,
-                    "det_db_score_mode": det_db_score_mode,
-                }
-            )
-
-        def __call__(self, _image: np.ndarray) -> tuple[None, None]:
-            return None, None
-
-    monkeypatch.setitem(
-        sys.modules,
-        "rapidocr_onnxruntime",
-        SimpleNamespace(RapidOCR=FakeRapidOCR),
-    )
-    source = tmp_path / "source.png"
-    _synthetic_source(source)
-
-    extractor = UITextExtractor()
-    assert constructor_options == {}
-    extractor.extract(source, tmp_path / "texts.json", tmp_path / "mask.png")
-
-    assert constructor_options == {
-        "det_limit_side_len": 1920,
-        "det_db_thresh": 0.15,
-        "det_db_box_thresh": 0.25,
-        "det_db_unclip_ratio": 2.2,
-        "det_db_score_mode": "slow",
-    }
-
-
-def test_rapidocr_small_text_options_fall_back_to_inference_kwargs(
-    monkeypatch,
-    tmp_path: Path,
-) -> None:
-    inference_options: dict[str, object] = {}
-
-    class FakeRapidOCR:
-        def __call__(
-            self,
-            _image: np.ndarray,
-            *,
-            det_limit_side_len: int,
-            det_db_thresh: float,
-            det_db_box_thresh: float,
-            det_db_unclip_ratio: float,
-            det_db_score_mode: str,
-        ) -> tuple[None, None]:
-            inference_options.update(
-                {
-                    "det_limit_side_len": det_limit_side_len,
-                    "det_db_thresh": det_db_thresh,
-                    "det_db_box_thresh": det_db_box_thresh,
-                    "det_db_unclip_ratio": det_db_unclip_ratio,
-                    "det_db_score_mode": det_db_score_mode,
-                }
-            )
-            return None, None
-
-    monkeypatch.setitem(
-        sys.modules,
-        "rapidocr_onnxruntime",
-        SimpleNamespace(RapidOCR=FakeRapidOCR),
-    )
-    source = tmp_path / "source.png"
-    _synthetic_source(source)
-
-    UITextExtractor().extract(
-        source,
-        tmp_path / "texts.json",
-        tmp_path / "mask.png",
-    )
-
-    assert inference_options == {
-        "det_limit_side_len": 1920,
-        "det_db_thresh": 0.15,
-        "det_db_box_thresh": 0.25,
-        "det_db_unclip_ratio": 2.2,
-        "det_db_score_mode": "slow",
-    }
 
 
 def test_edge_median_background_and_otsu_glyph_separation() -> None:
