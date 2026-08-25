@@ -51,6 +51,16 @@ def test_filter_rejects_low_letter_and_vertical_decoration() -> None:
     assert not UITextExtractor._passes_filter("按钮", 0.34, 40, 20)
 
 
+@pytest.mark.parametrize("digit", ["1", "7", "2"])
+def test_filter_keeps_single_digit_at_medium_confidence(digit: str) -> None:
+    assert UITextExtractor._passes_filter(digit, 0.65, 5, 20)
+
+
+@pytest.mark.parametrize("letter", ["x", "o"])
+def test_filter_rejects_single_letter_at_medium_confidence(letter: str) -> None:
+    assert not UITextExtractor._passes_filter(letter, 0.65, 20, 20)
+
+
 def test_edge_median_background_and_otsu_glyph_separation() -> None:
     crop = np.full((24, 40, 3), [18, 34, 50], dtype=np.uint8)
     crop[8:16, 10:30] = [210, 100, 70]

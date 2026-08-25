@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import inspect
 import json
 import math
 import sys
@@ -47,11 +48,14 @@ class UITextExtractor:
 
     MIN_CONFIDENCE = 0.35
     LOW_CONFIDENCE = 0.85
+    RAPIDOCR_BOX_THRESH = 0.5
+    RAPIDOCR_UNCLIP_RATIO = 1.6
     VERTICAL_ASPECT_RATIO = 2.4
     MIN_GLYPH_COVERAGE = 0.015
     MAX_GLYPH_COVERAGE = 0.68
 
     def __init__(self, ocr_engine: OCREngine | None = None) -> None:
+        self._ocr_call_kwargs: dict[str, float] = {}
         if ocr_engine is not None:
             self._ocr = ocr_engine
             return
@@ -62,7 +66,21 @@ class UITextExtractor:
                 "rapidocr-onnxruntime is required for real OCR; inject a "
                 "RapidOCR-compatible callable for tests."
             ) from exc
-        self._ocr = RapidOCR()
+        detection_options = {
+            "box_thresh": self.RAPIDOCR_BOX_THRESH,
+            "unclip_ratio": self.RAPIDOCR_UNCLIP_RATIO,
+        }
+        init_kwargs = self._supported_kwargs(RapidOCR, detection_options)
+        self._ocr = RapidOCR(**init_kwargs)
+        remaining_options = {
+            name: value
+            for name, value in detection_options.items()
+            if name not in init_kwargs
+        }
+        self._ocr_call_kwargs = self._supported_kwargs(
+            self._ocr,
+            remaining_options,
+        )
 
     def extract(
         self,
@@ -77,7 +95,7 @@ class UITextExtractor:
         source_path = Path(image_path)
         image_bgr = self._read_image(source_path)
         try:
-            raw_output = self._ocr(image_bgr)
+            raw_output = self._ocr(image_bgr, **self._ocr_call_kwargs)
         except Exception as exc:
             raise RuntimeError(f"OCR failed for {source_path}: {exc}") from exc
 
@@ -212,6 +230,27 @@ class UITextExtractor:
             cls._write_image(output_debug, debug_image)
 
     @staticmethod
+    def _supported_kwargs(
+        target: Callable[..., Any],
+        options: dict[str, float],
+    ) -> dict[str, float]:
+        """Return RapidOCR tuning options accepted by a callable's signature."""
+
+        try:
+            parameters = inspect.signature(target).parameters.values()
+        except (TypeError, ValueError):
+            return {}
+        if any(parameter.kind is inspect.Parameter.VAR_KEYWORD for parameter in parameters):
+            return dict(options)
+        accepted_names = {
+            parameter.name
+            for parameter in parameters
+            if parameter.kind
+            in (inspect.Parameter.POSITIONAL_OR_KEYWORD, inspect.Parameter.KEYWORD_ONLY)
+        }
+        return {name: value for name, value in options.items() if name in accepted_names}
+
+    @staticmethod
     def _read_image(path: Path) -> np.ndarray:
         """Read a BGR image from a Unicode-safe path."""
 
@@ -286,6 +325,8 @@ class UITextExtractor:
 
         if confidence < cls.MIN_CONFIDENCE:
             return False
+        if text.isdigit():
+            return True
         single_latin = len(text) == 1 and text.isascii() and text.isalpha()
         if confidence < cls.LOW_CONFIDENCE and single_latin:
             return False
