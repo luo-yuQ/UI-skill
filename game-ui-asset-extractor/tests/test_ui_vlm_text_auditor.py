@@ -191,6 +191,32 @@ def _make_arrays() -> tuple[np.ndarray, np.ndarray]:
     return image, raw_mask
 
 
+def _make_boundary_digit_image() -> tuple[np.ndarray, np.ndarray]:
+    background = np.array([65, 95, 130], dtype=np.uint8)
+    image = np.full((60, 90, 3), background, dtype=np.uint8)
+    cv2.putText(
+        image,
+        "4",
+        (36, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (20, 20, 20),
+        3,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        image,
+        "4",
+        (36, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (245, 245, 245),
+        1,
+        cv2.LINE_AA,
+    )
+    return image, background
+
+
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
     image, raw_mask = _make_arrays()
     image_path = tmp_path / "source.png"
@@ -336,29 +362,22 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
     assert unified[-1].style.fontSize >= 8
 
 
-def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox() -> None:
+def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     height, width = 60, 90
-    background = np.array([65, 95, 130], dtype=np.uint8)
-    image = np.full((height, width, 3), background, dtype=np.uint8)
-    cv2.putText(
-        image,
-        "4",
-        (36, 40),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.72,
-        (20, 20, 20),
-        3,
-        cv2.LINE_AA,
-    )
-    cv2.putText(
-        image,
-        "4",
-        (36, 40),
-        cv2.FONT_HERSHEY_SIMPLEX,
-        0.72,
-        (245, 245, 245),
-        1,
-        cv2.LINE_AA,
+    image, background = _make_boundary_digit_image()
+    expansion_hits: list[set[str]] = []
+    original_expand = auditor_module._expand_slot_count_search_rect
+
+    def track_expansion(*args: Any, **kwargs: Any) -> tuple[int, int, int, int]:
+        expansion_hits.append(set(args[1]))
+        return original_expand(*args, **kwargs)
+
+    monkeypatch.setattr(
+        auditor_module,
+        "_expand_slot_count_search_rect",
+        track_expansion,
     )
     correction = TextCorrection(
         text="4",
@@ -384,6 +403,101 @@ def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox() -> None:
     assert np.any(outside_tight_digit)
     assert np.all(final_mask[outside_tight_digit] == 255)
     assert np.count_nonzero(final_mask) < 0.30 * final_mask.size
+    assert 1 <= len(expansion_hits) <= auditor_module.SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
+    assert all("right" in hits for hits in expansion_hits)
+
+
+def test_slot_count_boundary_detection_expands_left_direction(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    height, width = 60, 90
+    source, background = _make_boundary_digit_image()
+    image = np.ascontiguousarray(source[:, ::-1])
+    expansion_hits: list[set[str]] = []
+    original_expand = auditor_module._expand_slot_count_search_rect
+
+    def track_expansion(*args: Any, **kwargs: Any) -> tuple[int, int, int, int]:
+        expansion_hits.append(set(args[1]))
+        return original_expand(*args, **kwargs)
+
+    monkeypatch.setattr(
+        auditor_module,
+        "_expand_slot_count_search_rect",
+        track_expansion,
+    )
+    mask = auditor_module._build_slot_count_glyph_mask(
+        image,
+        (47, 22, 49, 42),
+        [47 / width, 22 / height, 49 / width, 42 / height],
+    )
+
+    digit_pixels = np.any(image != background, axis=2)
+    assert np.all(mask[digit_pixels] == 255)
+    assert 1 <= len(expansion_hits) <= auditor_module.SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
+    assert all("left" in hits for hits in expansion_hits)
+
+
+def test_complete_slot_count_does_not_expand_search_roi(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image, _ = _make_boundary_digit_image()
+
+    def reject_expansion(*args: Any, **kwargs: Any) -> tuple[int, int, int, int]:
+        raise AssertionError("complete glyph triggered boundary expansion")
+
+    monkeypatch.setattr(
+        auditor_module,
+        "_expand_slot_count_search_rect",
+        reject_expansion,
+    )
+    mask = auditor_module._build_slot_count_glyph_mask(
+        image,
+        (34, 20, 54, 45),
+        [34 / 90, 20 / 60, 54 / 90, 45 / 60],
+    )
+
+    assert np.count_nonzero(mask) > 0
+
+
+def test_slot_count_boundary_expansion_has_fixed_iteration_limit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = np.full((80, 180, 3), 80, dtype=np.uint8)
+    tight_rect = (80, 25, 82, 45)
+    search_rects: list[tuple[int, int, int, int]] = []
+
+    def always_touch_right(
+        original_img: np.ndarray,
+        current_tight_rect: tuple[int, int, int, int],
+        padded_rect: tuple[int, int, int, int],
+        *,
+        association_iterations: int = 3,
+        boundary_hits: set[str] | None = None,
+    ) -> np.ndarray:
+        del current_tight_rect, association_iterations
+        if boundary_hits is not None:
+            search_rects.append(padded_rect)
+            boundary_hits.add("right")
+        return np.zeros(original_img.shape[:2], dtype=np.uint8)
+
+    monkeypatch.setattr(
+        auditor_module,
+        "_build_correction_glyph_mask",
+        always_touch_right,
+    )
+    auditor_module._build_slot_count_glyph_mask(
+        image,
+        tight_rect,
+        [80 / 180, 25 / 80, 82 / 180, 45 / 80],
+    )
+
+    initial_rect = auditor_module._slot_count_search_rect(tight_rect, 180, 80)
+    extra = max(2, round((tight_rect[3] - tight_rect[1]) * 0.10))
+    assert len(search_rects) == 1 + auditor_module.SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
+    assert search_rects[-1][2] == initial_rect[2] + extra * 2
+    assert search_rects[-1][0:2] == initial_rect[0:2]
+    assert search_rects[-1][3] == initial_rect[3]
+    assert search_rects[-1][2] - search_rects[-1][0] < image.shape[1] // 3
 
 
 def test_non_slot_correction_does_not_use_slot_count_refinement(

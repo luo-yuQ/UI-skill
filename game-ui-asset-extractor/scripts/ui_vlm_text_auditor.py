@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import copy
 import json
+import logging
 import os
 import sys
 import tempfile
@@ -23,7 +24,9 @@ from ui_text_models import Rect as StageATextRect
 
 DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_MAX_IMAGE_WIDTH = 1024
+SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS = 2
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+LOGGER = logging.getLogger(__name__)
 
 ANALYZER_SCRIPTS_DIR = (
     Path(__file__).resolve().parents[2] / "game-ui-asset-analyzer" / "scripts"
@@ -365,6 +368,24 @@ def _slot_count_search_rect(
     )
 
 
+def _expand_slot_count_search_rect(
+    search_rect: tuple[int, int, int, int],
+    boundary_hits: set[str],
+    extra: int,
+    image_width: int,
+    image_height: int,
+) -> tuple[int, int, int, int]:
+    """Expand only truncated sides of a slot-count search rectangle."""
+
+    x0, y0, x1, y1 = search_rect
+    return (
+        max(0, x0 - extra) if "left" in boundary_hits else x0,
+        max(0, y0 - extra) if "top" in boundary_hits else y0,
+        min(image_width, x1 + extra) if "right" in boundary_hits else x1,
+        min(image_height, y1 + extra) if "bottom" in boundary_hits else y1,
+    )
+
+
 def _normalize_feature(feature: np.ndarray) -> np.ndarray:
     """Robustly scale a non-negative local image feature to uint8."""
 
@@ -380,6 +401,7 @@ def _build_correction_glyph_mask(
     padded_rect: tuple[int, int, int, int],
     *,
     association_iterations: int = 3,
+    boundary_hits: set[str] | None = None,
 ) -> np.ndarray:
     """Extract correction glyphs and their halo inside a padded local ROI."""
 
@@ -438,6 +460,7 @@ def _build_correction_glyph_mask(
         iterations=association_iterations,
     ).astype(bool)
     roi_area = roi_height * roi_width
+    boundary_margin = max(1, min(2, int(round((ty1 - ty0) * 0.10))))
     for label in range(1, component_count):
         component = labels == label
         if not np.any(component & associated_core):
@@ -447,13 +470,26 @@ def _build_correction_glyph_mask(
         width = int(stats[label, cv2.CC_STAT_WIDTH])
         height = int(stats[label, cv2.CC_STAT_HEIGHT])
         area = int(stats[label, cv2.CC_STAT_AREA])
+        if area > 0.60 * roi_area:
+            continue
+        component_boundary_hits: set[str] = set()
+        if left <= boundary_margin:
+            component_boundary_hits.add("left")
+        if top <= boundary_margin:
+            component_boundary_hits.add("top")
+        if roi_width - (left + width) <= boundary_margin:
+            component_boundary_hits.add("right")
+        if roi_height - (top + height) <= boundary_margin:
+            component_boundary_hits.add("bottom")
+        if boundary_hits is not None:
+            boundary_hits.update(component_boundary_hits)
         touches_border = (
             left == 0
             or top == 0
             or left + width >= roi_width
             or top + height >= roi_height
         )
-        if touches_border or area > 0.60 * roi_area:
+        if touches_border:
             continue
         selected[component] = 255
 
@@ -470,6 +506,16 @@ def _build_correction_glyph_mask(
     halo_radius = 2 if min(tight_width, tight_height) <= 8 else 3
     halo_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
     selected = cv2.dilate(selected, halo_kernel, iterations=halo_radius)
+    if boundary_hits is not None:
+        edge_band = boundary_margin + 1
+        if np.any(selected[:, :edge_band]):
+            boundary_hits.add("left")
+        if np.any(selected[:edge_band, :]):
+            boundary_hits.add("top")
+        if np.any(selected[:, -edge_band:]):
+            boundary_hits.add("right")
+        if np.any(selected[-edge_band:, :]):
+            boundary_hits.add("bottom")
     full_mask = np.zeros((image_height, image_width), dtype=np.uint8)
     full_mask[py0:py1, px0:px1] = selected
     return full_mask
@@ -490,12 +536,36 @@ def _build_slot_count_glyph_mask(
     )
     glyph_height = max(1, tight_rect[3] - tight_rect[1])
     association_iterations = max(3, min(8, int(round(glyph_height * 0.40))))
-    refined_mask = _build_correction_glyph_mask(
-        original_img,
-        tight_rect,
-        search_rect,
-        association_iterations=association_iterations,
-    )
+    expansion_extra = max(2, int(round(glyph_height * 0.10)))
+    expansion_count = 0
+    detected_boundaries: set[str] = set()
+    while True:
+        current_boundary_hits: set[str] = set()
+        refined_mask = _build_correction_glyph_mask(
+            original_img,
+            tight_rect,
+            search_rect,
+            association_iterations=association_iterations,
+            boundary_hits=current_boundary_hits,
+        )
+        detected_boundaries.update(current_boundary_hits)
+        if (
+            not current_boundary_hits
+            or expansion_count >= SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
+        ):
+            break
+        expanded_rect = _expand_slot_count_search_rect(
+            search_rect,
+            current_boundary_hits,
+            expansion_extra,
+            image_width,
+            image_height,
+        )
+        if expanded_rect == search_rect:
+            break
+        search_rect = expanded_rect
+        expansion_count += 1
+
     # Preserve the previous, conservative correction path as a fallback near
     # image/slot edges where a larger ROI can change connected components.
     conservative_mask = _build_correction_glyph_mask(
@@ -503,7 +573,28 @@ def _build_slot_count_glyph_mask(
         tight_rect,
         _correction_pixel_rect(bbox_norm, image_width, image_height),
     )
-    return cv2.bitwise_or(refined_mask, conservative_mask)
+    final_mask = cv2.bitwise_or(refined_mask, conservative_mask)
+    mask_y, mask_x = np.nonzero(final_mask)
+    final_mask_rect = (
+        None
+        if mask_x.size == 0
+        else (
+            int(mask_x.min()),
+            int(mask_y.min()),
+            int(mask_x.max()) + 1,
+            int(mask_y.max()) + 1,
+        )
+    )
+    LOGGER.debug(
+        "slot_count mask refinement tight_bbox=%s search_roi=%s "
+        "boundary_hits=%s expansions=%d final_mask_bbox=%s",
+        tight_rect,
+        search_rect,
+        sorted(detected_boundaries),
+        expansion_count,
+        final_mask_rect,
+    )
+    return final_mask
 
 
 def _rebuild_unsafe_stage_a_masks(
