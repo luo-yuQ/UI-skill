@@ -156,6 +156,31 @@ class FakeVLMClient:
         return self.response
 
 
+class SequencedVLMClient:
+    def __init__(self, outcomes: list[Any]) -> None:
+        self.outcomes = list(outcomes)
+        self.calls: list[dict[str, Any]] = []
+
+    def infer_json(self, **kwargs: Any) -> Any:
+        self.calls.append(kwargs)
+        outcome = self.outcomes.pop(0)
+        if isinstance(outcome, BaseException):
+            raise outcome
+        return outcome
+
+
+def _model_json_parse_error(payload: str) -> BaseException:
+    try:
+        json.loads(payload)
+    except json.JSONDecodeError as cause:
+        error = auditor_module.VLMResponseParseError(
+            "model response is not valid JSON"
+        )
+        error.__cause__ = cause
+        return error
+    raise AssertionError("test payload must be invalid JSON")
+
+
 def _make_arrays() -> tuple[np.ndarray, np.ndarray]:
     image = np.full(
         (IMAGE_HEIGHT, IMAGE_WIDTH, 3),
@@ -302,6 +327,60 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     assert set(correction_schema["required"]) == {
         "text", "bbox_norm", "confidence", "estimated_role"
     }
+    assert len(client.calls) == 1
+
+
+def test_json_parse_failure_retries_once_and_uses_second_result(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    second_payload = _audit_payload(include_corrections=False)
+    second_payload["scene_summary"] = "Second response succeeded."
+    client = SequencedVLMClient(
+        [_model_json_parse_error('{"scene_summary":'), second_payload]
+    )
+    caplog.set_level("WARNING", logger=auditor_module.__name__)
+
+    result = UIVLMTextAuditor(client=client).audit(image_path, texts_path)
+
+    assert len(client.calls) == 2
+    assert result.scene_summary == "Second response succeeded."
+    assert "retrying audit once" in caplog.text
+    assert "parse_attempts=1/2" in caplog.text
+    assert "line=1" in caplog.text
+    assert "column=" in caplog.text
+    assert "char=" in caplog.text
+
+
+def test_two_json_parse_failures_raise_after_exactly_two_requests(
+    tmp_path: Path,
+) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    client = SequencedVLMClient(["{", '{"scene_summary":'])
+
+    with pytest.raises(
+        TextAuditClientError,
+        match=(
+            r"vlm_response_parse_error: model response is not valid JSON; "
+            r"parse_attempts=2/2.*line=1.*column=.*char="
+        ),
+    ):
+        UIVLMTextAuditor(client=client).audit(image_path, texts_path)
+
+    assert len(client.calls) == 2
+
+
+def test_schema_failure_after_valid_json_does_not_trigger_parse_retry(
+    tmp_path: Path,
+) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    client = SequencedVLMClient([{"unexpected": True}, _audit_payload()])
+
+    with pytest.raises(TextAuditResponseError, match="Invalid VLM audit response"):
+        UIVLMTextAuditor(client=client).audit(image_path, texts_path)
+
+    assert len(client.calls) == 1
 
 
 def test_raster_mask_is_removed_and_original_pixels_are_preserved() -> None:
@@ -668,12 +747,8 @@ def test_correction_padding_clamps_safely_at_image_edge() -> None:
 def test_invalid_json_and_network_failures_are_wrapped(tmp_path: Path) -> None:
     image_path, texts_path, _ = _write_inputs(tmp_path)
 
-    with pytest.raises(TextAuditResponseError, match="Invalid VLM audit response"):
-        UIVLMTextAuditor(client=FakeVLMClient(response="not-json")).audit(
-            image_path, texts_path
-        )
-
+    network_client = FakeVLMClient(error=ConnectionError("relay unavailable"))
     with pytest.raises(TextAuditClientError, match="relay unavailable"):
-        UIVLMTextAuditor(
-            client=FakeVLMClient(error=ConnectionError("relay unavailable"))
-        ).audit(image_path, texts_path)
+        UIVLMTextAuditor(client=network_client).audit(image_path, texts_path)
+
+    assert len(network_client.calls) == 1

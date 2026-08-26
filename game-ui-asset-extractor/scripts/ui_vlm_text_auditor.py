@@ -41,11 +41,15 @@ try:
     from vlm_client import (  # type: ignore[import-not-found]
         ResponsesAPIVLMClient,
         VLMClientConfig,
+        VLMResponseParseError,
     )
 except ImportError:  # pragma: no cover - only relevant to incomplete deployments
     prepare_analysis_input = None
     ResponsesAPIVLMClient = None
     VLMClientConfig = None
+
+    class VLMResponseParseError(RuntimeError):
+        """Fallback type used only when the repository client is unavailable."""
 
 
 SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉排版与美术资产审计专家。你的任务是对输入的原始 UI 截图及 Stage A 提取的 OCR 文本候选列表进行严格的语义审计与漏检补齐。
@@ -222,6 +226,73 @@ def _create_default_client(model: str) -> VLMClient:
         timeout=timeout,
     )
     return ResponsesAPIVLMClient(config)
+
+
+def _json_decode_error_detail(error: BaseException) -> str:
+    """Return safe parser coordinates from an exception's cause chain."""
+
+    current: BaseException | None = error
+    while current is not None:
+        if isinstance(current, json.JSONDecodeError):
+            return (
+                f"msg={current.msg!r}; line={current.lineno}; "
+                f"column={current.colno}; char={current.pos}"
+            )
+        current = current.__cause__
+    return ""
+
+
+def _is_retryable_json_parse_error(error: BaseException) -> bool:
+    """Limit audit retries to malformed model-output JSON syntax."""
+
+    if isinstance(error, json.JSONDecodeError):
+        return True
+    return isinstance(error, VLMResponseParseError) and (
+        "model response is not valid JSON" in str(error)
+    )
+
+
+def _infer_audit_payload_with_parse_retry(
+    client: VLMClient,
+    *,
+    image_path: Path,
+    system_prompt: str,
+    user_prompt: str,
+    response_schema: dict[str, Any],
+) -> Any:
+    """Retry one complete audit request after malformed model-output JSON."""
+
+    for parse_attempt in range(1, 3):
+        try:
+            payload = client.infer_json(
+                image_path=image_path,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                response_schema=response_schema,
+            )
+            # Production clients return a decoded object. Keep compatibility
+            # with injected clients that expose the raw model output string.
+            if isinstance(payload, str):
+                json.loads(payload)
+            return payload
+        except (json.JSONDecodeError, VLMResponseParseError) as exc:
+            if not _is_retryable_json_parse_error(exc):
+                raise
+            parser_detail = _json_decode_error_detail(exc)
+            detail_suffix = f"; {parser_detail}" if parser_detail else ""
+            if parse_attempt == 1:
+                LOGGER.warning(
+                    "VLM response JSON parse failed; retrying audit once; "
+                    "parse_attempts=1/2%s",
+                    detail_suffix,
+                )
+                continue
+            raise TextAuditClientError(
+                "vlm_response_parse_error: model response is not valid JSON; "
+                f"parse_attempts=2/2{detail_suffix}"
+            ) from exc
+
+    raise AssertionError("audit parse retry loop exhausted without a result")
 
 
 def _compact_candidates(
@@ -717,7 +788,8 @@ class UIVLMTextAuditor:
                     "Required JSON Schema:\n"
                     f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
                 )
-                payload = client.infer_json(
+                payload = _infer_audit_payload_with_parse_retry(
+                    client,
                     image_path=analysis_image,
                     system_prompt=SYSTEM_PROMPT,
                     user_prompt=user_prompt,
