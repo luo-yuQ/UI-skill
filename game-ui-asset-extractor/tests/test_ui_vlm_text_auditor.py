@@ -307,6 +307,17 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     assert call["image_format"] == "PNG"
     assert "空间依附载体 + 艺术特征" in SYSTEM_PROMPT
     assert "条件 A (道具与箱体贴图内嵌字)" in SYSTEM_PROMPT
+    assert "查看畅玩池" not in SYSTEM_PROMPT
+    assert "visual carrier > 文字语义 > OCR 推测 role" in SYSTEM_PROMPT
+    assert "item artwork 内嵌文字的视觉载体优先级高于" in SYSTEM_PROMPT
+    assert "货币" in SYSTEM_PROMPT
+    assert "复杂底板上无法安全分离的文字" in SYSTEM_PROMPT
+    assert "明显渐变、复杂高光、材质纹理" in SYSTEM_PROMPT
+    assert "button_label 只有在按钮底板平滑" in SYSTEM_PROMPT
+    assert "轻微渐变或缓慢颜色变化" in SYSTEM_PROMPT
+    assert "slot_count 始终作为可编辑数量文字处理" in SYSTEM_PROMPT
+    assert "不确定时优先保留原始像素" in SYSTEM_PROMPT
+    assert "When uncertain, preserve" in SYSTEM_PROMPT
     assert "自左向右、自上而下" in SYSTEM_PROMPT
     assert "推断实际行数和列数" in SYSTEM_PROMPT
     assert "不得预设固定网格尺寸" in SYSTEM_PROMPT
