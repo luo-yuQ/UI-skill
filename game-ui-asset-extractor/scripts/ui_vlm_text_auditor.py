@@ -60,9 +60,9 @@ SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉排版与美术资产审
 3. 复合按键符号剥离 (stripped_symbols):
    若 OCR 将数值与相邻操作按钮合并识别（如 "176+"），将 "+" 剥离至 stripped_symbols (role="button")，数值 "176" 放入 editable_texts。
 
-4. 5x4 网格角标全覆盖补漏 (text_corrections - 核心重点):
-   必须严格按照“自左向右、自上而下”的顺序，逐行扫描 5x4 道具网格中的每一个卡槽。
-   只要卡槽右下角肉眼可见白色堆叠数量（如 7, 1, 2, 4 等）且未在 OCR 列表中出现的，必须在 text_corrections 中 100% 补齐并输出其归一化紧凑包围盒 bbox_norm [x0, y0, x1, y1] (0.0~1.0)。
+4. 重复道具网格角标补漏 (text_corrections - 核心重点):
+   背包或道具网格的各个卡槽可能在一致的角落显示容易被 OCR 漏检的小型可编辑数量数字。必须从图像推断实际行数和列数，不得预设固定网格尺寸，并按“自左向右、自上而下”的顺序独立检查每个可见卡槽。
+   仅当卡槽角落肉眼可见数量数字（如 7, 1, 2, 4 等）且未在 OCR 列表中出现时，才在 text_corrections 中补齐并输出其归一化紧凑包围盒 bbox_norm [x0, y0, x1, y1] (0.0~1.0)。不得为空卡槽或没有可见数字证据的卡槽编造数量。
 
 请严格返回符合 JSON Schema 的纯 JSON，严禁输出任何 Markdown 标记或多余解释。"""
 
@@ -340,6 +340,31 @@ def _tight_correction_pixel_rect(
     return x0, y0, x1, y1
 
 
+def _slot_count_search_rect(
+    tight_rect: tuple[int, int, int, int],
+    image_width: int,
+    image_height: int,
+) -> tuple[int, int, int, int]:
+    """Expand a rough slot-count box into a small, clamped search ROI.
+
+    Quantity boxes returned by the VLM can cover only a narrow stroke. Use the
+    glyph height, rather than that unreliable width, to search for the rest of
+    the digit. The expanded rectangle is only a search window; it is never
+    filled directly into the inpaint mask.
+    """
+
+    x0, y0, x1, y1 = tight_rect
+    glyph_height = max(1, y1 - y0)
+    horizontal_pad = max(4, int(round(glyph_height * 0.55)))
+    vertical_pad = max(3, int(round(glyph_height * 0.30)))
+    return (
+        max(0, x0 - horizontal_pad),
+        max(0, y0 - vertical_pad),
+        min(image_width, x1 + horizontal_pad),
+        min(image_height, y1 + vertical_pad),
+    )
+
+
 def _normalize_feature(feature: np.ndarray) -> np.ndarray:
     """Robustly scale a non-negative local image feature to uint8."""
 
@@ -353,6 +378,8 @@ def _build_correction_glyph_mask(
     original_img: np.ndarray,
     tight_rect: tuple[int, int, int, int],
     padded_rect: tuple[int, int, int, int],
+    *,
+    association_iterations: int = 3,
 ) -> np.ndarray:
     """Extract correction glyphs and their halo inside a padded local ROI."""
 
@@ -408,7 +435,7 @@ def _build_correction_glyph_mask(
     associated_core = cv2.dilate(
         local_core.astype(np.uint8),
         association_kernel,
-        iterations=3,
+        iterations=association_iterations,
     ).astype(bool)
     roi_area = roi_height * roi_width
     for label in range(1, component_count):
@@ -446,6 +473,37 @@ def _build_correction_glyph_mask(
     full_mask = np.zeros((image_height, image_width), dtype=np.uint8)
     full_mask[py0:py1, px0:px1] = selected
     return full_mask
+
+
+def _build_slot_count_glyph_mask(
+    original_img: np.ndarray,
+    tight_rect: tuple[int, int, int, int],
+    bbox_norm: list[float],
+) -> np.ndarray:
+    """Refine one roughly located inventory quantity into a glyph-only mask."""
+
+    image_height, image_width = original_img.shape[:2]
+    search_rect = _slot_count_search_rect(
+        tight_rect,
+        image_width,
+        image_height,
+    )
+    glyph_height = max(1, tight_rect[3] - tight_rect[1])
+    association_iterations = max(3, min(8, int(round(glyph_height * 0.40))))
+    refined_mask = _build_correction_glyph_mask(
+        original_img,
+        tight_rect,
+        search_rect,
+        association_iterations=association_iterations,
+    )
+    # Preserve the previous, conservative correction path as a fallback near
+    # image/slot edges where a larger ROI can change connected components.
+    conservative_mask = _build_correction_glyph_mask(
+        original_img,
+        tight_rect,
+        _correction_pixel_rect(bbox_norm, image_width, image_height),
+    )
+    return cv2.bitwise_or(refined_mask, conservative_mask)
 
 
 def _rebuild_unsafe_stage_a_masks(
@@ -562,8 +620,9 @@ class UIVLMTextAuditor:
                     "text_corrections.bbox_norm 必须使用原图归一化坐标。\n\n"
                     "候选列表：\n"
                     f"{_compact_candidates(texts, scale_x, scale_y)}\n\n"
-                    "请完成语义审计，并逐个检查所有道具卡槽右下角的"
-                    "数量角标。\n"
+                    "请完成语义审计。先从图像推断重复道具网格的实际行列数，"
+                    "不得假设固定尺寸；再逐个检查每个可见卡槽角落是否存在"
+                    "有明确视觉证据但被 OCR 漏检的数量数字。\n"
                     "Required JSON Schema:\n"
                     f"{json.dumps(schema, ensure_ascii=False, separators=(',', ':'))}"
                 )
@@ -677,16 +736,23 @@ class UIVLMTextAuditor:
                 image_width,
                 image_height,
             )
-            x0, y0, x1, y1 = _correction_pixel_rect(
-                correction.bbox_norm,
-                image_width,
-                image_height,
-            )
-            correction_mask = _build_correction_glyph_mask(
-                original_img,
-                tight_rect,
-                (x0, y0, x1, y1),
-            )
+            if correction.estimated_role.strip().casefold() == "slot_count":
+                correction_mask = _build_slot_count_glyph_mask(
+                    original_img,
+                    tight_rect,
+                    correction.bbox_norm,
+                )
+            else:
+                padded_rect = _correction_pixel_rect(
+                    correction.bbox_norm,
+                    image_width,
+                    image_height,
+                )
+                correction_mask = _build_correction_glyph_mask(
+                    original_img,
+                    tight_rect,
+                    padded_rect,
+                )
             final_mask = cv2.bitwise_or(final_mask, correction_mask)
             correction_rects.append(tight_rect)
 

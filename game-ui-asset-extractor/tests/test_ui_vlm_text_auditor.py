@@ -22,6 +22,7 @@ from ui_audit_models import (  # noqa: E402
     TextItem,
     TextStyle,
 )
+import ui_vlm_text_auditor as auditor_module  # noqa: E402
 from ui_vlm_text_auditor import (  # noqa: E402
     SYSTEM_PROMPT,
     TextAuditClientError,
@@ -256,6 +257,14 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     assert "空间依附载体 + 艺术特征" in SYSTEM_PROMPT
     assert "条件 A (道具与箱体贴图内嵌字)" in SYSTEM_PROMPT
     assert "自左向右、自上而下" in SYSTEM_PROMPT
+    assert "推断实际行数和列数" in SYSTEM_PROMPT
+    assert "不得预设固定网格尺寸" in SYSTEM_PROMPT
+    assert "没有可见数字证据" in SYSTEM_PROMPT
+    all_prompt_text = f"{SYSTEM_PROMPT}\n{call['user_prompt']}"
+    assert "5x4" not in all_prompt_text.casefold()
+    assert "5×4" not in all_prompt_text
+    assert "20 slots" not in all_prompt_text.casefold()
+    assert "20 item slots" not in all_prompt_text.casefold()
     assert "英雄" in call["user_prompt"]
     assert "VLM 分析图尺寸：1024x768" in call["user_prompt"]
     assert '[text_000, "英雄", (64,64,192,128)]' in call["user_prompt"]
@@ -325,6 +334,90 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
     assert [item.text for item in unified[-3:]] == ["7", "1", "2"]
     assert unified[-1].style.fontFamily == "Microsoft YaHei"
     assert unified[-1].style.fontSize >= 8
+
+
+def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox() -> None:
+    height, width = 60, 90
+    background = np.array([65, 95, 130], dtype=np.uint8)
+    image = np.full((height, width, 3), background, dtype=np.uint8)
+    cv2.putText(
+        image,
+        "4",
+        (36, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (20, 20, 20),
+        3,
+        cv2.LINE_AA,
+    )
+    cv2.putText(
+        image,
+        "4",
+        (36, 40),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.72,
+        (245, 245, 245),
+        1,
+        cv2.LINE_AA,
+    )
+    correction = TextCorrection(
+        text="4",
+        bbox_norm=[41 / width, 22 / height, 43 / width, 42 / height],
+        estimated_role="slot_count",
+    )
+    result = TextAuditResult(
+        scene_summary="Inventory quantity",
+        text_corrections=[correction],
+    )
+
+    _, final_mask, _ = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image,
+        np.zeros((height, width), dtype=np.uint8),
+        [],
+        result,
+    )
+
+    digit_pixels = np.any(image != background, axis=2)
+    tight_pixels = np.zeros((height, width), dtype=bool)
+    tight_pixels[22:42, 41:43] = True
+    outside_tight_digit = digit_pixels & ~tight_pixels
+    assert np.any(outside_tight_digit)
+    assert np.all(final_mask[outside_tight_digit] == 255)
+    assert np.count_nonzero(final_mask) < 0.30 * final_mask.size
+
+
+def test_non_slot_correction_does_not_use_slot_count_refinement(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = np.full((30, 50, 3), 80, dtype=np.uint8)
+    result = TextAuditResult(
+        scene_summary="Missed title",
+        text_corrections=[
+            TextCorrection(
+                text="A",
+                bbox_norm=[0.20, 0.20, 0.32, 0.60],
+                estimated_role="title",
+            )
+        ],
+    )
+
+    def reject_slot_count_path(*args: Any, **kwargs: Any) -> np.ndarray:
+        raise AssertionError("ordinary correction used slot-count refinement")
+
+    monkeypatch.setattr(
+        auditor_module,
+        "_build_slot_count_glyph_mask",
+        reject_slot_count_path,
+    )
+
+    _, final_mask, _ = UIVLMTextAuditor().filter_mask_and_inpaint(
+        image,
+        np.zeros((30, 50), dtype=np.uint8),
+        [],
+        result,
+    )
+
+    assert np.count_nonzero(final_mask) > 0
 
 
 def test_stripped_plus_connected_component_is_protected() -> None:
