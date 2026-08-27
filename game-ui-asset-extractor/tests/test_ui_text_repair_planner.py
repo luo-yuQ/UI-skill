@@ -21,6 +21,8 @@ from ui_text_extractor import UITextExtractor  # noqa: E402
 from ui_text_repair_planner import (  # noqa: E402
     COVERAGE_SYSTEM_PROMPT,
     AnalysisBBox,
+    CoarseMaskRefinementResult,
+    MaskMetrics,
     RepairTextCandidate,
     SEMANTIC_ROLE_TO_DECISION,
     SYSTEM_PROMPT,
@@ -31,11 +33,13 @@ from ui_text_repair_planner import (  # noqa: E402
     VLMCoverageAuditResponse,
     VLMTextDecisionResponse,
     _validate_complete_classification,
+    _small_text_failure_reason,
     build_union_text_mask,
     decision_for_semantic_role,
     normalize_and_deduplicate_corrections,
     normalize_ocr_candidates,
     refine_coarse_text_mask,
+    refine_coarse_text_mask_with_diagnostics,
     validate_and_map_analysis_bbox,
 )
 
@@ -403,8 +407,13 @@ def test_coarse_remove_enters_union_only_after_successful_refine(
     refined[12:16, 20:36] = 255
     monkeypatch.setattr(
         planner_module,
-        "refine_coarse_text_mask",
-        lambda _image, _item: refined.copy(),
+        "refine_coarse_text_mask_with_diagnostics",
+        lambda _image, _item: CoarseMaskRefinementResult(
+            mask=refined.copy(),
+            path="standard_coarse_refine",
+            failure_reason=None,
+            metrics=None,
+        ),
     )
     monkeypatch.setattr(
         UITextExtractor,
@@ -432,11 +441,23 @@ def test_failed_coarse_refine_and_preserve_items_never_enter_union(
     image = np.zeros((32, 80, 3), dtype=np.uint8)
     calls: list[str] = []
 
-    def failed_refine(_image: np.ndarray, item: TextItem) -> None:
+    def failed_refine(
+        _image: np.ndarray,
+        item: TextItem,
+    ) -> CoarseMaskRefinementResult:
         calls.append(item.id)
-        return None
+        return CoarseMaskRefinementResult(
+            mask=None,
+            path="failed",
+            failure_reason="no_reliable_candidate",
+            metrics=None,
+        )
 
-    monkeypatch.setattr(planner_module, "refine_coarse_text_mask", failed_refine)
+    monkeypatch.setattr(
+        planner_module,
+        "refine_coarse_text_mask_with_diagnostics",
+        failed_refine,
+    )
     failed_union, failed_document = build_union_text_mask(
         image,
         [_coarse_item()],
@@ -502,11 +523,14 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
 
     assert rebuilt_ids == ["4,5"]
     assert [item.id for item in result.decisions] == ["text_000", "text_001"]
-    assert result.schema_version == "0.3"
+    assert result.schema_version == "0.4"
     assert result.decisions[0].semantic_role == "button_label"
     assert result.decisions[0].decision == "remove_for_background_repair"
     assert result.decisions[0].source == "ocr"
     assert result.decisions[0].mask_quality == "native"
+    assert result.decisions[0].mask_refinement_path == "native"
+    assert result.decisions[0].mask_failure_reason is None
+    assert result.decisions[0].mask_metrics is None
     assert result.decisions[1].semantic_role == "embedded_in_artwork"
     assert result.decisions[1].decision == "preserve_as_visual_asset"
     assert {path.name for path in output_dir.iterdir()} == {
@@ -751,8 +775,15 @@ def test_correction_is_merged_before_semantic_classification_and_audited(
     refined[16, 16] = 255
     monkeypatch.setattr(
         planner_module,
-        "refine_coarse_text_mask",
-        lambda _image, item: refined.copy() if item.source == "vlm_correction" else None,
+        "refine_coarse_text_mask_with_diagnostics",
+        lambda _image, item: CoarseMaskRefinementResult(
+            mask=refined.copy() if item.source == "vlm_correction" else None,
+            path=("small_text" if item.source == "vlm_correction" else "failed"),
+            failure_reason=(
+                None if item.source == "vlm_correction" else "no_reliable_candidate"
+            ),
+            metrics=None,
+        ),
     )
     monkeypatch.setattr(
         UITextExtractor,
@@ -842,8 +873,13 @@ def test_correction_uses_existing_coarse_refine_without_rectangle_fallback(
     refined[16, 16] = 255
     monkeypatch.setattr(
         planner_module,
-        "refine_coarse_text_mask",
-        lambda _image, _item: refined.copy() if refine_succeeds else None,
+        "refine_coarse_text_mask_with_diagnostics",
+        lambda _image, _item: CoarseMaskRefinementResult(
+            mask=refined.copy() if refine_succeeds else None,
+            path="small_text" if refine_succeeds else "failed",
+            failure_reason=None if refine_succeeds else "no_reliable_candidate",
+            metrics=None,
+        ),
     )
     role = "runtime_value" if decision == "remove_for_background_repair" else "embedded_logo"
     document = TextRepairDecisionDocument(
@@ -868,6 +904,496 @@ def test_correction_uses_existing_coarse_refine_without_rectangle_fallback(
     assert np.count_nonzero(union) == expected_pixels
     assert updated.decisions[0].mask_quality == quality
     assert np.count_nonzero(union[15:20, 15:20]) != 25
+
+
+def _small_refinement_candidate(
+    text: str = "label",
+    *,
+    candidate_id: str = "text_corr_900",
+    width: int = 14,
+    height: int = 14,
+) -> RepairTextCandidate:
+    return RepairTextCandidate(
+        id=candidate_id,
+        text=text,
+        rect={"x": 0, "y": 0, "width": width, "height": height},
+        confidence=0.95,
+        source="vlm_correction",
+        mask_mode="coarse",
+        style=None,
+    )
+
+
+def _refinement_image(mask: np.ndarray) -> np.ndarray:
+    image = np.full((*mask.shape, 3), 24, dtype=np.uint8)
+    image[mask > 0] = [245, 245, 245]
+    return image
+
+
+def _install_extractor_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+    mask: np.ndarray,
+    mode: str = "estimated_glyphs",
+) -> None:
+    monkeypatch.setattr(
+        UITextExtractor,
+        "_estimate_background",
+        staticmethod(lambda crop, allowed: np.array([24, 24, 24], dtype=np.float32)),
+    )
+    monkeypatch.setattr(
+        UITextExtractor,
+        "_extract_glyph_mask",
+        classmethod(lambda cls, crop, background, allowed: (mask.copy(), mode)),
+    )
+
+
+@pytest.mark.parametrize("text", ["1", "I", "新", "label"])
+def test_small_text_path_is_geometry_driven_for_numeric_and_non_numeric_text(
+    text: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_mask = np.zeros((14, 14), dtype=np.uint8)
+    candidate_mask[3:11, 6:9] = 255
+    _install_extractor_candidate(monkeypatch, candidate_mask)
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(candidate_mask),
+        _small_refinement_candidate(text),
+    )
+
+    assert result.mask is not None
+    assert result.path == "small_text"
+    assert result.failure_reason is None
+    assert result.metrics is not None
+    assert result.metrics.bbox_fill_ratio > 0.68
+
+
+def test_large_text_does_not_enter_small_text_path(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_mask = np.zeros((14, 41), dtype=np.uint8)
+    candidate_mask[3:11, 18:21] = 255
+    _install_extractor_candidate(monkeypatch, candidate_mask)
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(candidate_mask),
+        _small_refinement_candidate(width=41, height=14),
+    )
+
+    assert result.mask is None
+    assert result.path == "failed"
+    assert result.failure_reason == "bbox_fill_too_high"
+
+
+def test_small_narrow_character_can_pass_despite_column_saturation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    candidate_mask = np.zeros((14, 14), dtype=np.uint8)
+    candidate_mask[:, 6:8] = 255
+    _install_extractor_candidate(monkeypatch, candidate_mask)
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(candidate_mask),
+        _small_refinement_candidate("!"),
+    )
+
+    assert result.mask is not None
+    assert result.path == "small_text"
+    assert result.metrics is not None
+    assert result.metrics.column_saturation_count == 2
+
+
+def test_background_contaminated_small_candidate_stays_failed(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contaminated = np.zeros((14, 14), dtype=np.uint8)
+    contaminated[:12, :] = 255
+    _install_extractor_candidate(monkeypatch, contaminated)
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [contaminated.copy()],
+    )
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(contaminated),
+        _small_refinement_candidate(),
+    )
+
+    assert result.mask is None
+    assert result.path == "failed"
+    assert result.failure_reason in {
+        "coverage_too_high",
+        "post_halo_too_high",
+        "background_contamination",
+        "no_reliable_candidate",
+    }
+
+
+def test_secondary_segmentation_can_replace_a_contaminated_primary_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contaminated = np.zeros((14, 14), dtype=np.uint8)
+    contaminated[:12, :] = 255
+    clean = np.zeros((14, 14), dtype=np.uint8)
+    clean[3:11, 6:9] = 255
+    _install_extractor_candidate(monkeypatch, contaminated)
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [clean.copy()],
+    )
+    image = _refinement_image(clean)
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        image,
+        _small_refinement_candidate("x"),
+    )
+
+    assert result.mask is not None
+    assert result.path == "small_text"
+    assert result.metrics is not None
+    assert result.metrics.coverage < 0.62
+
+
+def test_secondary_segmentation_failure_does_not_fill_bbox(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rectangle = np.full((14, 14), 255, dtype=np.uint8)
+    _install_extractor_candidate(monkeypatch, rectangle)
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [rectangle.copy()],
+    )
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(rectangle),
+        _small_refinement_candidate(),
+    )
+
+    assert result.mask is None
+    assert result.path == "failed"
+
+
+def test_extractor_coarse_fallback_requires_secondary_quality_validation(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    rectangle = np.full((14, 14), 255, dtype=np.uint8)
+    _install_extractor_candidate(monkeypatch, rectangle, mode="coarse")
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [],
+    )
+    rejected = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(rectangle),
+        _small_refinement_candidate(),
+    )
+    assert rejected.mask is None
+    assert rejected.path == "failed"
+
+    clean = np.zeros((14, 14), dtype=np.uint8)
+    clean[:, 6:8] = 255
+    _install_extractor_candidate(monkeypatch, clean, mode="coarse")
+    accepted = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(clean),
+        _small_refinement_candidate(),
+    )
+    assert accepted.mask is not None
+    assert accepted.path == "coarse_small_text"
+
+
+def test_standard_v03_coarse_success_path_does_not_regress(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clean = np.zeros((14, 14), dtype=np.uint8)
+    clean[4:10, 3:5] = 255
+    clean[4:10, 9:11] = 255
+    _install_extractor_candidate(monkeypatch, clean)
+
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(clean),
+        _small_refinement_candidate(),
+    )
+
+    assert result.mask is not None
+    assert result.path == "standard_coarse_refine"
+    assert result.failure_reason is None
+
+
+def _reported_metrics(
+    *,
+    coverage: float,
+    bbox_fill: float,
+    contrast: float,
+    halo: float,
+    rows: int = 0,
+    columns: int = 0,
+) -> MaskMetrics:
+    return MaskMetrics(
+        coverage=coverage,
+        bbox_fill_ratio=bbox_fill,
+        row_saturation_count=rows,
+        column_saturation_count=columns,
+        median_contrast=contrast,
+        post_halo_coverage=halo,
+        connected_component_count=1,
+        largest_component_ratio=1.0,
+        largest_component_roi_coverage=min(coverage, 0.49),
+        edge_touch_count=2,
+        edge_touching_component_count=1,
+        centroid_x_ratio=0.5,
+        centroid_y_ratio=0.5,
+    )
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        _reported_metrics(
+            coverage=0.2874,
+            bbox_fill=0.6893,
+            contrast=257.2,
+            halo=0.3548,
+        ),
+        _reported_metrics(
+            coverage=0.3674,
+            bbox_fill=0.7287,
+            contrast=234.6,
+            halo=0.4403,
+        ),
+        _reported_metrics(
+            coverage=0.2685,
+            bbox_fill=0.6949,
+            contrast=244.3,
+            halo=0.3324,
+        ),
+        _reported_metrics(
+            coverage=0.4090,
+            bbox_fill=0.4090,
+            contrast=75.3,
+            halo=0.4917,
+            columns=5,
+        ),
+    ],
+)
+def test_reported_type_a_metrics_are_not_rejected_by_one_legacy_gate(
+    metrics: MaskMetrics,
+) -> None:
+    assert (
+        _small_text_failure_reason(
+            metrics,
+            coarse_candidate=False,
+            roi_width=10,
+            roi_height=10,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "metrics",
+    [
+        _reported_metrics(
+            coverage=0.7868,
+            bbox_fill=0.7868,
+            contrast=200.0,
+            halo=0.8576,
+            columns=22,
+        ),
+        _reported_metrics(
+            coverage=0.6626,
+            bbox_fill=0.7015,
+            contrast=200.0,
+            halo=0.7037,
+            rows=15,
+            columns=6,
+        ),
+        _reported_metrics(
+            coverage=0.7845,
+            bbox_fill=0.9957,
+            contrast=200.0,
+            halo=0.8148,
+            columns=25,
+        ),
+    ],
+)
+def test_reported_type_b_metrics_still_reject_contaminated_primary_masks(
+    metrics: MaskMetrics,
+) -> None:
+    assert _small_text_failure_reason(
+        metrics,
+        coarse_candidate=False,
+        roi_width=30,
+        roi_height=20,
+    ) in {
+        "coverage_too_high",
+        "post_halo_too_high",
+        "background_contamination",
+    }
+
+
+def test_reported_type_c_coarse_metrics_can_reach_strict_secondary_validation() -> None:
+    metrics = _reported_metrics(
+        coverage=0.0803,
+        bbox_fill=0.2340,
+        contrast=80.0,
+        halo=0.20,
+    )
+    assert (
+        _small_text_failure_reason(
+            metrics,
+            coarse_candidate=True,
+            roi_width=14,
+            roi_height=14,
+        )
+        is None
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate_id",
+    ["text_corr_003", "text_corr_006", "text_corr_011", "text_corr_019"],
+)
+def test_type_a_regressions_can_use_combined_small_text_quality(
+    candidate_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    high_fill_glyph = np.zeros((14, 14), dtype=np.uint8)
+    high_fill_glyph[3:11, 6:9] = 255
+    _install_extractor_candidate(monkeypatch, high_fill_glyph)
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(high_fill_glyph),
+        _small_refinement_candidate(candidate_id=candidate_id),
+    )
+    assert result.mask is not None
+    assert result.path == "small_text"
+
+
+@pytest.mark.parametrize(
+    "candidate_id",
+    ["text_corr_002", "text_corr_016", "text_corr_022"],
+)
+def test_type_b_regressions_never_accept_the_contaminated_primary_mask(
+    candidate_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    contaminated = np.zeros((14, 14), dtype=np.uint8)
+    contaminated[:12, :] = 255
+    _install_extractor_candidate(monkeypatch, contaminated)
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [],
+    )
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(contaminated),
+        _small_refinement_candidate(candidate_id=candidate_id),
+    )
+    assert result.mask is None
+    assert result.path == "failed"
+
+
+def test_type_c_regression_can_validate_clean_extractor_coarse_candidate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    coarse_glyph = np.zeros((14, 14), dtype=np.uint8)
+    coarse_glyph[:, 6:8] = 255
+    _install_extractor_candidate(monkeypatch, coarse_glyph, mode="coarse")
+    monkeypatch.setattr(
+        planner_module,
+        "_secondary_small_text_candidates",
+        lambda crop, background: [],
+    )
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(coarse_glyph),
+        _small_refinement_candidate(candidate_id="text_corr_013"),
+    )
+    assert result.mask is not None
+    assert result.path == "coarse_small_text"
+
+
+@pytest.mark.parametrize(
+    "candidate_id",
+    [
+        "text_corr_004",
+        "text_corr_005",
+        "text_corr_007",
+        "text_corr_008",
+        "text_corr_009",
+        "text_corr_012",
+        "text_corr_014",
+        "text_corr_015",
+        "text_corr_017",
+        "text_corr_018",
+        "text_corr_020",
+        "text_corr_021",
+    ],
+)
+def test_known_v03_success_regressions_keep_standard_clean_masks(
+    candidate_id: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clean = np.zeros((14, 14), dtype=np.uint8)
+    clean[4:10, 3:5] = 255
+    clean[4:10, 9:11] = 255
+    _install_extractor_candidate(monkeypatch, clean)
+    result = refine_coarse_text_mask_with_diagnostics(
+        _refinement_image(clean),
+        _small_refinement_candidate(candidate_id=candidate_id),
+    )
+    assert result.mask is not None
+    assert result.path == "standard_coarse_refine"
+
+
+def test_mask_diagnostics_are_serialized_on_decision(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    clean = np.zeros((14, 14), dtype=np.uint8)
+    clean[3:11, 6:9] = 255
+    _install_extractor_candidate(monkeypatch, clean)
+    candidate = _small_refinement_candidate("x")
+    document = TextRepairDecisionDocument(
+        image_width=14,
+        image_height=14,
+        decisions=[
+            TextRepairDecision(
+                id=candidate.id,
+                text=candidate.text,
+                semantic_role="runtime_value",
+                decision="remove_for_background_repair",
+                rect=candidate.rect,
+                source=candidate.source,
+                mask_mode="coarse",
+                mask_quality="failed",
+                confidence=0.9,
+                reason="semantic classification",
+            )
+        ],
+    )
+
+    union, updated = build_union_text_mask(
+        _refinement_image(clean),
+        [candidate],
+        document,
+    )
+    decision = updated.decisions[0]
+    assert np.count_nonzero(union) > 0
+    assert decision.mask_quality == "refined"
+    assert decision.mask_refinement_path == "small_text"
+    assert decision.mask_failure_reason is None
+    assert decision.mask_metrics is not None
+    assert decision.mask_metrics.connected_component_count == 1
+
+
+def test_refinement_path_has_no_vlm_ocr_inpaint_or_image_generation_calls() -> None:
+    source = inspect.getsource(refine_coarse_text_mask_with_diagnostics)
+    source += inspect.getsource(planner_module._secondary_small_text_candidates)
+    assert "infer_json" not in source
+    assert "_read_stage_a" not in source
+    assert "cv2.inpaint" not in source
+    assert "image_gen" not in source
 
 
 def test_planner_has_no_inpaint_or_image_generation_dependency() -> None:

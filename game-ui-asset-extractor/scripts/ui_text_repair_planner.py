@@ -10,6 +10,7 @@ import math
 import sys
 import tempfile
 from collections import Counter
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Literal
 
@@ -22,7 +23,7 @@ from ui_audit_models import Rect, TextItem, TextStyle
 from ui_text_extractor import UITextExtractor
 
 
-SCHEMA_VERSION = "0.3"
+SCHEMA_VERSION = "0.4"
 Decision = Literal[
     "remove_for_background_repair",
     "preserve_as_visual_asset",
@@ -41,6 +42,27 @@ SemanticRole = Literal[
 MaskMode = Literal["estimated_glyphs", "coarse"]
 MaskQuality = Literal["native", "refined", "failed"]
 CandidateSource = Literal["ocr", "vlm_correction"]
+MaskRefinementPath = Literal[
+    "native",
+    "standard_coarse_refine",
+    "small_text",
+    "coarse_small_text",
+    "failed",
+]
+MaskFailureReason = Literal[
+    "invalid_roi",
+    "empty_candidate",
+    "extractor_coarse_unusable",
+    "coverage_too_high",
+    "coverage_too_low",
+    "bbox_fill_too_high",
+    "row_saturation",
+    "column_saturation",
+    "low_contrast",
+    "post_halo_too_high",
+    "background_contamination",
+    "no_reliable_candidate",
+]
 
 # Geometry is authoritative for duplicate suppression. Text is only an extra
 # signal for moderately overlapping boxes because OCR spellings are fallible.
@@ -50,6 +72,29 @@ DEDUPE_CENTER_CONTAINMENT_OVERLAP_THRESHOLD = 0.50
 DEDUPE_CENTER_PROXIMITY_RATIO = 0.35
 DEDUPE_PROXIMITY_MIN_SIZE_RATIO = 0.50
 DEDUPE_TEXT_MATCH_OVERLAP_THRESHOLD = 0.50
+
+# A geometry-only eligibility gate for the correction-specific fallback path.
+SMALL_TEXT_MAX_WIDTH = 40
+SMALL_TEXT_MAX_HEIGHT = 40
+SMALL_TEXT_MAX_AREA = 1200
+
+# Small-text validation deliberately combines these constraints. In particular,
+# own-bounds fill and column saturation are not standalone rejection reasons.
+SMALL_TEXT_MIN_COVERAGE = 0.015
+SMALL_TEXT_MAX_COVERAGE = 0.62
+SMALL_TEXT_MIN_MEDIAN_CONTRAST = 12.0
+SMALL_TEXT_MAX_POST_HALO_COVERAGE = 0.70
+SMALL_TEXT_MAX_BBOX_FILL = 0.92
+SMALL_TEXT_MAX_LARGEST_COMPONENT_ROI_COVERAGE = 0.50
+SMALL_TEXT_SURFACE_COVERAGE = 0.38
+SMALL_TEXT_COARSE_MAX_COVERAGE = 0.45
+SMALL_TEXT_COARSE_MAX_POST_HALO_COVERAGE = 0.60
+SMALL_TEXT_COARSE_MAX_BBOX_FILL = 0.82
+SMALL_TEXT_COMPONENT_MIN_AREA = 1
+SMALL_TEXT_COMPONENT_MAX_AREA_RATIO = 0.55
+SMALL_TEXT_SECONDARY_DISTANCE_FACTORS = (0.75, 1.0, 1.25)
+SMALL_TEXT_COLOR_BIN_SIZE = 16
+SMALL_TEXT_MAX_COLOR_CLUSTERS = 4
 
 REMOVE_ROLES = frozenset(
     {
@@ -235,6 +280,24 @@ class VLMTextDecisionResponse(_RepairModel):
     decisions: list[VLMTextDecision]
 
 
+class MaskMetrics(_RepairModel):
+    """Serializable local-mask evidence used by refinement diagnostics."""
+
+    coverage: float = Field(ge=0.0, le=1.0)
+    bbox_fill_ratio: float = Field(ge=0.0, le=1.0)
+    row_saturation_count: int = Field(ge=0)
+    column_saturation_count: int = Field(ge=0)
+    median_contrast: float = Field(ge=0.0)
+    post_halo_coverage: float = Field(ge=0.0, le=1.0)
+    connected_component_count: int = Field(ge=0)
+    largest_component_ratio: float = Field(ge=0.0, le=1.0)
+    largest_component_roi_coverage: float = Field(ge=0.0, le=1.0)
+    edge_touch_count: int = Field(ge=0, le=4)
+    edge_touching_component_count: int = Field(ge=0)
+    centroid_x_ratio: float = Field(ge=0.0, le=1.0)
+    centroid_y_ratio: float = Field(ge=0.0, le=1.0)
+
+
 class TextRepairDecision(_RepairModel):
     """One authoritative, source-geometry-backed Route B decision."""
 
@@ -246,14 +309,17 @@ class TextRepairDecision(_RepairModel):
     source: CandidateSource = "ocr"
     mask_mode: MaskMode
     mask_quality: MaskQuality
+    mask_refinement_path: MaskRefinementPath = "failed"
+    mask_failure_reason: MaskFailureReason | None = None
+    mask_metrics: MaskMetrics | None = None
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(min_length=1)
 
 
 class TextRepairDecisionDocument(_RepairModel):
-    """The public text-repair-decisions.json v0.3 contract."""
+    """The public text-repair-decisions.json v0.4 contract."""
 
-    schema_version: Literal["0.3"] = SCHEMA_VERSION
+    schema_version: Literal["0.4"] = SCHEMA_VERSION
     image_width: int = Field(gt=0)
     image_height: int = Field(gt=0)
     decisions: list[TextRepairDecision]
@@ -696,18 +762,333 @@ def _is_reliable_local_glyph_mask(
     return True
 
 
-def refine_coarse_text_mask(
+@dataclass(frozen=True)
+class CoarseMaskRefinementResult:
+    mask: np.ndarray | None
+    path: MaskRefinementPath
+    failure_reason: MaskFailureReason | None
+    metrics: MaskMetrics | None
+
+
+def _is_small_text_refinement_eligible(
+    item: RepairTextCandidate | TextItem,
+) -> bool:
+    """Use source and pixel geometry only; never inspect text content or scene."""
+
+    return bool(
+        getattr(item, "source", "ocr") == "vlm_correction"
+        and item.mask_mode == "coarse"
+        and item.rect.width <= SMALL_TEXT_MAX_WIDTH
+        and item.rect.height <= SMALL_TEXT_MAX_HEIGHT
+        and item.rect.width * item.rect.height <= SMALL_TEXT_MAX_AREA
+    )
+
+
+def _measure_local_mask(
+    mask: np.ndarray,
+    crop_rgb: np.ndarray,
+    background_rgb: np.ndarray,
+) -> MaskMetrics | None:
+    binary = np.where(mask > 0, 255, 0).astype(np.uint8)
+    selected = binary > 0
+    pixel_count = int(np.count_nonzero(selected))
+    if pixel_count == 0:
+        return None
+
+    height, width = binary.shape
+    ys, xs = np.where(selected)
+    bounds_area = int((ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1))
+    row_coverage = np.count_nonzero(selected, axis=1) / max(1, width)
+    column_coverage = np.count_nonzero(selected, axis=0) / max(1, height)
+    row_saturation_count = int(np.count_nonzero(row_coverage >= 0.90))
+    column_saturation_count = int(np.count_nonzero(column_coverage >= 0.90))
+    background_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - background_rgb.reshape(1, 1, 3),
+        axis=2,
+    )
+    halo = cv2.dilate(
+        binary,
+        cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+        iterations=1,
+    )
+
+    component_count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8,
+    )
+    component_areas = stats[1:, cv2.CC_STAT_AREA].astype(np.int64)
+    largest_area = int(component_areas.max()) if component_areas.size else 0
+    edge_touching_components = 0
+    for label in range(1, component_count):
+        component = labels == label
+        component_ys, component_xs = np.where(component)
+        if (
+            np.any(component_ys == 0)
+            or np.any(component_ys == height - 1)
+            or np.any(component_xs == 0)
+            or np.any(component_xs == width - 1)
+        ):
+            edge_touching_components += 1
+
+    edge_touch_count = sum(
+        (
+            bool(np.any(selected[0, :])),
+            bool(np.any(selected[-1, :])),
+            bool(np.any(selected[:, 0])),
+            bool(np.any(selected[:, -1])),
+        )
+    )
+    return MaskMetrics(
+        coverage=pixel_count / float(binary.size),
+        bbox_fill_ratio=pixel_count / float(bounds_area),
+        row_saturation_count=row_saturation_count,
+        column_saturation_count=column_saturation_count,
+        median_contrast=float(np.median(background_distance[selected])),
+        post_halo_coverage=np.count_nonzero(halo) / float(halo.size),
+        connected_component_count=component_count - 1,
+        largest_component_ratio=largest_area / float(pixel_count),
+        largest_component_roi_coverage=largest_area / float(binary.size),
+        edge_touch_count=edge_touch_count,
+        edge_touching_component_count=edge_touching_components,
+        centroid_x_ratio=float(xs.mean()) / max(1, width - 1),
+        centroid_y_ratio=float(ys.mean()) / max(1, height - 1),
+    )
+
+
+def _standard_failure_reason(
+    metrics: MaskMetrics | None,
+    *,
+    roi_width: int,
+    roi_height: int,
+) -> MaskFailureReason:
+    if metrics is None:
+        return "empty_candidate"
+    if metrics.coverage < UITextExtractor.MIN_GLYPH_COVERAGE:
+        return "coverage_too_low"
+    if metrics.coverage > 0.45:
+        return "coverage_too_high"
+    if metrics.bbox_fill_ratio > 0.68:
+        return "bbox_fill_too_high"
+    if metrics.row_saturation_count >= max(2, round(0.15 * roi_height)):
+        return "row_saturation"
+    if metrics.column_saturation_count >= max(2, round(0.15 * roi_width)):
+        return "column_saturation"
+    if metrics.median_contrast < 12.0:
+        return "low_contrast"
+    if metrics.post_halo_coverage > 0.55:
+        return "post_halo_too_high"
+    return "no_reliable_candidate"
+
+
+def _small_text_failure_reason(
+    metrics: MaskMetrics | None,
+    *,
+    coarse_candidate: bool,
+    roi_width: int,
+    roi_height: int,
+) -> MaskFailureReason | None:
+    if metrics is None or metrics.connected_component_count == 0:
+        return "empty_candidate"
+    if metrics.coverage < SMALL_TEXT_MIN_COVERAGE:
+        return "coverage_too_low"
+
+    max_coverage = (
+        SMALL_TEXT_COARSE_MAX_COVERAGE
+        if coarse_candidate
+        else SMALL_TEXT_MAX_COVERAGE
+    )
+    max_halo = (
+        SMALL_TEXT_COARSE_MAX_POST_HALO_COVERAGE
+        if coarse_candidate
+        else SMALL_TEXT_MAX_POST_HALO_COVERAGE
+    )
+    max_fill = (
+        SMALL_TEXT_COARSE_MAX_BBOX_FILL
+        if coarse_candidate
+        else SMALL_TEXT_MAX_BBOX_FILL
+    )
+    if metrics.coverage > max_coverage:
+        return "coverage_too_high"
+    if metrics.post_halo_coverage > max_halo:
+        return "post_halo_too_high"
+    if metrics.median_contrast < SMALL_TEXT_MIN_MEDIAN_CONTRAST:
+        return "low_contrast"
+    if (
+        metrics.largest_component_roi_coverage
+        > SMALL_TEXT_MAX_LARGEST_COMPONENT_ROI_COVERAGE
+    ):
+        return "background_contamination"
+    if metrics.bbox_fill_ratio > max_fill and (
+        metrics.coverage >= SMALL_TEXT_SURFACE_COVERAGE
+        or metrics.edge_touch_count >= 3
+    ):
+        return "bbox_fill_too_high"
+
+    row_limit = max(2, round(0.35 * roi_height))
+    column_limit = max(2, round(0.35 * roi_width))
+    row_saturated = metrics.row_saturation_count >= row_limit
+    column_saturated = metrics.column_saturation_count >= column_limit
+    if row_saturated and column_saturated:
+        return "background_contamination"
+    if (
+        metrics.edge_touch_count >= 3
+        and metrics.coverage >= SMALL_TEXT_SURFACE_COVERAGE
+        and metrics.edge_touching_component_count > 0
+    ):
+        return "background_contamination"
+    if row_saturated and metrics.coverage > 0.50:
+        return "row_saturation"
+    if column_saturated and metrics.coverage > 0.55:
+        return "column_saturation"
+    return None
+
+
+def _filter_small_text_components(
+    mask: np.ndarray,
+    crop_rgb: np.ndarray,
+    background_rgb: np.ndarray,
+) -> np.ndarray:
+    """Remove large, low-contrast, multi-edge surface components."""
+
+    binary = np.where(mask > 0, 255, 0).astype(np.uint8)
+    count, labels, stats, _ = cv2.connectedComponentsWithStats(
+        binary,
+        connectivity=8,
+    )
+    result = np.zeros_like(binary)
+    roi_area = binary.size
+    background_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - background_rgb.reshape(1, 1, 3),
+        axis=2,
+    )
+    height, width = binary.shape
+    for label in range(1, count):
+        component = labels == label
+        area = int(stats[label, cv2.CC_STAT_AREA])
+        if area < SMALL_TEXT_COMPONENT_MIN_AREA:
+            continue
+        if area / float(roi_area) > SMALL_TEXT_COMPONENT_MAX_AREA_RATIO:
+            continue
+        x = int(stats[label, cv2.CC_STAT_LEFT])
+        y = int(stats[label, cv2.CC_STAT_TOP])
+        component_width = int(stats[label, cv2.CC_STAT_WIDTH])
+        component_height = int(stats[label, cv2.CC_STAT_HEIGHT])
+        touched_edges = sum(
+            (
+                x == 0,
+                y == 0,
+                x + component_width == width,
+                y + component_height == height,
+            )
+        )
+        if touched_edges >= 3 and area / float(roi_area) > 0.15:
+            continue
+        if float(np.median(background_distance[component])) < 10.0:
+            continue
+        result[component] = 255
+    return result
+
+
+def _secondary_small_text_candidates(
+    crop_rgb: np.ndarray,
+    background_rgb: np.ndarray,
+) -> list[np.ndarray]:
+    """Build a small deterministic set of color/contrast candidates."""
+
+    candidates: list[np.ndarray] = []
+    background_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - background_rgb.reshape(1, 1, 3),
+        axis=2,
+    )
+    distance_u8 = np.clip(background_distance, 0, 255).astype(np.uint8)
+    otsu_threshold, _ = cv2.threshold(
+        distance_u8,
+        0,
+        255,
+        cv2.THRESH_BINARY + cv2.THRESH_OTSU,
+    )
+    for factor in SMALL_TEXT_SECONDARY_DISTANCE_FACTORS:
+        threshold = max(12.0, float(otsu_threshold) * factor)
+        candidates.append(
+            np.where(background_distance >= threshold, 255, 0).astype(np.uint8)
+        )
+
+    lab = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2LAB)
+    quantized = (lab // SMALL_TEXT_COLOR_BIN_SIZE).reshape(-1, 3)
+    keys, inverse, counts = np.unique(
+        quantized,
+        axis=0,
+        return_inverse=True,
+        return_counts=True,
+    )
+    del keys
+    height, width = crop_rgb.shape[:2]
+    border = np.zeros((height, width), dtype=bool)
+    border[0, :] = border[-1, :] = True
+    border[:, 0] = border[:, -1] = True
+    border_labels = inverse.reshape(height, width)[border]
+    ranked_clusters = sorted(
+        range(len(counts)),
+        key=lambda index: (int(counts[index]), index),
+    )
+    added_clusters = 0
+    for cluster in ranked_clusters:
+        cluster_mask = inverse.reshape(height, width) == cluster
+        area_ratio = int(counts[cluster]) / float(cluster_mask.size)
+        if area_ratio < SMALL_TEXT_MIN_COVERAGE or area_ratio > 0.45:
+            continue
+        border_ratio = np.count_nonzero(border_labels == cluster) / float(
+            max(1, border_labels.size)
+        )
+        if border_ratio > 0.25:
+            continue
+        if float(np.median(background_distance[cluster_mask])) < 12.0:
+            continue
+        candidate = np.where(cluster_mask, 255, 0).astype(np.uint8)
+        candidate = cv2.morphologyEx(
+            candidate,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
+        )
+        candidates.append(candidate)
+        added_clusters += 1
+        if added_clusters >= SMALL_TEXT_MAX_COLOR_CLUSTERS:
+            break
+
+    gray = cv2.cvtColor(crop_rgb, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    border_median = float(np.median(gray[border]))
+    candidates.append(np.where(gray >= border_median + 24.0, 255, 0).astype(np.uint8))
+    candidates.append(np.where(gray <= border_median - 24.0, 255, 0).astype(np.uint8))
+
+    unique: list[np.ndarray] = []
+    seen: set[bytes] = set()
+    for candidate in candidates:
+        key = np.packbits(candidate > 0).tobytes()
+        if key in seen:
+            continue
+        seen.add(key)
+        unique.append(candidate)
+    return unique
+
+
+def _small_candidate_score(metrics: MaskMetrics) -> float:
+    return (
+        min(metrics.median_contrast, 255.0)
+        + 30.0 * (1.0 - metrics.post_halo_coverage)
+        + 10.0 * min(metrics.connected_component_count, 4)
+        - 50.0 * metrics.largest_component_roi_coverage
+    )
+
+
+def refine_coarse_text_mask_with_diagnostics(
     original_image: np.ndarray,
     item: RepairTextCandidate | TextItem,
-) -> np.ndarray | None:
-    """Extract a conservative glyph-shaped mask from one coarse OCR rectangle.
+) -> CoarseMaskRefinementResult:
+    """Extract a conservative glyph mask and explain the selected path.
 
-    The refiner combines the extractor's local background/glyph separation with
-    an OCR-inferred foreground color when style metadata exists. Corrections do
-    not invent style, so they use only the same extractor separation path. It
-    never accepts the extractor's coarse fallback band and rejects candidates
-    that are too dense or rectangle-like. A successful local mask receives only
-    a one-pixel glyph halo before it is placed into full-image coordinates.
+    The frozen standard gate is tried first. Only a geometry-eligible VLM
+    correction may proceed to connected-component filtering and deterministic
+    secondary segmentation. No path accepts a filled bbox as a fallback.
     """
 
     rect = item.rect
@@ -716,7 +1097,12 @@ def refine_coarse_text_mask(
         rect.x : rect.x + rect.width,
     ]
     if crop_rgb.shape[:2] != (rect.height, rect.width) or crop_rgb.size == 0:
-        return None
+        return CoarseMaskRefinementResult(
+            mask=None,
+            path="failed",
+            failure_reason="invalid_roi",
+            metrics=None,
+        )
 
     allowed = np.full(crop_rgb.shape[:2], 255, dtype=np.uint8)
     background = UITextExtractor._estimate_background(crop_rgb, allowed)
@@ -752,22 +1138,35 @@ def refine_coarse_text_mask(
             cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
         )
 
-    candidates: list[np.ndarray] = []
+    standard_candidates: list[np.ndarray] = []
     if extracted_mode == "estimated_glyphs" and np.any(style_mask):
         style_neighborhood = cv2.dilate(
             style_mask,
             cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
             iterations=1,
         )
-        candidates.append(cv2.bitwise_and(extracted, style_neighborhood))
+        standard_candidates.append(cv2.bitwise_and(extracted, style_neighborhood))
     if np.any(style_mask):
-        candidates.append(style_mask)
+        standard_candidates.append(style_mask)
     if extracted_mode == "estimated_glyphs":
-        candidates.append(extracted)
+        standard_candidates.append(extracted)
 
-    for candidate in candidates:
+    observed_standard: list[tuple[MaskMetrics, MaskFailureReason]] = []
+    for candidate in standard_candidates:
         candidate = np.where(candidate > 0, 255, 0).astype(np.uint8)
+        metrics = _measure_local_mask(candidate, crop_rgb, background)
         if not _is_reliable_local_glyph_mask(candidate, crop_rgb, background):
+            if metrics is not None:
+                observed_standard.append(
+                    (
+                        metrics,
+                        _standard_failure_reason(
+                            metrics,
+                            roi_width=rect.width,
+                            roi_height=rect.height,
+                        ),
+                    )
+                )
             continue
         refined = cv2.dilate(
             candidate,
@@ -776,14 +1175,137 @@ def refine_coarse_text_mask(
         )
         refined_coverage = np.count_nonzero(refined) / float(refined.size)
         if refined_coverage > 0.55:
+            if metrics is not None:
+                observed_standard.append((metrics, "post_halo_too_high"))
             continue
         full_mask = np.zeros(original_image.shape[:2], dtype=np.uint8)
         full_mask[
             rect.y : rect.y + rect.height,
             rect.x : rect.x + rect.width,
         ] = refined
-        return full_mask
-    return None
+        return CoarseMaskRefinementResult(
+            mask=full_mask,
+            path="standard_coarse_refine",
+            failure_reason=None,
+            metrics=metrics,
+        )
+
+    if not _is_small_text_refinement_eligible(item):
+        if observed_standard:
+            metrics, reason = max(
+                observed_standard,
+                key=lambda result: _small_candidate_score(result[0]),
+            )
+        else:
+            metrics = _measure_local_mask(extracted, crop_rgb, background)
+            reason = (
+                "extractor_coarse_unusable"
+                if extracted_mode == "coarse"
+                else _standard_failure_reason(
+                    metrics,
+                    roi_width=rect.width,
+                    roi_height=rect.height,
+                )
+            )
+        return CoarseMaskRefinementResult(
+            mask=None,
+            path="failed",
+            failure_reason=reason,
+            metrics=metrics,
+        )
+
+    small_candidates: list[tuple[str, np.ndarray]] = [
+        ("standard", candidate) for candidate in standard_candidates
+    ]
+    if extracted_mode == "coarse":
+        small_candidates.append(("extractor_coarse", extracted))
+    small_candidates.extend(
+        ("secondary", candidate)
+        for candidate in _secondary_small_text_candidates(crop_rgb, background)
+    )
+
+    accepted: list[tuple[float, str, np.ndarray, MaskMetrics]] = []
+    rejected: list[tuple[float, MaskFailureReason, MaskMetrics]] = []
+    for origin, candidate in small_candidates:
+        raw_metrics = _measure_local_mask(candidate, crop_rgb, background)
+        filtered = _filter_small_text_components(candidate, crop_rgb, background)
+        metrics = _measure_local_mask(filtered, crop_rgb, background)
+        if metrics is None and raw_metrics is not None:
+            raw_reason = _small_text_failure_reason(
+                raw_metrics,
+                coarse_candidate=origin == "extractor_coarse",
+                roi_width=rect.width,
+                roi_height=rect.height,
+            )
+            rejected.append(
+                (
+                    _small_candidate_score(raw_metrics),
+                    raw_reason or "background_contamination",
+                    raw_metrics,
+                )
+            )
+            continue
+        reason = _small_text_failure_reason(
+            metrics,
+            coarse_candidate=origin == "extractor_coarse",
+            roi_width=rect.width,
+            roi_height=rect.height,
+        )
+        if metrics is None:
+            continue
+        score = _small_candidate_score(metrics)
+        if reason is not None:
+            rejected.append((score, reason, metrics))
+            continue
+        accepted.append((score, origin, filtered, metrics))
+
+    if accepted:
+        _, origin, candidate, metrics = max(accepted, key=lambda result: result[0])
+        refined = cv2.dilate(
+            candidate,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+            iterations=1,
+        )
+        full_mask = np.zeros(original_image.shape[:2], dtype=np.uint8)
+        full_mask[
+            rect.y : rect.y + rect.height,
+            rect.x : rect.x + rect.width,
+        ] = refined
+        return CoarseMaskRefinementResult(
+            mask=full_mask,
+            path=(
+                "coarse_small_text"
+                if origin == "extractor_coarse"
+                else "small_text"
+            ),
+            failure_reason=None,
+            metrics=metrics,
+        )
+
+    if rejected:
+        _, reason, metrics = max(rejected, key=lambda result: result[0])
+    else:
+        reason = (
+            "extractor_coarse_unusable"
+            if extracted_mode == "coarse"
+            else "no_reliable_candidate"
+        )
+        metrics = None
+    return CoarseMaskRefinementResult(
+        mask=None,
+        path="failed",
+        failure_reason=reason,
+        metrics=metrics,
+    )
+
+
+def refine_coarse_text_mask(
+    original_image: np.ndarray,
+    item: RepairTextCandidate | TextItem,
+) -> np.ndarray | None:
+    """Compatibility wrapper returning only the full-image refined mask."""
+
+    return refine_coarse_text_mask_with_diagnostics(original_image, item).mask
 
 
 def build_union_text_mask(
@@ -808,10 +1330,20 @@ def build_union_text_mask(
             continue
         source = item_by_id[decision.id]
         if source.mask_mode == "coarse":
-            item_mask = refine_coarse_text_mask(original_image, source)
+            refinement = refine_coarse_text_mask_with_diagnostics(
+                original_image,
+                source,
+            )
+            item_mask = refinement.mask
             mask_quality: MaskQuality = (
                 "refined" if item_mask is not None else "failed"
             )
+            decision_update: dict[str, Any] = {
+                "mask_quality": mask_quality,
+                "mask_refinement_path": refinement.path,
+                "mask_failure_reason": refinement.failure_reason,
+                "mask_metrics": refinement.metrics,
+            }
         else:
             item_mask = UITextExtractor.rebuild_text_mask(
                 original_image,
@@ -819,8 +1351,14 @@ def build_union_text_mask(
                 source.text,
             )
             mask_quality = "native"
+            decision_update = {
+                "mask_quality": mask_quality,
+                "mask_refinement_path": "native",
+                "mask_failure_reason": None,
+                "mask_metrics": None,
+            }
         updated_decisions.append(
-            decision.model_copy(update={"mask_quality": mask_quality})
+            decision.model_copy(update=decision_update)
         )
         if item_mask is None:
             continue
@@ -992,6 +1530,11 @@ class UITextRepairPlanner:
                     source=source.source,
                     mask_mode=source.mask_mode,
                     mask_quality=(
+                        "native"
+                        if source.mask_mode == "estimated_glyphs"
+                        else "failed"
+                    ),
+                    mask_refinement_path=(
                         "native"
                         if source.mask_mode == "estimated_glyphs"
                         else "failed"
