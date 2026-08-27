@@ -21,7 +21,7 @@ from ui_audit_models import Rect, TextItem
 from ui_text_extractor import UITextExtractor
 
 
-SCHEMA_VERSION = "0.2"
+SCHEMA_VERSION = "0.2.1"
 Decision = Literal[
     "remove_for_background_repair",
     "preserve_as_visual_asset",
@@ -33,7 +33,7 @@ SemanticRole = Literal[
     "body_text",
     "ordinary_title",
     "status_text",
-    "embedded_in_item_artwork",
+    "embedded_in_artwork",
     "embedded_logo",
     "decorative_art_text",
 ]
@@ -52,7 +52,7 @@ REMOVE_ROLES = frozenset(
 )
 PRESERVE_ROLES = frozenset(
     {
-        "embedded_in_item_artwork",
+        "embedded_in_artwork",
         "embedded_logo",
         "decorative_art_text",
     }
@@ -67,40 +67,34 @@ SYSTEM_PROMPT = """You are reviewing all OCR text in a complete game UI screensh
 Classify every supplied OCR text ID exactly once into one semantic_role from the
 closed schema. Do not make a removal/preservation policy decision yourself.
 
-Classify by visual ownership, not by text meaning alone. First determine whether
-the text is overlaid by the interface layer or visually baked into an icon, item,
-logo, badge, decorative title asset, or illustration.
+Classify by visual ownership, not by text meaning alone. Never use the OCR string
+as the classification rule. Decide whether each text region belongs to the UI
+information layer or belongs to a
+visual artwork/asset. Use the complete screenshot, spatial containment, visual
+integration, rendering style, and surrounding composition as evidence.
 
-Use these interface-layer roles when the text is independent runtime UI copy:
+Text belongs to the UI information layer when it functions as independent,
+replaceable interface information rendered over the visual design. Use:
 - navigation_label: tabs, categories, menus, or navigation labels
-- button_label: an ordinary caption rendered over a button surface
-- runtime_value: counters, currency values, timers, quantities, or item badges
+- button_label: an ordinary caption rendered over a control surface
+- runtime_value: counters, values, timers, quantities, or other dynamic data
 - body_text: descriptions, instructions, or ordinary paragraph copy
 - ordinary_title: a normal screen, panel, or section title
 - status_text: runtime state, availability, ownership, or remaining-time text
 
-Use these asset-owned roles when the text is inseparable bitmap artwork:
-- embedded_in_item_artwork: painted inside an item icon, chest, card, or badge
-- embedded_logo: a logo, brand mark, team mark, or logo-like lettering
+Text belongs to a visual artwork/asset when its letterforms are visually fused
+with that asset and should remain part of the same bitmap. Use:
+- embedded_in_artwork: lettering painted into an icon, illustration, badge,
+  texture, or other artwork
+- embedded_logo: a logo, brand mark, emblem, or logo-like lettering
 - decorative_art_text: display lettering fused with decoration or illustration
 
-The same OCR string can have different roles. For example, 皮肤 in a navigation
-list is navigation_label, while 皮肤 painted inside an item icon is
-embedded_in_item_artwork. 英雄 painted into a treasure-chest design is also
-embedded_in_item_artwork. HERO or DYG is embedded_logo when it is a visual mark.
+Identical OCR strings may have different semantic roles in different locations.
+Do not infer visual ownership from vocabulary. A stylized surrounding surface
+alone also does not make independent UI information part of an artwork asset.
 
-Ordinary inventory labels such as 查看畅玩池, 豪华皮肤畅玩卡, 背包, 批量使用,
-runtime values such as 638050 or 50209, status copy, and item quantity badges use
-interface-layer roles. Do not classify them as embedded merely because their
-background is stylized.
-
-If text is visually painted into an item icon, logo, badge, decorative title
-asset, or illustration, classify it as owned by that asset. If it appears as an
-interface label, button caption, runtime value, status text, description,
-ordinary title, or navigation text, classify its precise interface-layer role.
-
-Do not return a decision field or an uncertain/free-text role. Return strict JSON
-matching the schema. Do not omit, duplicate, or invent OCR IDs."""
+Return strict JSON matching the supplied schema. Do not return a decision field,
+an uncertain/free-text role, omitted IDs, duplicate IDs, or invented IDs."""
 
 
 class _RepairModel(BaseModel):
@@ -145,9 +139,9 @@ class TextRepairDecision(_RepairModel):
 
 
 class TextRepairDecisionDocument(_RepairModel):
-    """The public text-repair-decisions.json v0.1 contract."""
+    """The public text-repair-decisions.json v0.2.1 contract."""
 
-    schema_version: Literal["0.2"] = SCHEMA_VERSION
+    schema_version: Literal["0.2.1"] = SCHEMA_VERSION
     image_width: int = Field(gt=0)
     image_height: int = Field(gt=0)
     decisions: list[TextRepairDecision]

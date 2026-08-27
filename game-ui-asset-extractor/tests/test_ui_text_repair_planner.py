@@ -86,7 +86,7 @@ def _payload(decisions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
             },
             {
                 "id": "text_001",
-                "semantic_role": "embedded_in_item_artwork",
+                "semantic_role": "embedded_in_artwork",
                 "confidence": 0.96,
                 "reason": "baked into item artwork",
             },
@@ -170,7 +170,7 @@ def test_semantic_role_is_closed_and_vlm_cannot_supply_policy_decision() -> None
     + list(
         zip(
             (
-                "embedded_in_item_artwork",
+                "embedded_in_artwork",
                 "embedded_logo",
                 "decorative_art_text",
             ),
@@ -187,11 +187,26 @@ def test_semantic_role_maps_to_deterministic_policy(
     assert SEMANTIC_ROLE_TO_DECISION[semantic_role] == expected
 
 
-def test_prompt_requires_visual_ownership_instead_of_text_string_rules() -> None:
+def test_prompt_is_generic_and_requires_visual_ownership() -> None:
     assert "Classify by visual ownership, not by text meaning alone" in SYSTEM_PROMPT
-    assert "皮肤 in a navigation" in SYSTEM_PROMPT
-    assert "皮肤 painted inside an item icon" in SYSTEM_PROMPT
+    assert "belongs to the UI information layer" in SYSTEM_PROMPT
+    assert "belongs to a visual artwork/asset" in SYSTEM_PROMPT
+    assert "Do not infer visual ownership from vocabulary" in SYSTEM_PROMPT
     assert "Do not return a decision field" in SYSTEM_PROMPT
+    pilot_literals = (
+        "皮肤",
+        "英雄",
+        "HERO",
+        "DYG",
+        "查看畅玩池",
+        "豪华皮肤畅玩卡",
+        "背包",
+        "批量使用",
+        "638050",
+        "50209",
+        "inventory",
+    )
+    assert all(value not in SYSTEM_PROMPT for value in pilot_literals)
 
 
 def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
@@ -217,13 +232,13 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
         "皮肤": "navigation_label",
     }
     preserve_examples = {
-        "英雄": "embedded_in_item_artwork",
-        "战令": "embedded_in_item_artwork",
-        "1级": "embedded_in_item_artwork",
+        "英雄": "embedded_in_artwork",
+        "战令": "embedded_in_artwork",
+        "1级": "embedded_in_artwork",
         "HE2D / HERO": "embedded_logo",
         "DYG": "embedded_logo",
-        "皮肤": "embedded_in_item_artwork",
-        "货币": "embedded_in_item_artwork",
+        "皮肤": "embedded_in_artwork",
+        "货币": "embedded_in_artwork",
         "元流": "decorative_art_text",
     }
     assert all(
@@ -261,13 +276,13 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
                 },
                 {
                     "id": "text_000",
-                    "semantic_role": "embedded_in_item_artwork",
+                    "semantic_role": "embedded_in_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
                 {
                     "id": "text_001",
-                    "semantic_role": "embedded_in_item_artwork",
+                    "semantic_role": "embedded_in_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
@@ -284,7 +299,7 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
                 },
                 {
                     "id": "text_001",
-                    "semantic_role": "embedded_in_item_artwork",
+                    "semantic_role": "embedded_in_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
@@ -330,7 +345,7 @@ def _coarse_document(decision: str = "remove_for_background_repair") -> TextRepa
     role = (
         "button_label"
         if decision == "remove_for_background_repair"
-        else "embedded_in_item_artwork"
+        else "embedded_in_artwork"
     )
     return TextRepairDecisionDocument(
         image_width=80,
@@ -473,11 +488,11 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
 
     assert rebuilt_ids == ["4,5"]
     assert [item.id for item in result.decisions] == ["text_000", "text_001"]
-    assert result.schema_version == "0.2"
+    assert result.schema_version == "0.2.1"
     assert result.decisions[0].semantic_role == "button_label"
     assert result.decisions[0].decision == "remove_for_background_repair"
     assert result.decisions[0].mask_quality == "native"
-    assert result.decisions[1].semantic_role == "embedded_in_item_artwork"
+    assert result.decisions[1].semantic_role == "embedded_in_artwork"
     assert result.decisions[1].decision == "preserve_as_visual_asset"
     assert {path.name for path in output_dir.iterdir()} == {
         "text-repair-decisions.json",
