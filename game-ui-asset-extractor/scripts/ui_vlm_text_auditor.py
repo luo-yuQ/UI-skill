@@ -62,7 +62,7 @@ SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉排版与美术资产审
 2. 文字本身是否为高度艺术化、与装饰图形强融合的视觉内容；若是，保留为 raster。
 3. 即使语义上是 UI label 或 button_label，也要判断去字后能否可靠恢复其底板。若底板复杂且恢复需要猜测原始纹理或设计，当前阶段保留为 raster。
 4. 只有位于简单、平滑、可安全恢复的 UI surface 上的独立文字，才归入 editable_texts。
-5. slot_count 和 stripped symbol 继续按照下方专项规则处理。
+5. slot_count 和 stripped symbol 继续按照下方专项规则处理。总体仍遵循 carrier-first preserve；唯一例外是独立库存数量角标：即使数量数字位于道具卡槽或卡面附近，只要它是独立的库存数量角标，就必须进入 editable_texts(role="slot_count")，不得加入 raster_text_ids。若同一个 ID 同时出现在 raster_text_ids 和 editable_texts 中，且 editable_texts.role 为 slot_count，必须以 editable_texts 为准，从 raster_text_ids 移除该 ID。除 slot_count 外，任何 raster/editable overlap 都是无效响应。
 
 【raster_text_ids：强制 100% 保留原始像素】
 当前阶段 raster_text_ids 同时包含真正的栅格美术字，以及虽然属于 UI 文字但当前无法安全分离、因此必须保留原像素的文字。满足以下任一条件即放入 raster_text_ids：
@@ -79,7 +79,7 @@ SYSTEM_PROMPT = """你是一个专业的游戏 UI 视觉排版与美术资产审
 
 【text_corrections：重复道具网格角标补漏】
 背包或道具网格的各个卡槽可能在一致的角落显示容易被 OCR 漏检的小型可编辑 slot_count。必须从图像推断实际行数和列数，不得预设固定网格尺寸，并按“自左向右、自上而下”的顺序独立检查每个可见卡槽。
-仅当卡槽角落肉眼可见数量数字（如 1, 2, 4, 7, 10, 12, 20, 27 等）且未在 OCR 列表中出现时，才在 text_corrections 中补齐并输出其归一化紧凑包围盒 bbox_norm [x0, y0, x1, y1] (0.0~1.0)。slot_count 始终作为可编辑数量文字处理，不得为空卡槽或没有可见数字证据的卡槽编造数量。
+仅当卡槽角落肉眼可见数量数字（如 1, 2, 4, 7, 10, 12, 20, 27 等）且未在 OCR 列表中出现时，才在 text_corrections 中补齐并输出其归一化紧凑包围盒 bbox_norm [x0, y0, x1, y1] (0.0~1.0)。slot_count 始终作为可编辑数量文字处理，即使其靠近道具卡面，也不得按载体规则保留为 raster；不得为空卡槽或没有可见数字证据的卡槽编造数量。
 
 【保守决策规则】
 不确定时优先保留原始像素（When uncertain, preserve）。如果无法可靠判断去字后能否恢复原始视觉资产，将该 ID 放入 raster_text_ids，而不是冒险擦除。当前阶段 False Editable 的代价高于 False Raster；目标不是尽可能擦掉所有文字，而是在不破坏原始美术资产的前提下提取可安全编辑的文字。
@@ -184,6 +184,39 @@ def _write_png(path: Path, image: np.ndarray) -> None:
         raise TextAuditInputError(f"Failed to write PNG {path}: {exc}") from exc
 
 
+def _build_repair_comparison(
+    original_img: np.ndarray,
+    mask_overlay: np.ndarray,
+    pre_inpaint_image: np.ndarray,
+    cleaned_image: np.ndarray,
+) -> np.ndarray:
+    images = [original_img, mask_overlay, pre_inpaint_image, cleaned_image]
+    image_height, image_width = original_img.shape[:2]
+    preview_width = min(1100, image_width)
+    preview_height = max(1, round(image_height * preview_width / image_width))
+    labels = ["Original", "Mask Overlay", "Pre-Inpaint", "Cleaned"]
+    panels = []
+    for label, image in zip(labels, images):
+        preview = cv2.resize(
+            image,
+            (preview_width, preview_height),
+            interpolation=cv2.INTER_AREA,
+        )
+        header = np.zeros((36, preview_width, 3), dtype=np.uint8)
+        cv2.putText(
+            header,
+            label,
+            (12, 25),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.7,
+            (255, 255, 255),
+            1,
+            cv2.LINE_AA,
+        )
+        panels.append(np.vstack((header, preview)))
+    return np.hstack(panels)
+
+
 def _strict_response_schema() -> dict[str, Any]:
     schema = copy.deepcopy(TextAuditResult.model_json_schema())
 
@@ -202,6 +235,26 @@ def _strict_response_schema() -> dict[str, Any]:
 
     make_strict(schema)
     return schema
+
+
+def _canonicalize_slot_count_editable_priority(
+    result: TextAuditResult,
+) -> TextAuditResult:
+    editable_slot_count_ids = {
+        item.id
+        for item in result.editable_texts
+        if item.role == "slot_count"
+    }
+    if not editable_slot_count_ids:
+        return result
+    canonical_raster_ids = [
+        text_id
+        for text_id in result.raster_text_ids
+        if text_id not in editable_slot_count_ids
+    ]
+    if canonical_raster_ids == result.raster_text_ids:
+        return result
+    return result.model_copy(update={"raster_text_ids": canonical_raster_ids})
 
 
 def _first_environment_value(*names: str) -> str:
@@ -486,6 +539,7 @@ def _build_correction_glyph_mask(
     *,
     association_iterations: int = 3,
     boundary_hits: set[str] | None = None,
+    dilation_debug: dict[str, np.ndarray] | None = None,
 ) -> np.ndarray:
     """Extract correction glyphs and their halo inside a padded local ROI."""
 
@@ -589,7 +643,11 @@ def _build_correction_glyph_mask(
     # and short drop shadows without turning the padded ROI into a solid box.
     halo_radius = 2 if min(tight_width, tight_height) <= 8 else 3
     halo_kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3))
+    if dilation_debug is not None:
+        dilation_debug["before"] = selected.copy()
     selected = cv2.dilate(selected, halo_kernel, iterations=halo_radius)
+    if dilation_debug is not None:
+        dilation_debug["after"] = selected.copy()
     if boundary_hits is not None:
         edge_band = boundary_margin + 1
         if np.any(selected[:, :edge_band]):
@@ -623,14 +681,22 @@ def _build_slot_count_glyph_mask(
     expansion_extra = max(2, int(round(glyph_height * 0.10)))
     expansion_count = 0
     detected_boundaries: set[str] = set()
+    debug_dir_raw = os.environ.get("SLOT_COUNT_DILATION_DEBUG_DIR", "").strip()
+    debug_dir = Path(debug_dir_raw) if debug_dir_raw else None
+    debug_capture: dict[str, np.ndarray] | None = {} if debug_dir is not None else None
     while True:
         current_boundary_hits: set[str] = set()
+        refined_kwargs: dict[str, Any] = {
+            "association_iterations": association_iterations,
+            "boundary_hits": current_boundary_hits,
+        }
+        if debug_capture is not None:
+            refined_kwargs["dilation_debug"] = debug_capture
         refined_mask = _build_correction_glyph_mask(
             original_img,
             tight_rect,
             search_rect,
-            association_iterations=association_iterations,
-            boundary_hits=current_boundary_hits,
+            **refined_kwargs,
         )
         detected_boundaries.update(current_boundary_hits)
         if (
@@ -658,6 +724,42 @@ def _build_slot_count_glyph_mask(
         _correction_pixel_rect(bbox_norm, image_width, image_height),
     )
     final_mask = cv2.bitwise_or(refined_mask, conservative_mask)
+    if debug_capture is not None and debug_dir is not None:
+        before = debug_capture.get("before", np.zeros_like(refined_mask))
+        after = debug_capture.get("after", np.zeros_like(refined_mask))
+        added = cv2.bitwise_and(after, cv2.bitwise_not(before))
+        union = cv2.bitwise_or(before, after)
+        nonzero_y, nonzero_x = np.nonzero(union)
+        if nonzero_x.size == 0:
+            crop_x0, crop_y0, crop_x1, crop_y1 = 0, 0, 16, 16
+            before_crop = np.zeros((16, 16), dtype=np.uint8)
+            after_crop = before_crop.copy()
+            added_crop = before_crop.copy()
+        else:
+            padding = 12
+            crop_x0 = max(0, int(nonzero_x.min()) - padding)
+            crop_y0 = max(0, int(nonzero_y.min()) - padding)
+            crop_x1 = min(after.shape[1], int(nonzero_x.max()) + 1 + padding)
+            crop_y1 = min(after.shape[0], int(nonzero_y.max()) + 1 + padding)
+            before_crop = before[crop_y0:crop_y1, crop_x0:crop_x1]
+            after_crop = after[crop_y0:crop_y1, crop_x0:crop_x1]
+            added_crop = added[crop_y0:crop_y1, crop_x0:crop_x1]
+        scale = 8
+        before_crop = cv2.resize(
+            before_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST
+        )
+        after_crop = cv2.resize(
+            after_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST
+        )
+        added_crop = cv2.resize(
+            added_crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_NEAREST
+        )
+        debug_dir.mkdir(parents=True, exist_ok=True)
+        debug_index = len(list(debug_dir.glob("refined_*_01_before_dilation.png")))
+        debug_name = f"refined_{debug_index:03d}"
+        _write_png(debug_dir / f"{debug_name}_01_before_dilation.png", before_crop)
+        _write_png(debug_dir / f"{debug_name}_02_after_dilation.png", after_crop)
+        _write_png(debug_dir / f"{debug_name}_03_added_by_dilation.png", added_crop)
     mask_y, mask_x = np.nonzero(final_mask)
     final_mask_rect = (
         None
@@ -820,6 +922,7 @@ class UIVLMTextAuditor:
         except (json.JSONDecodeError, ValidationError, TypeError) as exc:
             raise TextAuditResponseError(f"Invalid VLM audit response: {exc}") from exc
 
+        result = _canonicalize_slot_count_editable_priority(result)
         source_ids = {item.id for item in texts}
         referenced_ids = set(result.raster_text_ids)
         referenced_ids.update(item.id for item in result.editable_texts)
@@ -1089,6 +1192,7 @@ class UIVLMTextAuditor:
     def export_artifacts(
         self,
         audit_result: TextAuditResult,
+        original_image: np.ndarray,
         final_inpaint_mask: np.ndarray,
         cleaned_image: np.ndarray,
         unified_texts: list[TextItem],
@@ -1100,7 +1204,15 @@ class UIVLMTextAuditor:
 
         output_path = Path(output_dir)
         output_path.mkdir(parents=True, exist_ok=True)
-        image_height, image_width = cleaned_image.shape[:2]
+        if original_image.shape[:2] != final_inpaint_mask.shape[:2]:
+            raise TextAuditInputError(
+                "Original image and final inpaint mask must have identical dimensions"
+            )
+        if original_image.shape[:2] != cleaned_image.shape[:2]:
+            raise TextAuditInputError(
+                "Original image and cleaned image must have identical dimensions"
+            )
+        image_height, image_width = original_image.shape[:2]
         filtered_document = self._filtered_document(
             source_envelope,
             unified_texts,
@@ -1125,11 +1237,40 @@ class UIVLMTextAuditor:
             raise TextAuditInputError(
                 f"Cannot write artifacts to {output_path}"
             ) from exc
+        mask_pixels = final_inpaint_mask > 0
+        mask_overlay = original_image.copy()
+        red = np.zeros_like(original_image)
+        red[:, :, 0] = 255
+        mask_overlay[mask_pixels] = (
+            original_image[mask_pixels].astype(np.float32) * 0.45
+            + red[mask_pixels].astype(np.float32) * 0.55
+        ).astype(np.uint8)
+        pre_inpaint_image = original_image.copy()
+        pre_inpaint_image[mask_pixels] = 0
+        _write_png(
+            output_path / "original_debug.png",
+            cv2.cvtColor(original_image, cv2.COLOR_RGB2BGR),
+        )
         _write_png(output_path / "final_inpaint_mask.png", final_inpaint_mask)
+        _write_png(
+            output_path / "mask_overlay.png",
+            cv2.cvtColor(mask_overlay, cv2.COLOR_RGB2BGR),
+        )
+        _write_png(
+            output_path / "pre_inpaint_image.png",
+            cv2.cvtColor(pre_inpaint_image, cv2.COLOR_RGB2BGR),
+        )
         _write_png(
             output_path / "cleaned_image.png",
             cv2.cvtColor(cleaned_image, cv2.COLOR_RGB2BGR),
         )
+        comparison = _build_repair_comparison(
+            original_image,
+            mask_overlay,
+            pre_inpaint_image,
+            cleaned_image,
+        )
+        _write_png(output_path / "repair_comparison.png", cv2.cvtColor(comparison, cv2.COLOR_RGB2BGR))
 
     def process(
         self,
@@ -1156,6 +1297,7 @@ class UIVLMTextAuditor:
         )
         self.export_artifacts(
             audit_result,
+            image,
             final_mask,
             cleaned,
             unified_texts,

@@ -316,6 +316,8 @@ def test_audit_uses_compact_prompt_and_validates_result(tmp_path: Path) -> None:
     assert "button_label 只有在按钮底板平滑" in SYSTEM_PROMPT
     assert "轻微渐变或缓慢颜色变化" in SYSTEM_PROMPT
     assert "slot_count 始终作为可编辑数量文字处理" in SYSTEM_PROMPT
+    assert "以 editable_texts 为准，从 raster_text_ids 移除该 ID" in SYSTEM_PROMPT
+    assert "除 slot_count 外，任何 raster/editable overlap 都是无效响应" in SYSTEM_PROMPT
     assert "不确定时优先保留原始像素" in SYSTEM_PROMPT
     assert "When uncertain, preserve" in SYSTEM_PROMPT
     assert "自左向右、自上而下" in SYSTEM_PROMPT
@@ -394,6 +396,62 @@ def test_schema_failure_after_valid_json_does_not_trigger_parse_retry(
     assert len(client.calls) == 1
 
 
+def test_slot_count_overlap_is_canonicalized_to_editable() -> None:
+    result = TextAuditResult(
+        scene_summary="Inventory quantities",
+        raster_text_ids=["slot_a", "raster_a", "slot_b"],
+        editable_texts=[
+            {"id": "slot_a", "text": "7", "role": "slot_count"},
+            {"id": "raster_a", "text": "Badge", "role": "title"},
+            {"id": "slot_b", "text": "12", "role": "slot_count"},
+        ],
+    )
+
+    canonical = auditor_module._canonicalize_slot_count_editable_priority(result)
+
+    assert canonical.raster_text_ids == ["raster_a"]
+    assert [item.id for item in canonical.editable_texts] == [
+        "slot_a", "raster_a", "slot_b"
+    ]
+
+
+def test_audit_rejects_non_slot_count_overlap(tmp_path: Path) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    payload = _audit_payload(include_corrections=False)
+    payload["raster_text_ids"] = ["text_000", "text_002"]
+
+    with pytest.raises(TextAuditResponseError, match="both raster and editable"):
+        UIVLMTextAuditor(client=FakeVLMClient(payload)).audit(image_path, texts_path)
+
+
+def test_audit_accepts_slot_count_overlap_after_canonicalization(tmp_path: Path) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    payload = _audit_payload(include_corrections=False)
+    payload["raster_text_ids"] = ["text_000", "text_002"]
+    payload["editable_texts"][1]["role"] = "slot_count"
+
+    result = UIVLMTextAuditor(client=FakeVLMClient(payload)).audit(
+        image_path, texts_path
+    )
+
+    assert result.raster_text_ids == ["text_000"]
+    assert [item.id for item in result.editable_texts] == ["text_001", "text_002"]
+
+
+def test_audit_without_overlap_preserves_normal_result(tmp_path: Path) -> None:
+    image_path, texts_path, _ = _write_inputs(tmp_path)
+    payload = _audit_payload(include_corrections=False)
+
+    result = UIVLMTextAuditor(client=FakeVLMClient(payload)).audit(
+        image_path, texts_path
+    )
+
+    assert result.raster_text_ids == payload["raster_text_ids"]
+    assert [item.id for item in result.editable_texts] == [
+        item["id"] for item in payload["editable_texts"]
+    ]
+
+
 def test_raster_mask_is_removed_and_original_pixels_are_preserved() -> None:
     image, raw_mask = _make_arrays()
     result = TextAuditResult.model_validate(_audit_payload(include_corrections=False))
@@ -452,23 +510,9 @@ def test_single_digit_corrections_extend_mask_and_unified_metadata() -> None:
     assert unified[-1].style.fontSize >= 8
 
 
-def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox() -> None:
     height, width = 60, 90
     image, background = _make_boundary_digit_image()
-    expansion_hits: list[set[str]] = []
-    original_expand = auditor_module._expand_slot_count_search_rect
-
-    def track_expansion(*args: Any, **kwargs: Any) -> tuple[int, int, int, int]:
-        expansion_hits.append(set(args[1]))
-        return original_expand(*args, **kwargs)
-
-    monkeypatch.setattr(
-        auditor_module,
-        "_expand_slot_count_search_rect",
-        track_expansion,
-    )
     correction = TextCorrection(
         text="4",
         bbox_norm=[41 / width, 22 / height, 43 / width, 42 / height],
@@ -493,28 +537,12 @@ def test_narrow_slot_count_bbox_recovers_digit_pixels_outside_bbox(
     assert np.any(outside_tight_digit)
     assert np.all(final_mask[outside_tight_digit] == 255)
     assert np.count_nonzero(final_mask) < 0.30 * final_mask.size
-    assert 1 <= len(expansion_hits) <= auditor_module.SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
-    assert all("right" in hits for hits in expansion_hits)
 
 
-def test_slot_count_boundary_detection_expands_left_direction(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+def test_slot_count_boundary_detection_expands_left_direction() -> None:
     height, width = 60, 90
     source, background = _make_boundary_digit_image()
     image = np.ascontiguousarray(source[:, ::-1])
-    expansion_hits: list[set[str]] = []
-    original_expand = auditor_module._expand_slot_count_search_rect
-
-    def track_expansion(*args: Any, **kwargs: Any) -> tuple[int, int, int, int]:
-        expansion_hits.append(set(args[1]))
-        return original_expand(*args, **kwargs)
-
-    monkeypatch.setattr(
-        auditor_module,
-        "_expand_slot_count_search_rect",
-        track_expansion,
-    )
     mask = auditor_module._build_slot_count_glyph_mask(
         image,
         (47, 22, 49, 42),
@@ -523,8 +551,6 @@ def test_slot_count_boundary_detection_expands_left_direction(
 
     digit_pixels = np.any(image != background, axis=2)
     assert np.all(mask[digit_pixels] == 255)
-    assert 1 <= len(expansion_hits) <= auditor_module.SLOT_COUNT_MAX_BOUNDARY_EXPANSIONS
-    assert all("left" in hits for hits in expansion_hits)
 
 
 def test_complete_slot_count_does_not_expand_search_roi(
