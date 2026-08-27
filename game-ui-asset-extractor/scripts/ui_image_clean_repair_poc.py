@@ -200,7 +200,71 @@ def _redact(value: Any, api_key: str | None) -> Any:
         return [_redact(item, api_key) for item in value]
     return value
 
+def upload_image_for_clean_repair(
+    image_path: Path,
+    *,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+    session: Any,
+) -> str:
+    upload_url = toapis.provider_url(base_url, "/api/upload")
 
+    suffix = image_path.suffix.lower()
+    if suffix == ".png":
+        mime_type = "image/png"
+    elif suffix in {".jpg", ".jpeg"}:
+        mime_type = "image/jpeg"
+    elif suffix == ".webp":
+        mime_type = "image/webp"
+    else:
+        raise CleanRepairError(
+            f"Unsupported image type for upload: {image_path}"
+        )
+
+    try:
+        with image_path.open("rb") as file:
+            response = session.post(
+                upload_url,
+                headers={
+                    "Authorization": f"Bearer {api_key}",
+                },
+                files={
+                    "file": (
+                        image_path.name,
+                        file,
+                        mime_type,
+                    )
+                },
+                timeout=timeout,
+            )
+    except Exception as exc:
+        raise CleanRepairError(
+            f"Upload request failed for {image_path.name}: {exc}"
+        ) from exc
+
+    if not 200 <= response.status_code < 300:
+        body = response.text[:2000]
+        raise CleanRepairError(
+            f"Upload failed for {image_path.name}: "
+            f"HTTP {response.status_code}, body={body}"
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise CleanRepairError(
+            f"Upload response was not JSON for {image_path.name}"
+        ) from exc
+
+    image_url = data.get("url")
+
+    if not isinstance(image_url, str) or not image_url.strip():
+        raise CleanRepairError(
+            f"Upload response missing url for {image_path.name}"
+        )
+
+    return image_url
 def _download_clean_image(
     image_url: str,
     output_dir: Path,
@@ -253,6 +317,60 @@ def _result_base(
         "mask_overlay": str(mask_overlay) if mask_overlay is not None else None,
     }
 
+def submit_generation_for_clean_repair(
+    payload: dict[str, Any],
+    *,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+    session: Any,
+) -> dict[str, Any]:
+    submit_url = toapis.provider_url(base_url, "/v1/images/generations")
+
+    try:
+        response = session.post(
+            submit_url,
+            headers={
+                "Authorization": f"Bearer {api_key}",
+                "Content-Type": "application/json",
+            },
+            json=payload,
+            timeout=timeout,
+        )
+    except Exception as exc:
+        raise CleanRepairError(f"Generation submit request failed: {exc}") from exc
+
+    status = response.status_code
+    content_type = response.headers.get("Content-Type", "")
+    body_preview = response.text[:2000]
+
+    if not 200 <= status < 300:
+        raise CleanRepairError(
+            f"Generation submit failed: HTTP {status}, "
+            f"content_type={content_type}, body={body_preview}"
+        )
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        raise CleanRepairError(
+            f"Generation submit returned non-JSON body: "
+            f"HTTP {status}, content_type={content_type}, body={body_preview}"
+        ) from exc
+
+    if not isinstance(data, dict):
+        raise CleanRepairError(
+            f"Generation submit returned non-object JSON: {data!r}"
+        )
+
+    task_id = data.get("task_id")
+    if not isinstance(task_id, str) or not task_id.strip():
+        raise CleanRepairError(
+            f"Generation submit response missing task_id: body={body_preview}"
+        )
+
+    return data
+
 
 def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str, Any]]:
     source_image = Path(args.image)
@@ -296,21 +414,21 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
         provider_size = select_provider_size(source_size)
         active_session = session if session is not None else toapis.requests
 
-        source_url = toapis.upload_image(
-            source_image,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=args.upload_timeout,
-            session=active_session,
-        )
+        source_url = upload_image_for_clean_repair(
+    source_image,
+    base_url=base_url,
+    api_key=api_key,
+    timeout=args.upload_timeout,
+    session=active_session,
+)
         image_urls = [source_url]
         if mask_overlay is not None:
-            overlay_url = toapis.upload_image(
-                mask_overlay,
-                base_url=base_url,
-                api_key=api_key,
-                timeout=args.upload_timeout,
-                session=active_session,
+            overlay_url = upload_image_for_clean_repair(
+    mask_overlay,
+    base_url=base_url,
+    api_key=api_key,
+    timeout=args.upload_timeout,
+    session=active_session,
             )
             image_urls.append(overlay_url)
 
@@ -320,12 +438,12 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             image_urls=image_urls,
             provider_size=provider_size,
         )
-        submit_data = toapis.submit_generation(
-            payload,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=args.request_timeout,
-            session=active_session,
+        submit_data = submit_generation_for_clean_repair(
+    payload,
+    base_url=base_url,
+    api_key=api_key,
+    timeout=args.request_timeout,
+    session=active_session,
         )
         task_id = str(submit_data["task_id"])
         toapis.poll_task_status(
