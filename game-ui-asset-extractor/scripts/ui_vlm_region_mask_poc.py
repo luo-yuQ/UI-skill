@@ -277,6 +277,79 @@ class ChatCompletionsSchemaVLMClient:
             ) from exc
 
         status_code = getattr(response, "status_code", None)
+        response_headers = getattr(response, "headers", {})
+        content_type = (
+            response_headers.get("Content-Type", "<missing>")
+            if hasattr(response_headers, "get")
+            else "<missing>"
+        )
+        content_encoding = (
+            response_headers.get("Content-Encoding", "<missing>")
+            if hasattr(response_headers, "get")
+            else "<missing>"
+        )
+        transfer_encoding = (
+            response_headers.get("Transfer-Encoding", "<missing>")
+            if hasattr(response_headers, "get")
+            else "<missing>"
+        )
+        try:
+            raw_body = response.text
+        except Exception as exc:  # pragma: no cover - defensive provider boundary
+            raw_body = f"<unavailable: {type(exc).__name__}>"
+        raw_body_type = type(raw_body).__name__
+        if not isinstance(raw_body, str):
+            raw_body = str(raw_body)
+        raw_body_length = len(raw_body)
+        raw_body_preview = raw_body[:2000]
+        api_key = str(self.config.api_key)
+        if api_key:
+            raw_body_preview = raw_body_preview.replace(api_key, "[REDACTED]")
+        printable_preview = raw_body_preview.replace("\r", "\\r").replace(
+            "\n", "\\n"
+        )
+        has_image = any(
+            isinstance(part, dict) and part.get("type") in {"image", "image_url"}
+            for message in payload["messages"]
+            if isinstance(message, dict) and isinstance(message.get("content"), list)
+            for part in message["content"]
+        )
+        request_stream = payload.get("stream", "<omitted>")
+        if isinstance(request_stream, bool):
+            request_stream = str(request_stream).lower()
+        print(f"CHAT_COMPLETIONS_REQUEST_URL={self.endpoint}", file=sys.stderr)
+        print(
+            f"CHAT_COMPLETIONS_REQUEST_MODEL={self.config.model}",
+            file=sys.stderr,
+        )
+        print(
+            f"CHAT_COMPLETIONS_REQUEST_STREAM={request_stream}",
+            file=sys.stderr,
+        )
+        print(
+            f"CHAT_COMPLETIONS_HAS_IMAGE={str(has_image).lower()}",
+            file=sys.stderr,
+        )
+        print(f"CHAT_COMPLETIONS_HTTP_STATUS={status_code}", file=sys.stderr)
+        print(f"CHAT_COMPLETIONS_CONTENT_TYPE={content_type}", file=sys.stderr)
+        print(
+            f"CHAT_COMPLETIONS_CONTENT_ENCODING={content_encoding}",
+            file=sys.stderr,
+        )
+        print(
+            f"CHAT_COMPLETIONS_TRANSFER_ENCODING={transfer_encoding}",
+            file=sys.stderr,
+        )
+        print(
+            f"CHAT_COMPLETIONS_RAW_BODY_TYPE={raw_body_type}",
+            file=sys.stderr,
+        )
+        print(
+            f"CHAT_COMPLETIONS_RAW_BODY_LENGTH={raw_body_length}",
+            file=sys.stderr,
+        )
+        print(f"CHAT_COMPLETIONS_RAW_BODY_PREVIEW={printable_preview}", file=sys.stderr)
+
         if type(status_code) is not int or not 200 <= status_code < 300:
             status = status_code if type(status_code) is int else "unknown"
             raise RegionMaskClientError(
@@ -285,8 +358,14 @@ class ChatCompletionsSchemaVLMClient:
         try:
             provider_response = response.json()
         except Exception as exc:
+            json_error = f"{type(exc).__name__}: {exc}"
+            if api_key:
+                json_error = json_error.replace(api_key, "[REDACTED]")
             raise VLMResponseParseError(
-                "Chat Completions response body is not valid JSON"
+                "Chat Completions response body is not valid JSON; "
+                f"status_code={status_code}; content_type={content_type}; "
+                f"body_length={raw_body_length}; json_decode_error={json_error}; "
+                f"body_preview={printable_preview}"
             ) from exc
         try:
             message = provider_response["choices"][0]["message"]

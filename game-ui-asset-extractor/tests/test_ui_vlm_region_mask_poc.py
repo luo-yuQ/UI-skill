@@ -126,23 +126,41 @@ class SequencedClient(FakeClient):
 
 
 class FakeHTTPResponse:
-    status_code = 200
+    def __init__(
+        self,
+        *,
+        body: str | None = None,
+        status_code: int = 200,
+        content_type: str = "application/json",
+        content_encoding: str | None = None,
+        transfer_encoding: str | None = None,
+    ) -> None:
+        self.status_code = status_code
+        self.headers = {"Content-Type": content_type}
+        if content_encoding is not None:
+            self.headers["Content-Encoding"] = content_encoding
+        if transfer_encoding is not None:
+            self.headers["Transfer-Encoding"] = transfer_encoding
+        self.text = body or json.dumps(
+            {
+                "choices": [
+                    {"message": {"content": json.dumps(_payload())}}
+                ]
+            }
+        )
 
     def json(self) -> dict[str, Any]:
-        return {
-            "choices": [
-                {"message": {"content": json.dumps(_payload())}}
-            ]
-        }
+        return json.loads(self.text)
 
 
 class FakeHTTPSession:
-    def __init__(self) -> None:
+    def __init__(self, response: FakeHTTPResponse | None = None) -> None:
         self.calls: list[dict[str, Any]] = []
+        self.response = response or FakeHTTPResponse()
 
     def post(self, url: str, **kwargs: Any) -> FakeHTTPResponse:
         self.calls.append({"url": url, **kwargs})
-        return FakeHTTPResponse()
+        return self.response
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -222,6 +240,7 @@ def test_process_uses_one_canonical_vlm_pass_and_only_vlm_boxes(
 
 def test_chat_completions_client_submits_api_level_json_schema(
     tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
 ) -> None:
     image_path = tmp_path / "analysis.png"
     Image.new("RGB", (16, 8), (10, 20, 30)).save(image_path)
@@ -263,6 +282,76 @@ def test_chat_completions_client_submits_api_level_json_schema(
     assert user_content[1]["image_url"]["url"].startswith(
         "data:image/png;base64,"
     )
+    diagnostics = capsys.readouterr().err
+    assert (
+        "CHAT_COMPLETIONS_REQUEST_URL="
+        "https://relay.example.test/v1/chat/completions"
+    ) in diagnostics
+    assert "CHAT_COMPLETIONS_HTTP_STATUS=200" in diagnostics
+    assert "CHAT_COMPLETIONS_CONTENT_TYPE=application/json" in diagnostics
+    assert "CHAT_COMPLETIONS_REQUEST_MODEL=gpt-5.6-terra" in diagnostics
+    assert "CHAT_COMPLETIONS_REQUEST_STREAM=<omitted>" in diagnostics
+    assert "CHAT_COMPLETIONS_HAS_IMAGE=true" in diagnostics
+    assert "CHAT_COMPLETIONS_CONTENT_ENCODING=<missing>" in diagnostics
+    assert "CHAT_COMPLETIONS_TRANSFER_ENCODING=<missing>" in diagnostics
+    assert "CHAT_COMPLETIONS_RAW_BODY_TYPE=str" in diagnostics
+    assert "CHAT_COMPLETIONS_RAW_BODY_LENGTH=" in diagnostics
+    assert "CHAT_COMPLETIONS_RAW_BODY_PREVIEW=" in diagnostics
+    assert "secret" not in diagnostics
+
+
+def test_non_json_http_body_is_logged_and_included_in_error(
+    tmp_path: Path,
+    capsys: pytest.CaptureFixture[str],
+) -> None:
+    image_path = tmp_path / "analysis.png"
+    Image.new("RGB", (16, 8), (10, 20, 30)).save(image_path)
+    session = FakeHTTPSession(
+        FakeHTTPResponse(
+            body="<html>relay error secret</html>",
+            content_type="text/html; charset=utf-8",
+            content_encoding="br",
+            transfer_encoding="chunked",
+        )
+    )
+    config = SimpleNamespace(
+        base_url="https://relay.example.test",
+        api_key="secret",
+        model="gpt-5.6-terra",
+        timeout=30.0,
+    )
+    client = poc.ChatCompletionsSchemaVLMClient(config, session=session)
+
+    with pytest.raises(poc.VLMResponseParseError) as exc_info:
+        client.infer_json(
+            image_path=image_path,
+            system_prompt="system",
+            user_prompt="user",
+            response_schema=poc._strict_response_schema(),
+        )
+
+    diagnostics = capsys.readouterr().err
+    assert "CHAT_COMPLETIONS_HTTP_STATUS=200" in diagnostics
+    assert "CHAT_COMPLETIONS_CONTENT_TYPE=text/html; charset=utf-8" in diagnostics
+    assert "CHAT_COMPLETIONS_REQUEST_MODEL=gpt-5.6-terra" in diagnostics
+    assert "CHAT_COMPLETIONS_REQUEST_STREAM=<omitted>" in diagnostics
+    assert "CHAT_COMPLETIONS_HAS_IMAGE=true" in diagnostics
+    assert "CHAT_COMPLETIONS_CONTENT_ENCODING=br" in diagnostics
+    assert "CHAT_COMPLETIONS_TRANSFER_ENCODING=chunked" in diagnostics
+    assert "CHAT_COMPLETIONS_RAW_BODY_TYPE=str" in diagnostics
+    assert "CHAT_COMPLETIONS_RAW_BODY_LENGTH=31" in diagnostics
+    assert (
+        "CHAT_COMPLETIONS_RAW_BODY_PREVIEW="
+        "<html>relay error [REDACTED]</html>"
+    ) in diagnostics
+    assert "secret" not in diagnostics
+    error = str(exc_info.value)
+    assert "status_code=200" in error
+    assert "content_type=text/html; charset=utf-8" in error
+    assert "body_length=31" in error
+    assert "json_decode_error=JSONDecodeError:" in error
+    assert "body_preview=<html>relay error [REDACTED]</html>" in error
+    assert "secret" not in error
 
 
 def test_default_client_is_chat_completions_not_responses(
