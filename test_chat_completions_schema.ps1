@@ -97,13 +97,7 @@ if (-not (Test-Path -LiteralPath $ImagePath -PathType Leaf)) {
     throw "Image file does not exist: $ImagePath"
 }
 
-$normalizedBaseUrl = $baseUrl.TrimEnd("/")
-if ($normalizedBaseUrl -match "(?i)/v1$") {
-    $endpoint = "$normalizedBaseUrl/chat/completions"
-}
-else {
-    $endpoint = "$normalizedBaseUrl/v1/chat/completions"
-}
+$endpoint = "$($env:OPENAI_BASE_URL.TrimEnd('/'))/v1/chat/completions"
 
 $extension = [System.IO.Path]::GetExtension($ImagePath).ToLowerInvariant()
 $mimeType = switch ($extension) {
