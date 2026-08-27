@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 import sys
 from pathlib import Path
+from types import SimpleNamespace
 from typing import Any
 
 import cv2
@@ -124,6 +125,26 @@ class SequencedClient(FakeClient):
         )
 
 
+class FakeHTTPResponse:
+    status_code = 200
+
+    def json(self) -> dict[str, Any]:
+        return {
+            "choices": [
+                {"message": {"content": json.dumps(_payload())}}
+            ]
+        }
+
+
+class FakeHTTPSession:
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    def post(self, url: str, **kwargs: Any) -> FakeHTTPResponse:
+        self.calls.append({"url": url, **kwargs})
+        return FakeHTTPResponse()
+
+
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
     image_path = tmp_path / "original.png"
     Image.new("RGB", (128, 64), (25, 50, 75)).save(image_path)
@@ -197,6 +218,66 @@ def test_process_uses_one_canonical_vlm_pass_and_only_vlm_boxes(
         "region-mask.png",
         "region-mask-overlay.png",
     }
+
+
+def test_chat_completions_client_submits_api_level_json_schema(
+    tmp_path: Path,
+) -> None:
+    image_path = tmp_path / "analysis.png"
+    Image.new("RGB", (16, 8), (10, 20, 30)).save(image_path)
+    session = FakeHTTPSession()
+    config = SimpleNamespace(
+        base_url="https://relay.example.test",
+        api_key="secret",
+        model="gpt-5.6-terra",
+        timeout=30.0,
+    )
+    schema = poc._strict_response_schema()
+    client = poc.ChatCompletionsSchemaVLMClient(config, session=session)
+
+    result = client.infer_json(
+        image_path=image_path,
+        system_prompt="system",
+        user_prompt="user",
+        response_schema=schema,
+    )
+
+    assert result == _payload()
+    assert len(session.calls) == 1
+    call = session.calls[0]
+    assert call["url"] == "https://relay.example.test/v1/chat/completions"
+    request = call["json"]
+    assert request["model"] == "gpt-5.6-terra"
+    assert request["response_format"] == {
+        "type": "json_schema",
+        "json_schema": {
+            "name": "canonical_text_response",
+            "strict": True,
+            "schema": schema,
+        },
+    }
+    assert request["messages"][0] == {"role": "system", "content": "system"}
+    user_content = request["messages"][1]["content"]
+    assert user_content[0] == {"type": "text", "text": "user"}
+    assert user_content[1]["type"] == "image_url"
+    assert user_content[1]["image_url"]["url"].startswith(
+        "data:image/png;base64,"
+    )
+
+
+def test_default_client_is_chat_completions_not_responses(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    session = FakeHTTPSession()
+    monkeypatch.setenv("OPENAI_BASE_URL", "https://relay.example.test")
+    monkeypatch.setenv("OPENAI_API_KEY", "secret")
+    assert poc.requests is not None
+    monkeypatch.setattr(poc.requests, "Session", lambda: session)
+
+    client = poc._create_default_client("gpt-5.6-terra")
+
+    assert isinstance(client, poc.ChatCompletionsSchemaVLMClient)
+    assert client.endpoint == "https://relay.example.test/v1/chat/completions"
 
 
 @pytest.mark.parametrize(

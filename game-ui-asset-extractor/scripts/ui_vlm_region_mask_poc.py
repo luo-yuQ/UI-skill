@@ -166,7 +166,7 @@ class RegionMaskInputError(RegionMaskError):
 
 
 class RegionMaskClientError(RegionMaskError):
-    """Raised when the single VLM request fails."""
+    """Raised when a VLM request fails."""
 
 
 class RegionMaskResponseError(RegionMaskError):
@@ -183,6 +183,133 @@ class VLMClient(Protocol):
         response_schema: dict[str, Any] | None = None,
     ) -> Any:
         """Return one decoded JSON-compatible response."""
+
+
+def _build_chat_completions_endpoint(base_url: str) -> str:
+    """Normalize a relay base URL to its Chat Completions endpoint."""
+
+    normalized = base_url.strip().rstrip("/")
+    parsed = urlparse(normalized)
+    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+        raise RegionMaskClientError(
+            "OPENAI_BASE_URL must be an absolute HTTP(S) URL"
+        )
+    if parsed.query or parsed.fragment:
+        raise RegionMaskClientError(
+            "OPENAI_BASE_URL must not contain a query or fragment"
+        )
+    if parsed.path.rstrip("/").endswith("/v1"):
+        return normalized + "/chat/completions"
+    return normalized + CHAT_COMPLETIONS_PATH
+
+
+class ChatCompletionsSchemaVLMClient:
+    """Chat Completions VLM client with API-level JSON Schema submission."""
+
+    def __init__(self, config: Any, *, session: Any | None = None) -> None:
+        if session is None:
+            if requests is None:
+                raise RegionMaskClientError(
+                    "The requests package is required for Chat Completions"
+                )
+            session = requests.Session()
+        self.config = config
+        self.session = session
+        self.endpoint = _build_chat_completions_endpoint(config.base_url)
+
+    def infer_json(
+        self,
+        *,
+        image_path: Path,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any] | None = None,
+    ) -> Any:
+        if not isinstance(response_schema, dict):
+            raise RegionMaskClientError(
+                "Chat Completions requires a JSON response schema"
+            )
+        if encode_image_as_data_url is None:
+            raise RegionMaskClientError(
+                "Repository image data-URL helper is unavailable"
+            )
+        payload = {
+            "model": self.config.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": user_prompt},
+                        {
+                            "type": "image_url",
+                            "image_url": {
+                                "url": encode_image_as_data_url(image_path)
+                            },
+                        },
+                    ],
+                },
+            ],
+            "response_format": {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "canonical_text_response",
+                    "strict": True,
+                    "schema": response_schema,
+                },
+            },
+        }
+        headers = {
+            "Authorization": f"Bearer {self.config.api_key}",
+            "Content-Type": "application/json; charset=utf-8",
+            "Accept": "application/json",
+        }
+        try:
+            response = self.session.post(
+                self.endpoint,
+                headers=headers,
+                json=payload,
+                timeout=self.config.timeout,
+            )
+        except Exception as exc:
+            raise RegionMaskClientError(
+                f"Chat Completions transport failed: {type(exc).__name__}"
+            ) from exc
+
+        status_code = getattr(response, "status_code", None)
+        if type(status_code) is not int or not 200 <= status_code < 300:
+            status = status_code if type(status_code) is int else "unknown"
+            raise RegionMaskClientError(
+                f"Chat Completions returned HTTP {status}"
+            )
+        try:
+            provider_response = response.json()
+        except Exception as exc:
+            raise VLMResponseParseError(
+                "Chat Completions response body is not valid JSON"
+            ) from exc
+        try:
+            message = provider_response["choices"][0]["message"]
+            content = message["content"]
+        except (KeyError, IndexError, TypeError) as exc:
+            raise VLMResponseParseError(
+                "Chat Completions response has no assistant content"
+            ) from exc
+        if not isinstance(content, str) or not content.strip():
+            raise VLMResponseParseError(
+                "Chat Completions assistant content is empty"
+            )
+        try:
+            result = json.loads(content)
+        except json.JSONDecodeError as exc:
+            raise VLMResponseParseError(
+                "Chat Completions assistant content is not valid JSON"
+            ) from exc
+        if not isinstance(result, dict):
+            raise VLMResponseParseError(
+                "Chat Completions assistant content must be a JSON object"
+            )
+        return result
 
 
 class _StrictModel(BaseModel):
@@ -313,7 +440,7 @@ def _first_environment_value(*names: str) -> str:
 
 
 def _create_default_client(model: str) -> VLMClient:
-    if ResponsesAPIVLMClient is None or VLMClientConfig is None:
+    if VLMClientConfig is None or encode_image_as_data_url is None:
         raise RegionMaskClientError(
             "Repository VLM client is unavailable under game-ui-asset-analyzer/scripts"
         )
@@ -334,7 +461,7 @@ def _create_default_client(model: str) -> VLMClient:
         raise RegionMaskClientError(f"Invalid VLM timeout: {timeout_text!r}") from exc
     if not math.isfinite(timeout) or timeout <= 0:
         raise RegionMaskClientError("VLM timeout must be a positive finite number")
-    return ResponsesAPIVLMClient(
+    return ChatCompletionsSchemaVLMClient(
         VLMClientConfig(
             base_url=base_url,
             api_key=api_key,
