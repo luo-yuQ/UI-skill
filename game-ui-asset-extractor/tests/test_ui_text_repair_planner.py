@@ -19,17 +19,24 @@ import ui_text_repair_planner as planner_module  # noqa: E402
 from ui_audit_models import TextItem  # noqa: E402
 from ui_text_extractor import UITextExtractor  # noqa: E402
 from ui_text_repair_planner import (  # noqa: E402
+    COVERAGE_SYSTEM_PROMPT,
+    AnalysisBBox,
+    RepairTextCandidate,
     SEMANTIC_ROLE_TO_DECISION,
     SYSTEM_PROMPT,
     TextRepairDecision,
     TextRepairDecisionDocument,
     TextRepairContractError,
     UITextRepairPlanner,
+    VLMCoverageAuditResponse,
     VLMTextDecisionResponse,
     _validate_complete_classification,
     build_union_text_mask,
     decision_for_semantic_role,
+    normalize_and_deduplicate_corrections,
+    normalize_ocr_candidates,
     refine_coarse_text_mask,
+    validate_and_map_analysis_bbox,
 )
 
 
@@ -95,13 +102,15 @@ def _payload(decisions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
 
 
 class FakeVLMClient:
-    def __init__(self, payload: dict[str, Any]) -> None:
-        self.payload = payload
+    def __init__(self, payload: dict[str, Any] | list[dict[str, Any]]) -> None:
+        self.payloads = payload if isinstance(payload, list) else [payload]
         self.calls: list[dict[str, Any]] = []
 
     def infer_json(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
-        return self.payload
+        if not self.payloads:
+            raise AssertionError("FakeVLMClient has no response left")
+        return self.payloads.pop(0)
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path, Path]:
@@ -264,7 +273,7 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
                     "reason": "runtime label",
                 }
             ],
-            "omitted OCR text IDs",
+            "omitted text candidate IDs",
         ),
         (
             [
@@ -287,7 +296,7 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
                     "reason": "artwork",
                 },
             ],
-            "Duplicate OCR text classifications",
+            "Duplicate text candidate classifications",
         ),
         (
             [
@@ -310,7 +319,7 @@ def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
                     "reason": "artwork",
                 },
             ],
-            "unknown OCR text IDs",
+            "unknown text candidate IDs",
         ),
     ],
 )
@@ -477,7 +486,12 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
     )
     monkeypatch.setattr(cv2, "inpaint", forbidden_inpaint)
 
-    client = FakeVLMClient(_payload())
+    client = FakeVLMClient(
+        [
+            {"missing_text_candidates": []},
+            _payload(),
+        ]
+    )
     result = UITextRepairPlanner(client=client).process(
         image_path,
         texts_path,
@@ -488,13 +502,15 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
 
     assert rebuilt_ids == ["4,5"]
     assert [item.id for item in result.decisions] == ["text_000", "text_001"]
-    assert result.schema_version == "0.2.1"
+    assert result.schema_version == "0.3"
     assert result.decisions[0].semantic_role == "button_label"
     assert result.decisions[0].decision == "remove_for_background_repair"
+    assert result.decisions[0].source == "ocr"
     assert result.decisions[0].mask_quality == "native"
     assert result.decisions[1].semantic_role == "embedded_in_artwork"
     assert result.decisions[1].decision == "preserve_as_visual_asset"
     assert {path.name for path in output_dir.iterdir()} == {
+        "coverage-audit.json",
         "text-repair-decisions.json",
         "union-text-mask.png",
         "repair-mask.png",
@@ -522,6 +538,336 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
     expected_repair = cv2.dilate(union, kernel, iterations=1)
     assert np.array_equal(repair, expected_repair)
     assert np.count_nonzero(repair) > np.count_nonzero(union)
+
+
+def _coverage_payload(
+    candidates: list[dict[str, Any]],
+) -> VLMCoverageAuditResponse:
+    return VLMCoverageAuditResponse.model_validate(
+        {"missing_text_candidates": candidates}
+    )
+
+
+def _missing(
+    text: str,
+    x: float,
+    y: float,
+    width: float,
+    height: float,
+    confidence: float = 0.96,
+) -> dict[str, Any]:
+    return {
+        "text": text,
+        "bbox_analysis": {
+            "x": x,
+            "y": y,
+            "width": width,
+            "height": height,
+        },
+        "confidence": confidence,
+    }
+
+
+def test_coverage_prompt_is_generic_and_coverage_only() -> None:
+    assert "complete screenshot" in COVERAGE_SYSTEM_PROMPT
+    assert "coverage task" in COVERAGE_SYSTEM_PROMPT
+    assert "not a semantic ownership or repair-policy task" in COVERAGE_SYSTEM_PROMPT
+    assert "complete interface" in COVERAGE_SYSTEM_PROMPT
+    assert "Do not return" in COVERAGE_SYSTEM_PROMPT
+    pilot_literals = (
+        "inventory",
+        "backpack",
+        "slot_count",
+        "查看畅玩池",
+        "638050",
+    )
+    assert all(value not in COVERAGE_SYSTEM_PROMPT for value in pilot_literals)
+
+
+def test_coverage_contract_rejects_policy_and_assigned_id() -> None:
+    with pytest.raises(ValidationError):
+        _coverage_payload(
+            [
+                {
+                    **_missing("42", 10, 10, 5, 6),
+                    "decision": "remove_for_background_repair",
+                }
+            ]
+        )
+    with pytest.raises(ValidationError):
+        _coverage_payload(
+            [{**_missing("42", 10, 10, 5, 6), "id": "text_corr_001"}]
+        )
+
+
+@pytest.mark.parametrize(
+    "bbox",
+    [
+        {"x": -1, "y": 0, "width": 1, "height": 1},
+        {"x": 0, "y": 0, "width": 0, "height": 1},
+        {"x": 0, "y": 0, "width": 1, "height": -1},
+    ],
+)
+def test_coverage_bbox_rejects_negative_or_empty_dimensions(
+    bbox: dict[str, float],
+) -> None:
+    with pytest.raises(ValidationError):
+        AnalysisBBox.model_validate(bbox)
+
+
+def test_analysis_bbox_out_of_bounds_fails() -> None:
+    with pytest.raises(TextRepairContractError, match="fully contained"):
+        validate_and_map_analysis_bbox(
+            AnalysisBBox(x=95, y=10, width=6, height=5),
+            analysis_width=100,
+            analysis_height=50,
+            source_width=200,
+            source_height=100,
+        )
+
+
+def test_analysis_to_source_uses_real_axis_scales_and_outward_rounding() -> None:
+    mapped = validate_and_map_analysis_bbox(
+        AnalysisBBox(x=10.2, y=20.1, width=5.2, height=10.3),
+        analysis_width=100,
+        analysis_height=100,
+        source_width=200,
+        source_height=50,
+    )
+    assert mapped.model_dump() == {"x": 20, "y": 10, "width": 11, "height": 6}
+
+    edge = validate_and_map_analysis_bbox(
+        AnalysisBBox(x=99.5, y=49.5, width=0.5, height=0.5),
+        analysis_width=100,
+        analysis_height=50,
+        source_width=333,
+        source_height=77,
+    )
+    assert edge.x + edge.width == 333
+    assert edge.y + edge.height == 77
+
+
+def test_correction_overlapping_ocr_is_rejected_despite_text_difference() -> None:
+    existing = normalize_ocr_candidates(_items())
+    corrections, audit = normalize_and_deduplicate_corrections(
+        _coverage_payload([_missing("ST4RT+", 4, 5, 8, 6)]),
+        existing,
+        analysis_width=40,
+        analysis_height=24,
+        source_width=40,
+        source_height=24,
+    )
+    assert corrections == []
+    assert audit.rejected_duplicates[0].duplicate_of == "text_000"
+    assert audit.rejected_duplicates[0].reason == "duplicate_existing_ocr"
+
+
+def test_correction_duplicates_collapse_but_distant_same_text_survives() -> None:
+    response = _coverage_payload(
+        [
+            _missing("42", 14, 14, 5, 5),
+            _missing("42+", 14.5, 14.5, 5, 5),
+            _missing("42", 31, 15, 5, 5),
+        ]
+    )
+    corrections, audit = normalize_and_deduplicate_corrections(
+        response,
+        normalize_ocr_candidates(_items()),
+        analysis_width=40,
+        analysis_height=24,
+        source_width=40,
+        source_height=24,
+    )
+    assert [item.id for item in corrections] == ["text_corr_001", "text_corr_002"]
+    assert [item.text for item in corrections] == ["42", "42"]
+    assert len(audit.rejected_duplicates) == 1
+    assert audit.rejected_duplicates[0].reason == "duplicate_correction"
+
+
+def test_correction_ids_are_independent_of_vlm_response_order() -> None:
+    raw = [
+        _missing("bottom", 22, 17, 5, 4),
+        _missing("top-right", 25, 12, 6, 4),
+        _missing("top-left", 14, 12, 6, 4),
+    ]
+
+    def normalize(items: list[dict[str, Any]]) -> list[tuple[str, str]]:
+        corrections, _ = normalize_and_deduplicate_corrections(
+            _coverage_payload(items),
+            normalize_ocr_candidates(_items()),
+            analysis_width=40,
+            analysis_height=24,
+            source_width=40,
+            source_height=24,
+        )
+        return [(item.id, item.text) for item in corrections]
+
+    expected = [
+        ("text_corr_001", "top-left"),
+        ("text_corr_002", "top-right"),
+        ("text_corr_003", "bottom"),
+    ]
+    assert normalize(raw) == expected
+    assert normalize(list(reversed(raw))) == expected
+
+
+def test_correction_normalizes_without_fake_style_and_defaults_to_coarse() -> None:
+    corrections, audit = normalize_and_deduplicate_corrections(
+        _coverage_payload([_missing("new", 15, 15, 5, 5)]),
+        normalize_ocr_candidates(_items()),
+        analysis_width=40,
+        analysis_height=24,
+        source_width=40,
+        source_height=24,
+    )
+    correction = corrections[0]
+    assert correction.source == "vlm_correction"
+    assert correction.mask_mode == "coarse"
+    assert correction.style is None
+    assert audit.accepted_corrections[0].assigned_id == "text_corr_001"
+
+
+def test_correction_is_merged_before_semantic_classification_and_audited(
+    tmp_path: Path,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image_path, texts_path, raw_mask_path = _write_inputs(tmp_path)
+    output_dir = tmp_path / "route-b-v03"
+    coverage = {
+        "missing_text_candidates": [_missing("NEW", 400, 400, 80, 80)]
+    }
+    semantic = _payload(
+        [
+            *_payload()["decisions"],
+            {
+                "id": "text_corr_001",
+                "semantic_role": "runtime_value",
+                "confidence": 0.91,
+                "reason": "independent runtime information",
+            },
+        ]
+    )
+    refined = np.zeros((IMAGE_HEIGHT, IMAGE_WIDTH), dtype=np.uint8)
+    refined[16, 16] = 255
+    monkeypatch.setattr(
+        planner_module,
+        "refine_coarse_text_mask",
+        lambda _image, item: refined.copy() if item.source == "vlm_correction" else None,
+    )
+    monkeypatch.setattr(
+        UITextExtractor,
+        "rebuild_text_mask",
+        classmethod(
+            lambda cls, image, rect, text: np.zeros(image.shape[:2], dtype=np.uint8)
+        ),
+    )
+    client = FakeVLMClient([coverage, semantic])
+
+    result = UITextRepairPlanner(client=client).process(
+        image_path,
+        texts_path,
+        raw_mask_path,
+        output_dir,
+        dilation_radius=0,
+    )
+
+    correction = next(item for item in result.decisions if item.id == "text_corr_001")
+    assert correction.source == "vlm_correction"
+    assert correction.mask_mode == "coarse"
+    assert correction.mask_quality == "refined"
+    assert correction.decision == "remove_for_background_repair"
+    assert "text_corr_001" in client.calls[1]["user_prompt"]
+    assert "text_corr_001" not in client.calls[0]["user_prompt"]
+    union = cv2.imread(
+        str(output_dir / "union-text-mask.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert union is not None and union[16, 16] == 255
+    debug = json.loads(
+        (output_dir / "coverage-audit.json").read_text(encoding="utf-8")
+    )
+    assert debug["accepted_corrections"][0]["assigned_id"] == "text_corr_001"
+    assert debug["accepted_corrections"][0]["bbox_analysis"] == {
+        "x": 400.0,
+        "y": 400.0,
+        "width": 80.0,
+        "height": 80.0,
+    }
+
+
+def test_correction_must_be_semantically_classified_exactly_once() -> None:
+    candidates = normalize_ocr_candidates(_items()) + [
+        RepairTextCandidate(
+            id="text_corr_001",
+            text="NEW",
+            rect={"x": 15, "y": 15, "width": 5, "height": 5},
+            confidence=0.9,
+            source="vlm_correction",
+            mask_mode="coarse",
+            style=None,
+        )
+    ]
+    with pytest.raises(TextRepairContractError, match="text_corr_001"):
+        _validate_complete_classification(
+            candidates,
+            VLMTextDecisionResponse.model_validate(_payload()),
+        )
+
+
+@pytest.mark.parametrize(
+    ("decision", "refine_succeeds", "expected_pixels", "quality"),
+    [
+        ("remove_for_background_repair", True, 1, "refined"),
+        ("remove_for_background_repair", False, 0, "failed"),
+        ("preserve_as_visual_asset", True, 0, "failed"),
+    ],
+)
+def test_correction_uses_existing_coarse_refine_without_rectangle_fallback(
+    decision: str,
+    refine_succeeds: bool,
+    expected_pixels: int,
+    quality: str,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = np.zeros((24, 40, 3), dtype=np.uint8)
+    candidate = RepairTextCandidate(
+        id="text_corr_001",
+        text="NEW",
+        rect={"x": 15, "y": 15, "width": 5, "height": 5},
+        confidence=0.9,
+        source="vlm_correction",
+        mask_mode="coarse",
+        style=None,
+    )
+    refined = np.zeros((24, 40), dtype=np.uint8)
+    refined[16, 16] = 255
+    monkeypatch.setattr(
+        planner_module,
+        "refine_coarse_text_mask",
+        lambda _image, _item: refined.copy() if refine_succeeds else None,
+    )
+    role = "runtime_value" if decision == "remove_for_background_repair" else "embedded_logo"
+    document = TextRepairDecisionDocument(
+        image_width=40,
+        image_height=24,
+        decisions=[
+            TextRepairDecision(
+                id=candidate.id,
+                text=candidate.text,
+                semantic_role=role,
+                decision=decision,
+                rect=candidate.rect,
+                source=candidate.source,
+                mask_mode="coarse",
+                mask_quality="failed",
+                confidence=0.9,
+                reason="visual ownership",
+            )
+        ],
+    )
+    union, updated = build_union_text_mask(image, [candidate], document)
+    assert np.count_nonzero(union) == expected_pixels
+    assert updated.decisions[0].mask_quality == quality
+    assert np.count_nonzero(union[15:20, 15:20]) != 25
 
 
 def test_planner_has_no_inpaint_or_image_generation_dependency() -> None:
