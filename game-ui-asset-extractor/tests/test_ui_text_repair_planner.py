@@ -9,6 +9,7 @@ from typing import Any
 import cv2
 import numpy as np
 import pytest
+from pydantic import ValidationError
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -18,10 +19,17 @@ import ui_text_repair_planner as planner_module  # noqa: E402
 from ui_audit_models import TextItem  # noqa: E402
 from ui_text_extractor import UITextExtractor  # noqa: E402
 from ui_text_repair_planner import (  # noqa: E402
+    SEMANTIC_ROLE_TO_DECISION,
+    SYSTEM_PROMPT,
+    TextRepairDecision,
+    TextRepairDecisionDocument,
     TextRepairContractError,
     UITextRepairPlanner,
     VLMTextDecisionResponse,
     _validate_complete_classification,
+    build_union_text_mask,
+    decision_for_semantic_role,
+    refine_coarse_text_mask,
 )
 
 
@@ -72,13 +80,13 @@ def _payload(decisions: list[dict[str, Any]] | None = None) -> dict[str, Any]:
         else [
             {
                 "id": "text_000",
-                "decision": "remove_for_background_repair",
+                "semantic_role": "button_label",
                 "confidence": 0.99,
                 "reason": "runtime button label",
             },
             {
                 "id": "text_001",
-                "decision": "preserve_as_visual_asset",
+                "semantic_role": "embedded_in_item_artwork",
                 "confidence": 0.96,
                 "reason": "baked into item artwork",
             },
@@ -131,6 +139,104 @@ def test_complete_classification_returns_one_decision_per_input_id() -> None:
     assert set(classified) == {"text_000", "text_001"}
 
 
+def test_semantic_role_is_closed_and_vlm_cannot_supply_policy_decision() -> None:
+    invalid_role = _payload()
+    invalid_role["decisions"][0]["semantic_role"] = "free_text_role"
+    with pytest.raises(ValidationError):
+        VLMTextDecisionResponse.model_validate(invalid_role)
+
+    policy_override = _payload()
+    policy_override["decisions"][0]["decision"] = "preserve_as_visual_asset"
+    with pytest.raises(ValidationError):
+        VLMTextDecisionResponse.model_validate(policy_override)
+
+
+@pytest.mark.parametrize(
+    ("semantic_role", "expected"),
+    list(
+        zip(
+            (
+                "navigation_label",
+                "button_label",
+                "runtime_value",
+                "body_text",
+                "ordinary_title",
+                "status_text",
+            ),
+            ["remove_for_background_repair"] * 6,
+            strict=True,
+        )
+    )
+    + list(
+        zip(
+            (
+                "embedded_in_item_artwork",
+                "embedded_logo",
+                "decorative_art_text",
+            ),
+            ["preserve_as_visual_asset"] * 3,
+            strict=True,
+        )
+    ),
+)
+def test_semantic_role_maps_to_deterministic_policy(
+    semantic_role: Any,
+    expected: str,
+) -> None:
+    assert decision_for_semantic_role(semantic_role) == expected
+    assert SEMANTIC_ROLE_TO_DECISION[semantic_role] == expected
+
+
+def test_prompt_requires_visual_ownership_instead_of_text_string_rules() -> None:
+    assert "Classify by visual ownership, not by text meaning alone" in SYSTEM_PROMPT
+    assert "皮肤 in a navigation" in SYSTEM_PROMPT
+    assert "皮肤 painted inside an item icon" in SYSTEM_PROMPT
+    assert "Do not return a decision field" in SYSTEM_PROMPT
+
+
+def test_pilot_semantics_are_role_driven_including_same_skin_text() -> None:
+    remove_examples = {
+        "背包": "ordinary_title",
+        "批量使用": "button_label",
+        "全部": "navigation_label",
+        "最近获得": "navigation_label",
+        "限时道具": "navigation_label",
+        "道具": "navigation_label",
+        "宝箱": "navigation_label",
+        "体验卡": "navigation_label",
+        "638050": "runtime_value",
+        "50209": "runtime_value",
+        "176+": "runtime_value",
+        "可前往邮件或者背包查看": "body_text",
+        "豪华皮肤畅玩卡": "ordinary_title",
+        "拥有 7": "status_text",
+        "正文说明": "body_text",
+        "剩余时间": "status_text",
+        "查看畅玩池": "button_label",
+        "物品数量角标": "runtime_value",
+        "皮肤": "navigation_label",
+    }
+    preserve_examples = {
+        "英雄": "embedded_in_item_artwork",
+        "战令": "embedded_in_item_artwork",
+        "1级": "embedded_in_item_artwork",
+        "HE2D / HERO": "embedded_logo",
+        "DYG": "embedded_logo",
+        "皮肤": "embedded_in_item_artwork",
+        "货币": "embedded_in_item_artwork",
+        "元流": "decorative_art_text",
+    }
+    assert all(
+        decision_for_semantic_role(role) == "remove_for_background_repair"
+        for role in remove_examples.values()
+    )
+    assert all(
+        decision_for_semantic_role(role) == "preserve_as_visual_asset"
+        for role in preserve_examples.values()
+    )
+    assert remove_examples["皮肤"] != preserve_examples["皮肤"]
+
+
 @pytest.mark.parametrize(
     ("decisions", "message"),
     [
@@ -138,7 +244,7 @@ def test_complete_classification_returns_one_decision_per_input_id() -> None:
             [
                 {
                     "id": "text_000",
-                    "decision": "remove_for_background_repair",
+                    "semantic_role": "button_label",
                     "confidence": 0.9,
                     "reason": "runtime label",
                 }
@@ -149,19 +255,19 @@ def test_complete_classification_returns_one_decision_per_input_id() -> None:
             [
                 {
                     "id": "text_000",
-                    "decision": "remove_for_background_repair",
+                    "semantic_role": "button_label",
                     "confidence": 0.9,
                     "reason": "runtime label",
                 },
                 {
                     "id": "text_000",
-                    "decision": "preserve_as_visual_asset",
+                    "semantic_role": "embedded_in_item_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
                 {
                     "id": "text_001",
-                    "decision": "preserve_as_visual_asset",
+                    "semantic_role": "embedded_in_item_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
@@ -172,19 +278,19 @@ def test_complete_classification_returns_one_decision_per_input_id() -> None:
             [
                 {
                     "id": "text_000",
-                    "decision": "remove_for_background_repair",
+                    "semantic_role": "button_label",
                     "confidence": 0.9,
                     "reason": "runtime label",
                 },
                 {
                     "id": "text_001",
-                    "decision": "preserve_as_visual_asset",
+                    "semantic_role": "embedded_in_item_artwork",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
                 {
                     "id": "text_unknown",
-                    "decision": "preserve_as_visual_asset",
+                    "semantic_role": "embedded_logo",
                     "confidence": 0.8,
                     "reason": "artwork",
                 },
@@ -200,6 +306,129 @@ def test_incomplete_duplicate_and_unknown_classifications_fail(
     response = VLMTextDecisionResponse.model_validate(_payload(decisions))
     with pytest.raises(TextRepairContractError, match=message):
         _validate_complete_classification(_items(), response)
+
+
+def _coarse_item() -> TextItem:
+    return TextItem.model_validate(
+        {
+            "id": "text_032",
+            "text": "查看畅玩池",
+            "confidence": 0.99,
+            "rect": {"x": 5, "y": 4, "width": 70, "height": 24},
+            "style": {
+                **_style(),
+                "fontFamily": "Microsoft YaHei",
+                "color": "#FFFFFF",
+                "fontSize": 20,
+            },
+            "mask_mode": "coarse",
+        }
+    )
+
+
+def _coarse_document(decision: str = "remove_for_background_repair") -> TextRepairDecisionDocument:
+    role = (
+        "button_label"
+        if decision == "remove_for_background_repair"
+        else "embedded_in_item_artwork"
+    )
+    return TextRepairDecisionDocument(
+        image_width=80,
+        image_height=32,
+        decisions=[
+            TextRepairDecision(
+                id="text_032",
+                text="查看畅玩池",
+                semantic_role=role,
+                decision=decision,
+                rect=_coarse_item().rect,
+                mask_mode="coarse",
+                mask_quality="failed",
+                confidence=0.99,
+                reason="visual ownership classification",
+            )
+        ],
+    )
+
+
+def test_refine_coarse_text_mask_extracts_glyphs_not_the_whole_button_bbox() -> None:
+    image = np.full((32, 80, 3), [32, 70, 120], dtype=np.uint8)
+    for x in (14, 25, 36, 47, 58):
+        cv2.rectangle(image, (x, 10), (x + 3, 21), (255, 255, 255), -1)
+        cv2.rectangle(image, (x - 2, 14), (x + 5, 17), (255, 255, 255), -1)
+
+    refined = refine_coarse_text_mask(image, _coarse_item())
+
+    assert refined is not None
+    roi = refined[4:28, 5:75]
+    assert 0 < np.count_nonzero(roi) < 0.55 * roi.size
+    assert not np.all(roi == 255)
+    assert not np.any(np.all(roi == 255, axis=1))
+
+
+def test_refine_coarse_text_mask_fails_on_unseparated_surface() -> None:
+    image = np.full((32, 80, 3), [32, 70, 120], dtype=np.uint8)
+    assert refine_coarse_text_mask(image, _coarse_item()) is None
+
+
+def test_coarse_remove_enters_union_only_after_successful_refine(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = np.zeros((32, 80, 3), dtype=np.uint8)
+    refined = np.zeros((32, 80), dtype=np.uint8)
+    refined[12:16, 20:36] = 255
+    monkeypatch.setattr(
+        planner_module,
+        "refine_coarse_text_mask",
+        lambda _image, _item: refined.copy(),
+    )
+    monkeypatch.setattr(
+        UITextExtractor,
+        "rebuild_text_mask",
+        classmethod(
+            lambda cls, source, rect, text: pytest.fail(
+                "coarse item must not use rebuild_text_mask"
+            )
+        ),
+    )
+
+    union, updated = build_union_text_mask(
+        image,
+        [_coarse_item()],
+        _coarse_document(),
+    )
+
+    assert np.array_equal(union, refined)
+    assert updated.decisions[0].mask_quality == "refined"
+
+
+def test_failed_coarse_refine_and_preserve_items_never_enter_union(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    image = np.zeros((32, 80, 3), dtype=np.uint8)
+    calls: list[str] = []
+
+    def failed_refine(_image: np.ndarray, item: TextItem) -> None:
+        calls.append(item.id)
+        return None
+
+    monkeypatch.setattr(planner_module, "refine_coarse_text_mask", failed_refine)
+    failed_union, failed_document = build_union_text_mask(
+        image,
+        [_coarse_item()],
+        _coarse_document(),
+    )
+    preserve_union, preserve_document = build_union_text_mask(
+        image,
+        [_coarse_item()],
+        _coarse_document("preserve_as_visual_asset"),
+    )
+
+    assert calls == ["text_032"]
+    assert np.count_nonzero(failed_union) == 0
+    assert failed_document.decisions[0].mask_quality == "failed"
+    assert np.count_nonzero(preserve_union) == 0
+    assert preserve_document.decisions[0].mask_quality == "failed"
 
 
 def test_process_builds_positive_union_expansion_and_overlay_without_repair(
@@ -244,12 +473,22 @@ def test_process_builds_positive_union_expansion_and_overlay_without_repair(
 
     assert rebuilt_ids == ["4,5"]
     assert [item.id for item in result.decisions] == ["text_000", "text_001"]
+    assert result.schema_version == "0.2"
+    assert result.decisions[0].semantic_role == "button_label"
+    assert result.decisions[0].decision == "remove_for_background_repair"
+    assert result.decisions[0].mask_quality == "native"
+    assert result.decisions[1].semantic_role == "embedded_in_item_artwork"
+    assert result.decisions[1].decision == "preserve_as_visual_asset"
     assert {path.name for path in output_dir.iterdir()} == {
         "text-repair-decisions.json",
         "union-text-mask.png",
         "repair-mask.png",
         "repair-mask-overlay.png",
     }
+    serialized = json.loads(
+        (output_dir / "text-repair-decisions.json").read_text(encoding="utf-8")
+    )
+    assert serialized == result.model_dump(mode="json")
 
     union = cv2.imread(
         str(output_dir / "union-text-mask.png"), cv2.IMREAD_GRAYSCALE

@@ -21,31 +21,86 @@ from ui_audit_models import Rect, TextItem
 from ui_text_extractor import UITextExtractor
 
 
-SCHEMA_VERSION = "0.1"
+SCHEMA_VERSION = "0.2"
 Decision = Literal[
     "remove_for_background_repair",
     "preserve_as_visual_asset",
 ]
+SemanticRole = Literal[
+    "navigation_label",
+    "button_label",
+    "runtime_value",
+    "body_text",
+    "ordinary_title",
+    "status_text",
+    "embedded_in_item_artwork",
+    "embedded_logo",
+    "decorative_art_text",
+]
+MaskMode = Literal["estimated_glyphs", "coarse"]
+MaskQuality = Literal["native", "refined", "failed"]
+
+REMOVE_ROLES = frozenset(
+    {
+        "navigation_label",
+        "button_label",
+        "runtime_value",
+        "body_text",
+        "ordinary_title",
+        "status_text",
+    }
+)
+PRESERVE_ROLES = frozenset(
+    {
+        "embedded_in_item_artwork",
+        "embedded_logo",
+        "decorative_art_text",
+    }
+)
+SEMANTIC_ROLE_TO_DECISION: dict[str, Decision] = {
+    **{role: "remove_for_background_repair" for role in REMOVE_ROLES},
+    **{role: "preserve_as_visual_asset" for role in PRESERVE_ROLES},
+}
 
 
 SYSTEM_PROMPT = """You are reviewing all OCR text in a complete game UI screenshot.
-Classify every supplied OCR text ID exactly once.
+Classify every supplied OCR text ID exactly once into one semantic_role from the
+closed schema. Do not make a removal/preservation policy decision yourself.
 
-Use remove_for_background_repair for ordinary runtime UI copy that should later be
-rebuilt with UI text components: button labels, tabs/categories, values, timers,
-status information, ordinary titles, descriptions, and item quantity badges.
+Classify by visual ownership, not by text meaning alone. First determine whether
+the text is overlaid by the interface layer or visually baked into an icon, item,
+logo, badge, decorative title asset, or illustration.
 
-Use preserve_as_visual_asset only when the text is an inseparable part of a bitmap
-visual asset: a logo, text inside an icon, text baked into item artwork, artistic
-display lettering, or text strongly fused with an illustration/icon.
+Use these interface-layer roles when the text is independent runtime UI copy:
+- navigation_label: tabs, categories, menus, or navigation labels
+- button_label: an ordinary caption rendered over a button surface
+- runtime_value: counters, currency values, timers, quantities, or item badges
+- body_text: descriptions, instructions, or ordinary paragraph copy
+- ordinary_title: a normal screen, panel, or section title
+- status_text: runtime state, availability, ownership, or remaining-time text
 
-Judge from the full visual context, not OCR wording alone. For an inventory UI,
-ordinary labels such as 查看畅玩池 and 豪华皮肤畅玩卡, runtime values such as
-638050, and item quantity badges should normally be removed. Words such as HERO,
-DYG, 皮肤, or 货币 should be preserved when they are part of the item-icon art.
+Use these asset-owned roles when the text is inseparable bitmap artwork:
+- embedded_in_item_artwork: painted inside an item icon, chest, card, or badge
+- embedded_logo: a logo, brand mark, team mark, or logo-like lettering
+- decorative_art_text: display lettering fused with decoration or illustration
 
-Do not return an uncertain category. Return strict JSON matching the schema. Do
-not omit, duplicate, or invent OCR IDs."""
+The same OCR string can have different roles. For example, 皮肤 in a navigation
+list is navigation_label, while 皮肤 painted inside an item icon is
+embedded_in_item_artwork. 英雄 painted into a treasure-chest design is also
+embedded_in_item_artwork. HERO or DYG is embedded_logo when it is a visual mark.
+
+Ordinary inventory labels such as 查看畅玩池, 豪华皮肤畅玩卡, 背包, 批量使用,
+runtime values such as 638050 or 50209, status copy, and item quantity badges use
+interface-layer roles. Do not classify them as embedded merely because their
+background is stylized.
+
+If text is visually painted into an item icon, logo, badge, decorative title
+asset, or illustration, classify it as owned by that asset. If it appears as an
+interface label, button caption, runtime value, status text, description,
+ordinary title, or navigation text, classify its precise interface-layer role.
+
+Do not return a decision field or an uncertain/free-text role. Return strict JSON
+matching the schema. Do not omit, duplicate, or invent OCR IDs."""
 
 
 class _RepairModel(BaseModel):
@@ -53,10 +108,10 @@ class _RepairModel(BaseModel):
 
 
 class VLMTextDecision(_RepairModel):
-    """One compact decision returned directly by the VLM."""
+    """One visual-ownership classification returned directly by the VLM."""
 
     id: str = Field(min_length=1)
-    decision: Decision
+    semantic_role: SemanticRole
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(min_length=1)
 
@@ -80,8 +135,11 @@ class TextRepairDecision(_RepairModel):
 
     id: str = Field(min_length=1)
     text: str = Field(min_length=1)
+    semantic_role: SemanticRole
     decision: Decision
     rect: Rect
+    mask_mode: MaskMode
+    mask_quality: MaskQuality
     confidence: float = Field(ge=0.0, le=1.0)
     reason: str = Field(min_length=1)
 
@@ -89,7 +147,7 @@ class TextRepairDecision(_RepairModel):
 class TextRepairDecisionDocument(_RepairModel):
     """The public text-repair-decisions.json v0.1 contract."""
 
-    schema_version: Literal["0.1"] = SCHEMA_VERSION
+    schema_version: Literal["0.2"] = SCHEMA_VERSION
     image_width: int = Field(gt=0)
     image_height: int = Field(gt=0)
     decisions: list[TextRepairDecision]
@@ -158,11 +216,153 @@ def _validate_complete_classification(
     return {item.id: item for item in response.decisions}
 
 
+def decision_for_semantic_role(semantic_role: SemanticRole) -> Decision:
+    """Map a VLM-owned semantic role to the fixed engineering policy."""
+
+    try:
+        return SEMANTIC_ROLE_TO_DECISION[semantic_role]
+    except KeyError as exc:  # Defensive if this function is called without Pydantic.
+        raise TextRepairContractError(
+            f"No deterministic decision mapping for semantic_role={semantic_role!r}"
+        ) from exc
+
+
+def _style_rgb(item: TextItem) -> np.ndarray:
+    value = item.style.color.removeprefix("#")
+    return np.array(
+        [int(value[index : index + 2], 16) for index in (0, 2, 4)],
+        dtype=np.float32,
+    )
+
+
+def _is_reliable_local_glyph_mask(
+    mask: np.ndarray,
+    crop_rgb: np.ndarray,
+    background_rgb: np.ndarray,
+) -> bool:
+    """Reject empty, low-signal, and rectangle-like coarse-mask candidates."""
+
+    if mask.shape != crop_rgb.shape[:2] or mask.dtype != np.uint8:
+        return False
+    selected = mask > 0
+    pixel_count = int(np.count_nonzero(selected))
+    if pixel_count == 0:
+        return False
+    coverage = pixel_count / float(mask.size)
+    if coverage < UITextExtractor.MIN_GLYPH_COVERAGE or coverage > 0.45:
+        return False
+
+    ys, xs = np.where(selected)
+    bounds_area = int((ys.max() - ys.min() + 1) * (xs.max() - xs.min() + 1))
+    if bounds_area <= 0 or pixel_count / float(bounds_area) > 0.68:
+        return False
+
+    row_coverage = np.count_nonzero(selected, axis=1) / max(1, mask.shape[1])
+    column_coverage = np.count_nonzero(selected, axis=0) / max(1, mask.shape[0])
+    if np.count_nonzero(row_coverage >= 0.90) >= max(2, round(0.15 * mask.shape[0])):
+        return False
+    if np.count_nonzero(column_coverage >= 0.90) >= max(2, round(0.15 * mask.shape[1])):
+        return False
+
+    background_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - background_rgb.reshape(1, 1, 3),
+        axis=2,
+    )
+    if float(np.median(background_distance[selected])) < 12.0:
+        return False
+    return True
+
+
+def refine_coarse_text_mask(
+    original_image: np.ndarray,
+    item: TextItem,
+) -> np.ndarray | None:
+    """Extract a conservative glyph-shaped mask from one coarse OCR rectangle.
+
+    The refiner combines the extractor's local background/glyph separation with
+    the OCR-inferred foreground color. It never accepts the extractor's coarse
+    fallback band and rejects candidates that are too dense or rectangle-like.
+    A successful local mask receives only a one-pixel glyph halo before it is
+    placed into full-image coordinates.
+    """
+
+    rect = item.rect
+    crop_rgb = original_image[
+        rect.y : rect.y + rect.height,
+        rect.x : rect.x + rect.width,
+    ]
+    if crop_rgb.shape[:2] != (rect.height, rect.width) or crop_rgb.size == 0:
+        return None
+
+    allowed = np.full(crop_rgb.shape[:2], 255, dtype=np.uint8)
+    background = UITextExtractor._estimate_background(crop_rgb, allowed)
+    extracted, extracted_mode = UITextExtractor._extract_glyph_mask(
+        crop_rgb,
+        background,
+        allowed,
+    )
+
+    target = _style_rgb(item)
+    target_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - target.reshape(1, 1, 3),
+        axis=2,
+    )
+    background_distance = np.linalg.norm(
+        crop_rgb.astype(np.float32) - background.reshape(1, 1, 3),
+        axis=2,
+    )
+    target_background_contrast = float(np.linalg.norm(target - background))
+    style_mask = np.zeros(crop_rgb.shape[:2], dtype=np.uint8)
+    if target_background_contrast >= 18.0:
+        color_tolerance = float(np.clip(0.30 * target_background_contrast, 28, 64))
+        style_mask[
+            (target_distance <= color_tolerance) & (background_distance >= 14.0)
+        ] = 255
+        style_mask = cv2.morphologyEx(
+            style_mask,
+            cv2.MORPH_CLOSE,
+            cv2.getStructuringElement(cv2.MORPH_RECT, (2, 2)),
+        )
+
+    candidates: list[np.ndarray] = []
+    if extracted_mode == "estimated_glyphs" and np.any(style_mask):
+        style_neighborhood = cv2.dilate(
+            style_mask,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+            iterations=1,
+        )
+        candidates.append(cv2.bitwise_and(extracted, style_neighborhood))
+    if np.any(style_mask):
+        candidates.append(style_mask)
+    if extracted_mode == "estimated_glyphs":
+        candidates.append(extracted)
+
+    for candidate in candidates:
+        candidate = np.where(candidate > 0, 255, 0).astype(np.uint8)
+        if not _is_reliable_local_glyph_mask(candidate, crop_rgb, background):
+            continue
+        refined = cv2.dilate(
+            candidate,
+            cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (3, 3)),
+            iterations=1,
+        )
+        refined_coverage = np.count_nonzero(refined) / float(refined.size)
+        if refined_coverage > 0.55:
+            continue
+        full_mask = np.zeros(original_image.shape[:2], dtype=np.uint8)
+        full_mask[
+            rect.y : rect.y + rect.height,
+            rect.x : rect.x + rect.width,
+        ] = refined
+        return full_mask
+    return None
+
+
 def build_union_text_mask(
     original_image: np.ndarray,
     texts: list[TextItem],
     document: TextRepairDecisionDocument,
-) -> np.ndarray:
+) -> tuple[np.ndarray, TextRepairDecisionDocument]:
     """Positively OR rebuilt masks for remove decisions into an empty mask.
 
     ``UITextExtractor.rebuild_text_mask`` already applies its adaptive Stage A
@@ -173,21 +373,39 @@ def build_union_text_mask(
 
     item_by_id = {item.id: item for item in texts}
     union_mask = np.zeros(original_image.shape[:2], dtype=np.uint8)
+    updated_decisions: list[TextRepairDecision] = []
     for decision in document.decisions:
         if decision.decision != "remove_for_background_repair":
+            updated_decisions.append(decision)
             continue
         source = item_by_id[decision.id]
-        item_mask = UITextExtractor.rebuild_text_mask(
-            original_image,
-            source.rect,
-            source.text,
+        if source.mask_mode == "coarse":
+            item_mask = refine_coarse_text_mask(original_image, source)
+            mask_quality: MaskQuality = (
+                "refined" if item_mask is not None else "failed"
+            )
+        else:
+            item_mask = UITextExtractor.rebuild_text_mask(
+                original_image,
+                source.rect,
+                source.text,
+            )
+            mask_quality = "native"
+        updated_decisions.append(
+            decision.model_copy(update={"mask_quality": mask_quality})
         )
+        if item_mask is None:
+            continue
         if item_mask.shape != union_mask.shape or item_mask.dtype != np.uint8:
             raise TextRepairPlannerError(
                 f"Rebuilt mask for {source.id} must be a full-size uint8 mask"
             )
         union_mask = cv2.bitwise_or(union_mask, item_mask)
-    return np.where(union_mask > 0, 255, 0).astype(np.uint8)
+    updated_document = document.model_copy(update={"decisions": updated_decisions})
+    return (
+        np.where(union_mask > 0, 255, 0).astype(np.uint8),
+        updated_document,
+    )
 
 
 def expand_repair_mask(union_mask: np.ndarray, dilation_radius: int) -> np.ndarray:
@@ -308,8 +526,17 @@ class UITextRepairPlanner:
                 TextRepairDecision(
                     id=source.id,
                     text=source.text,
-                    decision=classified.decision,
+                    semantic_role=classified.semantic_role,
+                    decision=decision_for_semantic_role(
+                        classified.semantic_role
+                    ),
                     rect=source.rect,
+                    mask_mode=source.mask_mode,
+                    mask_quality=(
+                        "native"
+                        if source.mask_mode == "estimated_glyphs"
+                        else "failed"
+                    ),
                     confidence=classified.confidence,
                     reason=classified.reason,
                 )
@@ -351,7 +578,11 @@ class UITextRepairPlanner:
         auditor._validate_image_and_mask(original_image, raw_mask)
 
         document = self.decide(source_path, texts, image_width, image_height)
-        union_mask = build_union_text_mask(original_image, texts, document)
+        union_mask, document = build_union_text_mask(
+            original_image,
+            texts,
+            document,
+        )
         repair_mask = expand_repair_mask(union_mask, dilation_radius)
         overlay = build_repair_mask_overlay(original_image, repair_mask)
 
@@ -420,10 +651,19 @@ def main(argv: list[str] | None = None) -> int:
         item.decision == "remove_for_background_repair"
         for item in result.decisions
     )
+    failed_remove_ids = [
+        item.id
+        for item in result.decisions
+        if item.decision == "remove_for_background_repair"
+        and item.mask_quality == "failed"
+    ]
     print(
         f"Route B text plan complete: {remove_count} remove, "
-        f"{len(result.decisions) - remove_count} preserve."
+        f"{len(result.decisions) - remove_count} preserve, "
+        f"{len(failed_remove_ids)} mask failures."
     )
+    if failed_remove_ids:
+        print(f"Mask refinement failed for: {', '.join(failed_remove_ids)}")
     return 0
 
 
