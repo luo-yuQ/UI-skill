@@ -34,6 +34,7 @@ from ui_text_repair_planner import (  # noqa: E402
     VLMTextDecisionResponse,
     _validate_complete_classification,
     _small_text_failure_reason,
+    _is_small_text_refinement_eligible,
     build_union_text_mask,
     decision_for_semantic_role,
     normalize_and_deduplicate_corrections,
@@ -748,6 +749,14 @@ def test_correction_normalizes_without_fake_style_and_defaults_to_coarse() -> No
     assert correction.source == "vlm_correction"
     assert correction.mask_mode == "coarse"
     assert correction.style is None
+    assert correction.bbox_analysis == AnalysisBBox(
+        x=15,
+        y=15,
+        width=5,
+        height=5,
+    )
+    assert correction.analysis_image_width == 40
+    assert correction.analysis_image_height == 24
     assert audit.accepted_corrections[0].assigned_id == "text_corr_001"
 
 
@@ -912,6 +921,8 @@ def _small_refinement_candidate(
     candidate_id: str = "text_corr_900",
     width: int = 14,
     height: int = 14,
+    analysis_bbox_width: float = 10.0,
+    analysis_bbox_height: float = 14.0,
 ) -> RepairTextCandidate:
     return RepairTextCandidate(
         id=candidate_id,
@@ -921,6 +932,162 @@ def _small_refinement_candidate(
         source="vlm_correction",
         mask_mode="coarse",
         style=None,
+        bbox_analysis={
+            "x": 100,
+            "y": 100,
+            "width": analysis_bbox_width,
+            "height": analysis_bbox_height,
+        },
+        analysis_image_width=1024,
+        analysis_image_height=461,
+    )
+
+
+def _routing_candidate(
+    candidate_id: str,
+    *,
+    source_width: int,
+    source_height: int,
+    bbox_analysis_width: float | None = 10.0,
+    bbox_analysis_height: float | None = 14.0,
+) -> RepairTextCandidate:
+    payload: dict[str, Any] = {
+        "id": candidate_id,
+        "text": "fixture",
+        "rect": {
+            "x": 100,
+            "y": 100,
+            "width": source_width,
+            "height": source_height,
+        },
+        "confidence": 0.95,
+        "source": "vlm_correction",
+        "mask_mode": "coarse",
+        "style": None,
+    }
+    if bbox_analysis_width is not None and bbox_analysis_height is not None:
+        payload.update(
+            {
+                "bbox_analysis": {
+                    "x": 100,
+                    "y": 100,
+                    "width": bbox_analysis_width,
+                    "height": bbox_analysis_height,
+                },
+                "analysis_image_width": 1024,
+                "analysis_image_height": 461,
+            }
+        )
+    return RepairTextCandidate.model_validate(payload)
+
+
+@pytest.mark.parametrize(
+    ("candidate_id", "bbox_width", "bbox_height"),
+    [
+        ("text_corr_003", 29, 45),
+        ("text_corr_006", 32, 45),
+        ("text_corr_011", 32, 44),
+        ("text_corr_013", 32, 44),
+        ("text_corr_019", 32, 45),
+        ("text_corr_fixture", 33, 45),
+    ],
+)
+def test_real_3200_pilot_bbox_sizes_route_by_analysis_geometry(
+    candidate_id: str,
+    bbox_width: int,
+    bbox_height: int,
+) -> None:
+    candidate = _routing_candidate(
+        candidate_id,
+        source_width=bbox_width,
+        source_height=bbox_height,
+    )
+    assert _is_small_text_refinement_eligible(
+        candidate,
+        source_width=3200,
+        source_height=1440,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_width", "source_height", "bbox_width", "bbox_height"),
+    [
+        (1600, 720, 16, 23),
+        (3200, 1440, 32, 45),
+        (6400, 2880, 64, 90),
+    ],
+)
+def test_same_analysis_text_size_routes_across_source_resolutions(
+    source_width: int,
+    source_height: int,
+    bbox_width: int,
+    bbox_height: int,
+) -> None:
+    candidate = _routing_candidate(
+        "text_corr_scaled",
+        source_width=bbox_width,
+        source_height=bbox_height,
+    )
+    assert _is_small_text_refinement_eligible(
+        candidate,
+        source_width=source_width,
+        source_height=source_height,
+    )
+
+
+@pytest.mark.parametrize(
+    ("source_width", "source_height", "bbox_width", "bbox_height"),
+    [
+        (1600, 720, 16, 23),
+        (3200, 1440, 32, 45),
+        (6400, 2880, 64, 90),
+    ],
+)
+def test_normalized_geometry_fallback_is_resolution_independent(
+    source_width: int,
+    source_height: int,
+    bbox_width: int,
+    bbox_height: int,
+) -> None:
+    candidate = _routing_candidate(
+        "text_corr_normalized",
+        source_width=bbox_width,
+        source_height=bbox_height,
+        bbox_analysis_width=None,
+        bbox_analysis_height=None,
+    )
+    assert _is_small_text_refinement_eligible(
+        candidate,
+        source_width=source_width,
+        source_height=source_height,
+    )
+
+
+@pytest.mark.parametrize(
+    "candidate_id",
+    ["text_corr_002", "text_corr_016", "text_corr_022"],
+)
+def test_type_b_candidates_receive_secondary_routing_opportunity(
+    candidate_id: str,
+) -> None:
+    candidate = _routing_candidate(
+        candidate_id,
+        source_width=33,
+        source_height=45,
+    )
+    assert _is_small_text_refinement_eligible(
+        candidate,
+        source_width=3200,
+        source_height=1440,
+    )
+
+
+def test_native_ocr_candidate_never_uses_correction_small_text_routing() -> None:
+    ocr_candidate = normalize_ocr_candidates(_items())[0]
+    assert not _is_small_text_refinement_eligible(
+        ocr_candidate,
+        source_width=3200,
+        source_height=1440,
     )
 
 
@@ -977,7 +1144,11 @@ def test_large_text_does_not_enter_small_text_path(
 
     result = refine_coarse_text_mask_with_diagnostics(
         _refinement_image(candidate_mask),
-        _small_refinement_candidate(width=41, height=14),
+        _small_refinement_candidate(
+            width=41,
+            height=14,
+            analysis_bbox_width=19,
+        ),
     )
 
     assert result.mask is None

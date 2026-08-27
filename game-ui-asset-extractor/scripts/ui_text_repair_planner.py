@@ -73,10 +73,16 @@ DEDUPE_CENTER_PROXIMITY_RATIO = 0.35
 DEDUPE_PROXIMITY_MIN_SIZE_RATIO = 0.50
 DEDUPE_TEXT_MATCH_OVERLAP_THRESHOLD = 0.50
 
-# A geometry-only eligibility gate for the correction-specific fallback path.
-SMALL_TEXT_MAX_WIDTH = 40
-SMALL_TEXT_MAX_HEIGHT = 40
-SMALL_TEXT_MAX_AREA = 1200
+# A resolution-independent eligibility gate for the correction fallback path.
+# Coverage Audit uses a deterministic 1024px-wide analysis image, so its bbox is
+# authoritative. Normalized source geometry is only a fallback for callers that
+# construct a correction without Coverage Audit metadata.
+SMALL_TEXT_ANALYSIS_MAX_WIDTH = 18.0
+SMALL_TEXT_ANALYSIS_MAX_HEIGHT = 20.0
+SMALL_TEXT_ANALYSIS_MAX_AREA = 320.0
+SMALL_TEXT_NORMALIZED_MAX_WIDTH = 0.018
+SMALL_TEXT_NORMALIZED_MAX_HEIGHT = 0.045
+SMALL_TEXT_NORMALIZED_MAX_AREA = 0.0008
 
 # Small-text validation deliberately combines these constraints. In particular,
 # own-bounds fill and column saturation are not standalone rejection reasons.
@@ -225,6 +231,32 @@ class RepairTextCandidate(_RepairModel):
     source: CandidateSource
     mask_mode: MaskMode
     style: TextStyle | None = None
+    bbox_analysis: AnalysisBBox | None = None
+    analysis_image_width: int | None = Field(default=None, gt=0)
+    analysis_image_height: int | None = Field(default=None, gt=0)
+
+    @model_validator(mode="after")
+    def validate_analysis_geometry(self) -> RepairTextCandidate:
+        values = (
+            self.bbox_analysis,
+            self.analysis_image_width,
+            self.analysis_image_height,
+        )
+        if any(value is not None for value in values) and not all(
+            value is not None for value in values
+        ):
+            raise ValueError(
+                "bbox_analysis and analysis image dimensions must be supplied together"
+            )
+        if self.bbox_analysis is not None:
+            if (
+                self.bbox_analysis.x + self.bbox_analysis.width
+                > self.analysis_image_width
+                or self.bbox_analysis.y + self.bbox_analysis.height
+                > self.analysis_image_height
+            ):
+                raise ValueError("bbox_analysis must fit the recorded analysis image")
+        return self
 
 
 class AnalysisImageSize(_RepairModel):
@@ -629,6 +661,9 @@ def normalize_and_deduplicate_corrections(
                 source="vlm_correction",
                 mask_mode="coarse",
                 style=None,
+                bbox_analysis=missing.bbox_analysis,
+                analysis_image_width=analysis_width,
+                analysis_image_height=analysis_height,
             )
         )
         accepted_records.append(
@@ -772,15 +807,38 @@ class CoarseMaskRefinementResult:
 
 def _is_small_text_refinement_eligible(
     item: RepairTextCandidate | TextItem,
+    *,
+    source_width: int,
+    source_height: int,
 ) -> bool:
-    """Use source and pixel geometry only; never inspect text content or scene."""
+    """Route by analysis geometry, with normalized source geometry as fallback."""
 
+    if (
+        getattr(item, "source", "ocr") != "vlm_correction"
+        or item.mask_mode != "coarse"
+    ):
+        return False
+
+    bbox_analysis = getattr(item, "bbox_analysis", None)
+    if bbox_analysis is not None:
+        return bool(
+            bbox_analysis.width <= SMALL_TEXT_ANALYSIS_MAX_WIDTH
+            and bbox_analysis.height <= SMALL_TEXT_ANALYSIS_MAX_HEIGHT
+            and bbox_analysis.width * bbox_analysis.height
+            <= SMALL_TEXT_ANALYSIS_MAX_AREA
+        )
+
+    if source_width <= 0 or source_height <= 0:
+        return False
+    normalized_width = item.rect.width / source_width
+    normalized_height = item.rect.height / source_height
+    normalized_area = item.rect.width * item.rect.height / float(
+        source_width * source_height
+    )
     return bool(
-        getattr(item, "source", "ocr") == "vlm_correction"
-        and item.mask_mode == "coarse"
-        and item.rect.width <= SMALL_TEXT_MAX_WIDTH
-        and item.rect.height <= SMALL_TEXT_MAX_HEIGHT
-        and item.rect.width * item.rect.height <= SMALL_TEXT_MAX_AREA
+        normalized_width <= SMALL_TEXT_NORMALIZED_MAX_WIDTH
+        and normalized_height <= SMALL_TEXT_NORMALIZED_MAX_HEIGHT
+        and normalized_area <= SMALL_TEXT_NORMALIZED_MAX_AREA
     )
 
 
@@ -1190,7 +1248,11 @@ def refine_coarse_text_mask_with_diagnostics(
             metrics=metrics,
         )
 
-    if not _is_small_text_refinement_eligible(item):
+    if not _is_small_text_refinement_eligible(
+        item,
+        source_width=original_image.shape[1],
+        source_height=original_image.shape[0],
+    ):
         if observed_standard:
             metrics, reason = max(
                 observed_standard,
