@@ -12,10 +12,23 @@ import sys
 import tempfile
 from pathlib import Path
 from typing import Any, Literal, Protocol
+from urllib.parse import urlparse
 
 import cv2
 import numpy as np
-from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    BaseModel,
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+)
+
+try:
+    import requests
+except ModuleNotFoundError:  # pragma: no cover - exercised only without dependency
+    requests = None  # type: ignore[assignment]
 
 from ui_text_models import TextItem
 
@@ -24,6 +37,7 @@ DEFAULT_MODEL = "gpt-5.6-terra"
 DEFAULT_MAX_IMAGE_WIDTH = 1024
 SCHEMA_VERSION = "route-b-v0.5-region-mask-poc"
 IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".webp"}
+CHAT_COMPLETIONS_PATH = "/v1/chat/completions"
 
 UI_ROLES = {
     "navigation_label",
@@ -59,14 +73,14 @@ if str(ANALYZER_SCRIPTS_DIR) not in sys.path:
 try:
     from prepare_analysis_input import prepare_analysis_input  # type: ignore[import-not-found]
     from vlm_client import (  # type: ignore[import-not-found]
-        ResponsesAPIVLMClient,
         VLMClientConfig,
         VLMResponseParseError,
+        encode_image_as_data_url,
     )
 except ImportError:  # pragma: no cover - only relevant to incomplete deployments
     prepare_analysis_input = None
-    ResponsesAPIVLMClient = None
     VLMClientConfig = None
+    encode_image_as_data_url = None
 
     class VLMResponseParseError(RuntimeError):
         """Fallback used only when the repository client cannot be imported."""
