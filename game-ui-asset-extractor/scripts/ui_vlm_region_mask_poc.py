@@ -263,6 +263,7 @@ class ChatCompletionsSchemaVLMClient:
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json; charset=utf-8",
             "Accept": "application/json",
+            "User-Agent": "curl/8.16.0",
         }
         try:
             response = self.session.post(
