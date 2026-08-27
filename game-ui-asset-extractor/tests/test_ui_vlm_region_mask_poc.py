@@ -9,6 +9,7 @@ import cv2
 import numpy as np
 import pytest
 from PIL import Image
+from pydantic import ValidationError
 
 
 SCRIPTS_DIR = Path(__file__).resolve().parents[1] / "scripts"
@@ -94,6 +95,33 @@ class FakeClient:
             }
         )
         return self.response
+
+
+class SequencedClient(FakeClient):
+    def __init__(self, responses: list[Any]) -> None:
+        if not responses:
+            raise ValueError("responses must not be empty")
+        super().__init__(responses[0])
+        self.responses = responses
+
+    def infer_json(
+        self,
+        *,
+        image_path: Path,
+        system_prompt: str,
+        user_prompt: str,
+        response_schema: dict[str, Any] | None = None,
+    ) -> Any:
+        call_index = len(self.calls)
+        if call_index >= len(self.responses):
+            raise AssertionError("unexpected extra VLM request")
+        self.response = self.responses[call_index]
+        return super().infer_json(
+            image_path=image_path,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            response_schema=response_schema,
+        )
 
 
 def _write_inputs(tmp_path: Path) -> tuple[Path, Path]:
@@ -214,6 +242,83 @@ def test_out_of_bounds_vlm_bbox_rejects_whole_response(tmp_path: Path) -> None:
     assert not output_dir.exists()
 
 
+def test_text_regions_is_not_accepted_as_a_local_alias() -> None:
+    drifting_payload = {"text_regions": _payload()["texts"]}
+
+    with pytest.raises(poc.RegionMaskResponseError) as exc_info:
+        poc._validate_canonical_response(drifting_payload, 1024, 512)
+
+    detail = str(exc_info.value)
+    assert "texts" in detail
+    assert "text_regions" in detail
+    assert isinstance(exc_info.value.__cause__, ValidationError)
+
+
+def test_text_regions_then_texts_retries_and_preserves_mask_behavior(
+    tmp_path: Path,
+) -> None:
+    image_path, texts_path = _write_inputs(tmp_path)
+    canonical_output = tmp_path / "canonical"
+    retry_output = tmp_path / "retry"
+    canonical_plan = poc.UIVLMRegionMaskPoC(client=FakeClient()).process(
+        image_path, texts_path, canonical_output
+    )
+    client = SequencedClient(
+        [
+            {"text_regions": _payload()["texts"]},
+            _payload(),
+        ]
+    )
+
+    retry_plan = poc.UIVLMRegionMaskPoC(client=client).process(
+        image_path, texts_path, retry_output
+    )
+
+    assert len(client.calls) == 2
+    assert poc.SCHEMA_RETRY_INSTRUCTION not in client.calls[0]["user_prompt"]
+    assert poc.SCHEMA_RETRY_INSTRUCTION in client.calls[1]["user_prompt"]
+    assert client.calls[0]["response_schema"] == client.calls[1]["response_schema"]
+    assert retry_plan == canonical_plan
+    canonical_mask = cv2.imread(
+        str(canonical_output / "region-mask.png"), cv2.IMREAD_GRAYSCALE
+    )
+    retry_mask = cv2.imread(
+        str(retry_output / "region-mask.png"), cv2.IMREAD_GRAYSCALE
+    )
+    assert np.array_equal(retry_mask, canonical_mask)
+
+
+def test_two_schema_violations_fail_after_exactly_two_requests(tmp_path: Path) -> None:
+    image_path, texts_path = _write_inputs(tmp_path)
+    invalid = {"text_regions": _payload()["texts"]}
+    client = SequencedClient([invalid, invalid])
+    output_dir = tmp_path / "out"
+
+    with pytest.raises(
+        poc.RegionMaskResponseError, match="failed schema validation after 2 attempts"
+    ):
+        poc.UIVLMRegionMaskPoC(client=client).process(
+            image_path, texts_path, output_dir
+        )
+
+    assert len(client.calls) == 2
+    assert not output_dir.exists()
+
+
+def test_malformed_json_then_canonical_json_retries_successfully(
+    tmp_path: Path,
+) -> None:
+    image_path, texts_path = _write_inputs(tmp_path)
+    client = SequencedClient(['{"texts":', _payload()])
+
+    plan = poc.UIVLMRegionMaskPoC(client=client).process(
+        image_path, texts_path, tmp_path / "out"
+    )
+
+    assert len(client.calls) == 2
+    assert plan["texts"][0]["text"] == "Corrected UI"
+
+
 def test_analysis_to_source_uses_floor_ceil_and_clamp() -> None:
     mapped = poc._analysis_to_source_bbox(
         poc.AnalysisBBox(x=1, y=2, width=10, height=10),
@@ -264,5 +369,9 @@ def test_system_prompt_is_generic_and_has_no_pilot_specific_hints() -> None:
     assert "ocr candidates as hints" in prompt
     assert "do not output source-image coordinates" in prompt
     assert "do not output remove/preserve decisions" in prompt
+    assert 'the only allowed top-level key is "texts"' in prompt
+    assert '"text_regions"' in prompt
+    assert '"regions"' in prompt
+    assert '"detected_texts"' in prompt
     for forbidden in ("inventory", "backpack", "slot count", "quantity corner", "dyg"):
         assert forbidden not in prompt

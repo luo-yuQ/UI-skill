@@ -61,11 +61,15 @@ try:
     from vlm_client import (  # type: ignore[import-not-found]
         ResponsesAPIVLMClient,
         VLMClientConfig,
+        VLMResponseParseError,
     )
 except ImportError:  # pragma: no cover - only relevant to incomplete deployments
     prepare_analysis_input = None
     ResponsesAPIVLMClient = None
     VLMClientConfig = None
+
+    class VLMResponseParseError(RuntimeError):
+        """Fallback used only when the repository client cannot be imported."""
 
 
 SYSTEM_PROMPT = """You are reviewing all visible text regions in a complete game UI screenshot.
@@ -108,7 +112,35 @@ Allowed asset-owned semantic roles:
 - decorative_art_text
 
 Every ui_owned region must use a UI-owned role. Every asset_owned region must use an asset-owned role.
+
+Return exactly one JSON object.
+
+The only allowed top-level key is "texts".
+
+Required top-level structure:
+
+{
+  "texts": [...]
+}
+
+Do not use alternative top-level keys such as:
+"text_regions",
+"regions",
+"items",
+or "detected_texts".
+
 Return strict JSON matching the schema, with no Markdown or additional commentary."""
+
+
+SCHEMA_RETRY_INSTRUCTION = """Your previous response did not match the required JSON schema.
+
+Return exactly:
+{
+  "texts": [...]
+}
+
+The only allowed top-level key is "texts".
+Return JSON only."""
 
 
 class RegionMaskError(RuntimeError):
@@ -396,6 +428,63 @@ def _build_user_prompt(
     )
 
 
+def _validate_canonical_response(
+    payload: Any, analysis_width: int, analysis_height: int
+) -> CanonicalTextResponse:
+    """Decode and strictly validate one response without accepting aliases."""
+
+    try:
+        if isinstance(payload, str):
+            payload = json.loads(payload)
+        response = CanonicalTextResponse.model_validate(payload)
+    except (json.JSONDecodeError, ValidationError, TypeError) as exc:
+        raise RegionMaskResponseError(f"Invalid VLM response: {exc}") from exc
+    _validate_response_bounds(response, analysis_width, analysis_height)
+    return response
+
+
+def _infer_canonical_response_with_schema_retry(
+    client: VLMClient,
+    *,
+    image_path: Path,
+    user_prompt: str,
+    response_schema: dict[str, Any],
+    analysis_width: int,
+    analysis_height: int,
+) -> CanonicalTextResponse:
+    """Retry exactly once when model JSON violates the canonical schema."""
+
+    last_error: RegionMaskResponseError | None = None
+    for attempt in range(2):
+        attempt_prompt = user_prompt
+        if attempt == 1:
+            attempt_prompt = f"{user_prompt}\n\n{SCHEMA_RETRY_INSTRUCTION}"
+        try:
+            payload = client.infer_json(
+                image_path=image_path,
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=attempt_prompt,
+                response_schema=response_schema,
+            )
+        except (VLMResponseParseError, json.JSONDecodeError) as exc:
+            last_error = RegionMaskResponseError(
+                f"Invalid VLM response: response is not valid JSON: {exc}"
+            )
+        else:
+            try:
+                return _validate_canonical_response(
+                    payload, analysis_width, analysis_height
+                )
+            except RegionMaskResponseError as exc:
+                last_error = exc
+
+    if last_error is None:  # pragma: no cover - loop always records an error or returns
+        raise AssertionError("schema retry loop exhausted without a result")
+    raise RegionMaskResponseError(
+        f"VLM response failed schema validation after 2 attempts: {last_error}"
+    ) from last_error
+
+
 def _analysis_to_source_bbox(
     bbox: AnalysisBBox,
     *,
@@ -529,26 +618,20 @@ class UIVLMRegionMaskPoC:
                     analysis_width=analysis_width,
                     analysis_height=analysis_height,
                 )
-                payload = client.infer_json(
+                response = _infer_canonical_response_with_schema_retry(
+                    client,
                     image_path=analysis_image,
-                    system_prompt=SYSTEM_PROMPT,
                     user_prompt=_build_user_prompt(
                         hints, analysis_width, analysis_height
                     ),
                     response_schema=schema,
+                    analysis_width=analysis_width,
+                    analysis_height=analysis_height,
                 )
         except RegionMaskError:
             raise
         except Exception as exc:
             raise RegionMaskClientError(f"VLM region analysis failed: {exc}") from exc
-
-        try:
-            if isinstance(payload, str):
-                payload = json.loads(payload)
-            response = CanonicalTextResponse.model_validate(payload)
-        except (json.JSONDecodeError, ValidationError, TypeError) as exc:
-            raise RegionMaskResponseError(f"Invalid VLM response: {exc}") from exc
-        _validate_response_bounds(response, analysis_width, analysis_height)
 
         mask = np.zeros((source_height, source_width), dtype=np.uint8)
         plan_texts: list[dict[str, Any]] = []
