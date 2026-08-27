@@ -130,6 +130,18 @@ provider_helpers = _load_repository_module(
     "_clean_repair_image_provider_adapter",
     "game-ui-image-provider-adapter/scripts/generate_preview.py",
 )
+_provider_sanitized_text = provider_helpers.sanitized_text
+
+
+def _provider_error_preview(
+    value: str, api_key: str | None, *, limit: int = 2000
+) -> str:
+    """Keep the verified helper's redaction with a 2000-character body cap."""
+
+    return _provider_sanitized_text(value, api_key, limit=limit)
+
+
+provider_helpers.sanitized_text = _provider_error_preview
 
 
 def inspect_image(path: Path, label: str) -> tuple[int, int]:
@@ -265,6 +277,13 @@ def upload_image_for_clean_repair(
         )
 
     return image_url
+
+
+# Keep the verified clean-repair multipart upload implementation while exposing
+# the adapter's existing injection boundary to offline tests.
+toapis.upload_image = upload_image_for_clean_repair
+
+
 def _download_clean_image(
     image_url: str,
     output_dir: Path,
@@ -325,51 +344,31 @@ def submit_generation_for_clean_repair(
     timeout: float,
     session: Any,
 ) -> dict[str, Any]:
-    submit_url = toapis.provider_url(base_url, "/v1/images/generations")
-
+    del session  # Only upload, poll, fetch, and download use requests.
     try:
-        response = session.post(
-            submit_url,
-            headers={
-                "Authorization": f"Bearer {api_key}",
-                "Content-Type": "application/json",
-            },
-            json=payload,
+        data = provider_helpers.submit_generation(
+            payload,
+            base_url=base_url,
+            api_key=api_key,
             timeout=timeout,
+            curl_path=provider_helpers.find_curl(),
         )
     except Exception as exc:
-        raise CleanRepairError(f"Generation submit request failed: {exc}") from exc
+        message = str(exc).replace(api_key, "[REDACTED]")
+        raise CleanRepairError(f"Generation submit request failed: {message}") from exc
 
-    status = response.status_code
-    content_type = response.headers.get("Content-Type", "")
-    body_preview = response.text[:2000]
-
-    if not 200 <= status < 300:
-        raise CleanRepairError(
-            f"Generation submit failed: HTTP {status}, "
-            f"content_type={content_type}, body={body_preview}"
-        )
-
-    try:
-        data = response.json()
-    except ValueError as exc:
-        raise CleanRepairError(
-            f"Generation submit returned non-JSON body: "
-            f"HTTP {status}, content_type={content_type}, body={body_preview}"
-        ) from exc
-
-    if not isinstance(data, dict):
-        raise CleanRepairError(
-            f"Generation submit returned non-object JSON: {data!r}"
-        )
-
-    task_id = data.get("task_id")
+    task_id = provider_helpers.submit_task_id(data)
     if not isinstance(task_id, str) or not task_id.strip():
         raise CleanRepairError(
-            f"Generation submit response missing task_id: body={body_preview}"
+            "Generation submit response missing a non-empty task_id"
         )
 
     return data
+
+
+# This module is loaded privately for the PoC. Preserve its injectable submit
+# boundary while making the production implementation use verified curl.
+toapis.submit_generation = submit_generation_for_clean_repair
 
 
 def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str, Any]]:
@@ -414,21 +413,21 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
         provider_size = select_provider_size(source_size)
         active_session = session if session is not None else toapis.requests
 
-        source_url = upload_image_for_clean_repair(
-    source_image,
-    base_url=base_url,
-    api_key=api_key,
-    timeout=args.upload_timeout,
-    session=active_session,
-)
+        source_url = toapis.upload_image(
+            source_image,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=args.upload_timeout,
+            session=active_session,
+        )
         image_urls = [source_url]
         if mask_overlay is not None:
-            overlay_url = upload_image_for_clean_repair(
-    mask_overlay,
-    base_url=base_url,
-    api_key=api_key,
-    timeout=args.upload_timeout,
-    session=active_session,
+            overlay_url = toapis.upload_image(
+                mask_overlay,
+                base_url=base_url,
+                api_key=api_key,
+                timeout=args.upload_timeout,
+                session=active_session,
             )
             image_urls.append(overlay_url)
 
@@ -438,14 +437,19 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             image_urls=image_urls,
             provider_size=provider_size,
         )
-        submit_data = submit_generation_for_clean_repair(
-    payload,
-    base_url=base_url,
-    api_key=api_key,
-    timeout=args.request_timeout,
-    session=active_session,
+        submit_data = toapis.submit_generation(
+            payload,
+            base_url=base_url,
+            api_key=api_key,
+            timeout=args.request_timeout,
+            session=active_session,
         )
-        task_id = str(submit_data["task_id"])
+        parsed_task_id = provider_helpers.submit_task_id(submit_data)
+        if not isinstance(parsed_task_id, str) or not parsed_task_id.strip():
+            raise CleanRepairError(
+                "Generation submit response missing a non-empty task_id"
+            )
+        task_id = parsed_task_id
         toapis.poll_task_status(
             task_id,
             submit_data,
