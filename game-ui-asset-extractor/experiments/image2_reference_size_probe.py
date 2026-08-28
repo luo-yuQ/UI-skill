@@ -35,15 +35,18 @@ DOWNLOAD_TIMEOUT = 180.0
 POLL_INTERVAL = 3.0
 MAX_WAIT = 300.0
 
-CASE_SPECS = (
-    ("A", "case-a-no-reference", 0),
-    ("B", "case-b-one-reference", 1),
-    ("C", "case-c-two-references", 2),
-)
-
-
 class ProbeError(RuntimeError):
     """Expected probe input, configuration, provider, or output failure."""
+
+
+class UploadReferenceError(ProbeError):
+    """Reference upload failure carrying a serializable diagnostic record."""
+
+    def __init__(self, diagnostic: dict[str, Any]) -> None:
+        self.diagnostic = diagnostic
+        status = diagnostic.get("http_status")
+        status_note = f"HTTP {status}" if status is not None else "request error"
+        super().__init__(f"{diagnostic['stage']} failed: {status_note}")
 
 
 def _load_repository_module(name: str, relative_path: str) -> ModuleType:
@@ -170,6 +173,97 @@ def inspect_downloaded_size(path: Path) -> tuple[int, int]:
     if width <= 0 or height <= 0:
         raise ProbeError(f"Downloaded provider output has invalid dimensions: {width}x{height}")
     return width, height
+
+
+def upload_reference_image(
+    image_path: Path,
+    *,
+    stage: str,
+    base_url: str,
+    api_key: str,
+    timeout: float,
+    session: Any,
+) -> str:
+    """Upload one PNG using the clean-repair PoC's verified multipart shape."""
+
+    mime_type = "image/png"
+    file_path = str(image_path.resolve(strict=False))
+    try:
+        file_size = image_path.stat().st_size
+    except OSError as exc:
+        diagnostic = {
+            "stage": stage,
+            "http_status": None,
+            "response_body": str(exc)[:2000],
+            "file_path": file_path,
+            "file_size": None,
+            "detected_mime_type": mime_type,
+        }
+        raise UploadReferenceError(diagnostic) from exc
+
+    upload_url = toapis.provider_url(base_url, "/api/upload")
+    try:
+        with image_path.open("rb") as binary_file:
+            response = session.post(
+                upload_url,
+                headers={"Authorization": f"Bearer {api_key}"},
+                files={
+                    "file": (
+                        image_path.name,
+                        binary_file,
+                        mime_type,
+                    )
+                },
+                timeout=timeout,
+            )
+    except Exception as exc:
+        diagnostic = {
+            "stage": stage,
+            "http_status": None,
+            "response_body": str(exc)[:2000],
+            "file_path": file_path,
+            "file_size": file_size,
+            "detected_mime_type": mime_type,
+        }
+        raise UploadReferenceError(diagnostic) from exc
+
+    response_body = response.text[:2000]
+    if not 200 <= response.status_code < 300:
+        diagnostic = {
+            "stage": stage,
+            "http_status": response.status_code,
+            "response_body": response_body,
+            "file_path": file_path,
+            "file_size": file_size,
+            "detected_mime_type": mime_type,
+        }
+        raise UploadReferenceError(diagnostic)
+
+    try:
+        data = response.json()
+    except ValueError as exc:
+        diagnostic = {
+            "stage": stage,
+            "http_status": response.status_code,
+            "response_body": response_body,
+            "file_path": file_path,
+            "file_size": file_size,
+            "detected_mime_type": mime_type,
+        }
+        raise UploadReferenceError(diagnostic) from exc
+
+    image_url = data.get("url") if isinstance(data, dict) else None
+    if not isinstance(image_url, str) or not image_url.strip():
+        diagnostic = {
+            "stage": stage,
+            "http_status": response.status_code,
+            "response_body": response_body,
+            "file_path": file_path,
+            "file_size": file_size,
+            "detected_mime_type": mime_type,
+        }
+        raise UploadReferenceError(diagnostic)
+    return image_url.strip()
 
 
 def build_request(
@@ -331,6 +425,57 @@ def run_case(
     return result
 
 
+def record_upload_blocked_case(
+    *,
+    case: str,
+    directory_name: str,
+    reference_count: int,
+    output_dir: Path,
+    size: str,
+    diagnostics: list[dict[str, Any]],
+    api_key: str,
+) -> dict[str, Any]:
+    """Record a case that could not be submitted because an upload failed."""
+
+    case_dir = output_dir / directory_name
+    case_dir.mkdir(parents=True, exist_ok=True)
+    output_path = case_dir / "output.png"
+    output_path.unlink(missing_ok=True)
+    blocked_stages = [str(item["stage"]) for item in diagnostics]
+    error_message = (
+        f"Case {case} was not submitted because required reference upload(s) "
+        f"failed: {', '.join(blocked_stages)}"
+    )
+    not_submitted = {
+        "status": "not_submitted",
+        "case": case,
+        "stage": "upload",
+        "reason": error_message,
+        "blocked_by": blocked_stages,
+    }
+    result = {
+        "case": case,
+        "reference_count": reference_count,
+        "requested_size": size,
+        "actual_width": 0,
+        "actual_height": 0,
+        "image_url": None,
+        "task_id": None,
+        "status": "error",
+        "stage": "upload",
+        "error_type": "UploadReferenceError",
+        "error_message": error_message,
+        "upload_errors": diagnostics,
+    }
+    # No generation body existed for this case. Make that explicit instead of
+    # fabricating a request.json that was never sent to the provider.
+    write_json(case_dir / "request.json", not_submitted, api_key=api_key)
+    write_json(case_dir / "submit.json", not_submitted, api_key=api_key)
+    write_json(case_dir / "result-response.json", not_submitted, api_key=api_key)
+    write_json(case_dir / "result.json", result, api_key=api_key)
+    return result
+
+
 def build_summary(size: str, case_results: list[dict[str, Any]]) -> dict[str, Any]:
     cases: list[dict[str, Any]] = []
     for result in case_results:
@@ -395,41 +540,60 @@ def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
         raise ProbeError("The requests package is required for upload and download")
 
     output_dir.mkdir(parents=True, exist_ok=True)
+    upload_error_path = output_dir / "upload-error.json"
+    upload_error_path.unlink(missing_ok=True)
     curl_path = provider.find_curl()
     session = toapis.requests.Session()
+    case_results: list[dict[str, Any]] = []
+    upload_errors: list[dict[str, Any]] = []
+    reference_url_1: str | None = None
+    reference_url_2: str | None = None
     try:
-        # Intentionally upload the exact same local PNG twice. Do not cache or
-        # reuse the first URL: reference count is the experiment's only variable.
-        reference_url_1 = toapis.upload_image(
-            reference_path,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=args.upload_timeout,
-            session=session,
-        )
-        reference_url_2 = toapis.upload_image(
-            reference_path,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=args.upload_timeout,
-            session=session,
+        # Case A has no reference dependency and therefore always runs first.
+        case_results.append(
+            run_case(
+                case="A",
+                directory_name="case-a-no-reference",
+                reference_urls=[],
+                output_dir=output_dir,
+                model=args.model,
+                size=args.size,
+                base_url=base_url,
+                api_key=api_key,
+                curl_path=curl_path,
+                session=session,
+                request_timeout=args.request_timeout,
+                download_timeout=args.download_timeout,
+                poll_interval=args.poll_interval,
+                max_wait=args.max_wait,
+            )
         )
 
-        urls_by_case = {
-            "A": [],
-            "B": [reference_url_1],
-            "C": [reference_url_1, reference_url_2],
-        }
-        case_results = []
-        for case, directory_name, expected_count in CASE_SPECS:
-            reference_urls = urls_by_case[case]
-            if len(reference_urls) != expected_count:
-                raise AssertionError(f"Internal reference-count mismatch for case {case}")
+        # Upload #1 is performed only after A. Its failure blocks B, but does
+        # not stop upload #2 or the recording of C.
+        try:
+            reference_url_1 = upload_reference_image(
+                reference_path,
+                stage="upload_reference_1",
+                base_url=base_url,
+                api_key=api_key,
+                timeout=args.upload_timeout,
+                session=session,
+            )
+        except UploadReferenceError as exc:
+            upload_errors.append(exc.diagnostic)
+            write_json(
+                upload_error_path,
+                {"status": "error", **exc.diagnostic, "errors": upload_errors},
+                api_key=api_key,
+            )
+
+        if reference_url_1 is not None:
             case_results.append(
                 run_case(
-                    case=case,
-                    directory_name=directory_name,
-                    reference_urls=reference_urls,
+                    case="B",
+                    directory_name="case-b-one-reference",
+                    reference_urls=[reference_url_1],
                     output_dir=output_dir,
                     model=args.model,
                     size=args.size,
@@ -441,6 +605,79 @@ def run(args: argparse.Namespace) -> tuple[int, dict[str, Any]]:
                     download_timeout=args.download_timeout,
                     poll_interval=args.poll_interval,
                     max_wait=args.max_wait,
+                )
+            )
+        else:
+            case_results.append(
+                record_upload_blocked_case(
+                    case="B",
+                    directory_name="case-b-one-reference",
+                    reference_count=1,
+                    output_dir=output_dir,
+                    size=args.size,
+                    diagnostics=[
+                        item
+                        for item in upload_errors
+                        if item["stage"] == "upload_reference_1"
+                    ],
+                    api_key=api_key,
+                )
+            )
+
+        # Upload the same local PNG a second time even if upload #1 failed.
+        try:
+            reference_url_2 = upload_reference_image(
+                reference_path,
+                stage="upload_reference_2",
+                base_url=base_url,
+                api_key=api_key,
+                timeout=args.upload_timeout,
+                session=session,
+            )
+        except UploadReferenceError as exc:
+            upload_errors.append(exc.diagnostic)
+            write_json(
+                upload_error_path,
+                {"status": "error", **exc.diagnostic, "errors": upload_errors},
+                api_key=api_key,
+            )
+
+        if reference_url_1 is not None and reference_url_2 is not None:
+            case_results.append(
+                run_case(
+                    case="C",
+                    directory_name="case-c-two-references",
+                    reference_urls=[reference_url_1, reference_url_2],
+                    output_dir=output_dir,
+                    model=args.model,
+                    size=args.size,
+                    base_url=base_url,
+                    api_key=api_key,
+                    curl_path=curl_path,
+                    session=session,
+                    request_timeout=args.request_timeout,
+                    download_timeout=args.download_timeout,
+                    poll_interval=args.poll_interval,
+                    max_wait=args.max_wait,
+                )
+            )
+        else:
+            missing_stages = {
+                "upload_reference_1" if reference_url_1 is None else "",
+                "upload_reference_2" if reference_url_2 is None else "",
+            }
+            missing_stages.discard("")
+            case_results.append(
+                record_upload_blocked_case(
+                    case="C",
+                    directory_name="case-c-two-references",
+                    reference_count=2,
+                    output_dir=output_dir,
+                    size=args.size,
+                    diagnostics=[
+                        item for item in upload_errors if item["stage"] in missing_stages
+                    ],
+                    api_key=api_key,
                 )
             )
     finally:
