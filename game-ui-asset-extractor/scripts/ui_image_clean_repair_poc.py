@@ -25,86 +25,22 @@ DEFAULT_MODEL = "gpt-image-2"
 DEFAULT_BASE_URL = "https://ai-api.youchu.work"
 SUPPORTED_SIZES = ("1024x1024", "1024x1536", "1536x1024")
 
-SOURCE_ONLY_PROMPT = """Edit the provided game UI screenshot.
+SOURCE_PLUS_OVERLAY_PROMPT = """
+IMAGE 1 is the authoritative original UI.
 
-This is a restoration task, not a redesign task.
+IMAGE 2 is a binary spatial repair guide aligned exactly with IMAGE 1.
 
-Remove visible UI text and numeric labels that are rendered on top of
-buttons, panels, badges, navigation labels, counters, titles and other
-interface surfaces.
+White regions in IMAGE 2 indicate text-removal targets.
+Black regions indicate areas that are not repair targets.
 
-Reconstruct the original underlying game UI surfaces naturally where
-the text was removed.
+Use IMAGE 2 only to locate repair regions.
 
-Preserve the original UI as closely as possible.
+Remove the text inside the corresponding white regions and reconstruct the
+underlying UI surface.
 
-Preserve:
-- layout
-- component positions
-- component sizes
-- icons
-- illustrations
-- item artwork
-- logos and decorative artwork
-- colors
-- gradients
-- borders
-- shadows
-- highlights
-- textures
-
-Do not redesign the interface.
-Do not move components.
-Do not replace icons or artwork.
-Do not add new content.
-Do not change the overall composition.
-
-Text embedded as part of item artwork, logos, illustrations or decorative
-assets should remain intact.
-
-The final result should look like the same original screenshot with the
-ordinary UI text removed and the underlying surfaces cleanly restored."""
-
-SOURCE_PLUS_OVERLAY_PROMPT = """You are given two reference images.
-
-The FIRST image is the original game UI screenshot.
-
-The SECOND image is only a repair-region guide derived from the same
-screenshot.
-
-Colored/red highlighted regions in the second image indicate areas where
-ordinary UI text should be removed and the underlying interface surface
-should be reconstructed.
-
-The second image is NOT the desired visual appearance.
-Do not reproduce the red overlays or annotations.
-
-Edit the FIRST image.
-
-Only use the SECOND image to understand which areas require text removal.
-
-Restore the underlying:
-- button surfaces
-- panels
-- badges
-- gradients
-- borders
-- shadows
-- highlights
-- textures
-
-Preserve all other visual content from the first image as closely as
-possible.
-
-Do not redesign, rearrange, move or resize UI components.
-Do not replace artwork or icons.
-Do not reproduce annotation colors.
-
-Preserve text that is visually embedded inside illustrations, item artwork,
-logos or decorative assets unless the guide explicitly indicates otherwise.
-
-The desired output is the same original UI with the indicated UI text
-naturally removed."""
+Preserve all non-target visual content from IMAGE 1 as faithfully as possible.
+Do not reproduce IMAGE 2 in the output.
+"""
 
 
 class CleanRepairError(RuntimeError):
@@ -410,7 +346,12 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
                     f"{overlay_size[0]}x{overlay_size[1]} != {source_size[0]}x{source_size[1]}"
                 )
         prompt = read_prompt(prompt_file, has_overlay=mask_overlay is not None)
-        provider_size = select_provider_size(source_size)
+        # provider_size = select_provider_size(source_size)
+        provider_size = (
+            args.provider_size
+            if args.provider_size is not None
+            else select_provider_size(source_size)
+        )
         active_session = session if session is not None else toapis.requests
 
         source_url = toapis.upload_image(
@@ -518,16 +459,35 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Experimentally remove ordinary game UI text with ToAPIs gpt-image-2 reference generation."
     )
+    
     parser.add_argument("--image", required=True, help="Source game UI screenshot")
-    parser.add_argument("--output-dir", required=True, help="Directory for clean image and result.json")
-    parser.add_argument("--mask-overlay", help="Optional repair-mask-overlay.png used only as a visual guide")
+    parser.add_argument(
+        "--output-dir",
+        required=True,
+        help="Directory for clean image and result.json",
+    )
+    parser.add_argument(
+        "--mask-overlay",
+        help="Optional repair-mask-overlay.png used only as a visual guide",
+    )
     parser.add_argument("--model", default=DEFAULT_MODEL)
+
+    parser.add_argument(
+        "--provider-size",
+        choices=SUPPORTED_SIZES,
+        default=None,
+        help=(
+            "Override provider output size. "
+            "If omitted, infer from source orientation."
+        ),
+    )
     parser.add_argument("--prompt-file", help="Optional UTF-8 prompt override")
     parser.add_argument("--upload-timeout", type=float, default=120.0)
     parser.add_argument("--request-timeout", type=float, default=120.0)
     parser.add_argument("--download-timeout", type=float, default=180.0)
     parser.add_argument("--poll-interval", type=float, default=3.0)
     parser.add_argument("--max-wait", type=float, default=300.0)
+
     return parser.parse_args(argv)
 
 
