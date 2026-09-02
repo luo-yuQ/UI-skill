@@ -183,7 +183,7 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("--runs must be at least 1", stderr.getvalue())
 
-    def test_main_uses_thinking_false_and_12000_max_tokens_only_for_this_probe(self):
+    def test_main_explicitly_uses_chat_completions_with_probe_parameters(self):
         config = VLMClientConfig(
             base_url="https://provider.example",
             api_key="secret",
@@ -199,7 +199,7 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
             return_value=config,
         ), patch.object(
             probe,
-            "create_configured_vlm_client",
+            "create_chat_completions_vlm_client",
             return_value=object(),
         ) as create_client, patch.object(
             probe,
@@ -213,7 +213,7 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
         create_client.assert_called_once_with(
             config,
             max_tokens=probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
-            thinking=False,
+            thinking={"type": "disabled"},
         )
         self.assertEqual(12000, probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS)
 

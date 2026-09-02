@@ -30,7 +30,7 @@ from vlm_client import (  # noqa: E402
     VLMClient,
     VLMClientConfig,
     VLMError,
-    create_configured_vlm_client,
+    create_chat_completions_vlm_client,
 )
 
 
@@ -493,10 +493,10 @@ def main(argv: list[str] | None = None) -> int:
     try:
         validate_runs(args.runs)
         config = VLMClientConfig.from_env(model_override=args.model)
-        client = create_configured_vlm_client(
+        client = create_chat_completions_vlm_client(
             config,
             max_tokens=DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
-            thinking=False,
+            thinking={"type": "disabled"},
         )
         summary = run_experiment(
             args.image,

@@ -357,11 +357,10 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         client, _ = self.client(body=responses_body('{"node_role": "asset"}'))
         self.assertEqual({"node_role": "asset"}, self.infer(client))
 
-    def test_t18_invalid_output_text_json_is_parse_error(self):
+    def test_t18_fenced_output_json_preserves_existing_parser_behavior(self):
         client, session = self.client(body=responses_body("```json\n{}\n```"))
         with patch("vlm_client.time.sleep") as sleep:
-            with self.assertRaisesRegex(VLMResponseParseError, "vlm_response_parse_error"):
-                self.infer(client)
+            self.assertEqual({}, self.infer(client))
         self.assertEqual(1, len(session.calls))
         sleep.assert_not_called()
 
