@@ -29,10 +29,14 @@ def build_interactive_adapters(run_dir: Path) -> RuntimeAdapters:
     )
 
 
-def build_adapters(adapter: str, run_dir: Path) -> RuntimeAdapters:
+def build_adapters(
+    adapter: str,
+    run_dir: Path,
+    model: str | None = None,
+) -> RuntimeAdapters:
     if adapter == "interactive":
         return build_interactive_adapters(run_dir)
-    config = VLMClientConfig.from_env()
+    config = VLMClientConfig.from_env(model_override=model)
     client = create_configured_vlm_client(config)
     return build_production_runtime_adapters(ProductionVisualAdapter(client))
 
@@ -49,6 +53,12 @@ def build_parser() -> argparse.ArgumentParser:
         "--adapter",
         choices=("interactive", "production"),
         default="interactive",
+    )
+    parser.add_argument(
+        "--model",
+        type=str,
+        default=None,
+        help="Override STAGE2A_VLM_MODEL for this run.",
     )
     parser.add_argument(
         "--validation-mode",
@@ -82,7 +92,7 @@ def _print_result(runtime: RecursiveRuntime, result: str) -> None:
 def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        adapters = build_adapters(args.adapter, args.run_dir)
+        adapters = build_adapters(args.adapter, args.run_dir, model=args.model)
         if args.resume:
             runtime = RecursiveRuntime.load(
                 run_dir=args.run_dir,

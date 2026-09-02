@@ -32,15 +32,55 @@ class VLMClientConfigTests(unittest.TestCase):
             {
                 "STAGE2A_VLM_BASE_URL": "https://vlm.example.invalid",
                 "STAGE2A_VLM_API_KEY": secret,
-                "STAGE2A_VLM_MODEL": "vision-model",
+                "STAGE2A_VLM_MODEL": "env-model",
                 "STAGE2A_VLM_TIMEOUT": "12.5",
             },
             clear=True,
         ):
             config = VLMClientConfig.from_env()
+        self.assertEqual("env-model", config.model)
         self.assertEqual(12.5, config.timeout)
         self.assertNotIn(secret, repr(config))
         self.assertNotIn(secret, str(config.safe_metadata()))
+
+    def test_model_override_takes_precedence_over_environment(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STAGE2A_VLM_BASE_URL": "https://vlm.example.invalid",
+                "STAGE2A_VLM_API_KEY": "secret",
+                "STAGE2A_VLM_MODEL": "env-model",
+            },
+            clear=True,
+        ):
+            config = VLMClientConfig.from_env(model_override="cli-model")
+        self.assertEqual("cli-model", config.model)
+
+    def test_model_override_allows_missing_environment_model(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STAGE2A_VLM_BASE_URL": "https://vlm.example.invalid",
+                "STAGE2A_VLM_API_KEY": "secret",
+            },
+            clear=True,
+        ):
+            config = VLMClientConfig.from_env(model_override="cli-model")
+        self.assertEqual("cli-model", config.model)
+
+    def test_missing_model_without_override_fails_closed(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STAGE2A_VLM_BASE_URL": "https://vlm.example.invalid",
+                "STAGE2A_VLM_API_KEY": "secret",
+            },
+            clear=True,
+        ):
+            with self.assertRaisesRegex(
+                VLMConfigurationError, "STAGE2A_VLM_MODEL"
+            ):
+                VLMClientConfig.from_env()
 
     def test_missing_configuration_fails_closed(self):
         with patch.dict(os.environ, {}, clear=True):
@@ -75,6 +115,33 @@ class VLMClientConfigTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("production VLM configuration is missing", stderr.getvalue())
         self.assertNotIn("WAITING_FOR_ADAPTER", stderr.getvalue())
+
+    def test_cli_model_reaches_production_vlm_client(self):
+        with patch.dict(
+            os.environ,
+            {
+                "STAGE2A_VLM_BASE_URL": "https://vlm.example.invalid",
+                "STAGE2A_VLM_API_KEY": "secret",
+                "STAGE2A_VLM_MODEL": "env-model",
+            },
+            clear=True,
+        ):
+            args = run_recursive_runtime.build_parser().parse_args(
+                [
+                    "--run-dir",
+                    "unused",
+                    "--adapter",
+                    "production",
+                    "--model",
+                    "cli-model",
+                ]
+            )
+            adapters = run_recursive_runtime.build_adapters(
+                args.adapter,
+                args.run_dir,
+                model=args.model,
+            )
+        self.assertEqual("cli-model", adapters.router.vlm_client.config.model)
 
 
 if __name__ == "__main__":

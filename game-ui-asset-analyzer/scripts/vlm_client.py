@@ -92,10 +92,14 @@ class VLMClientConfig:
     timeout: float = 60.0
 
     @classmethod
-    def from_env(cls) -> "VLMClientConfig":
+    def from_env(cls, model_override: str | None = None) -> "VLMClientConfig":
         base_url = os.environ.get("STAGE2A_VLM_BASE_URL", "").strip()
         api_key = os.environ.get("STAGE2A_VLM_API_KEY", "").strip()
-        model = os.environ.get("STAGE2A_VLM_MODEL", "").strip()
+        model = (
+            model_override
+            if model_override is not None
+            else os.environ.get("STAGE2A_VLM_MODEL", "")
+        ).strip()
         raw_timeout = os.environ.get("STAGE2A_VLM_TIMEOUT", "60").strip()
         missing = [
             name
