@@ -38,6 +38,7 @@ from vlm_client import (  # noqa: E402
     VLMClientConfig,
     VLMConfigurationError,
     VLMResponseParseError,
+    VLMResponseTruncatedError,
     VLMTransportError,
     encode_image_as_data_url,
 )
@@ -239,9 +240,94 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.assertEqual(DEFAULT_MAX_OUTPUT_TOKENS, session.calls[0]["json"]["max_output_tokens"])
         self.assertEqual(4000, DEFAULT_MAX_OUTPUT_TOKENS)
 
+    def test_probe_overrides_use_relay_max_tokens_and_disable_thinking(self):
+        session = FakeSession(FakeResponse(200, responses_body('{"ok": true}')))
+        client = ResponsesAPIVLMClient(
+            self.config,
+            session=session,
+            max_tokens=12000,
+            thinking=False,
+        )
+        self.infer(client)
+        payload = session.calls[0]["json"]
+        self.assertEqual(12000, payload["max_tokens"])
+        self.assertIs(False, payload["thinking"])
+        self.assertEqual(0, payload["temperature"])
+        self.assertNotIn("max_output_tokens", payload)
+        self.assertNotIn("budget_tokens", payload)
+        self.assertNotIn("response_format", payload)
+        self.assertNotIn("response_format_schema", payload)
+
     def test_t13_normal_response_extracts_output_text(self):
         client, _ = self.client(body=responses_body('  {"value": 3}  '))
         self.assertEqual({"value": 3}, self.infer(client))
+
+    def test_chat_completions_response_extracts_message_content(self):
+        body = {
+            "object": "chat.completion",
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {"content": '{"assets": []}'},
+                }
+            ],
+        }
+        client, _ = self.client(body=body)
+        self.assertEqual({"assets": []}, self.infer(client))
+
+    def test_responses_output_takes_priority_over_chat_completions_fallback(self):
+        body = responses_body('{"source": "responses"}')
+        body["choices"] = [
+            {
+                "finish_reason": "length",
+                "message": {"content": "", "reasoning_content": "ignored"},
+            }
+        ]
+        client, _ = self.client(body=body)
+        self.assertEqual({"source": "responses"}, self.infer(client))
+
+    def test_chat_completions_length_is_truncation_with_usage_diagnostics(self):
+        body = {
+            "choices": [
+                {
+                    "finish_reason": "length",
+                    "message": {
+                        "content": "",
+                        "reasoning_content": "long reasoning must not be parsed",
+                    },
+                }
+            ],
+            "usage": {
+                "completion_tokens": 4000,
+                "completion_tokens_details": {"reasoning_tokens": 3997},
+            },
+        }
+        client, _ = self.client(body=body)
+        with self.assertRaisesRegex(
+            VLMResponseTruncatedError,
+            r"vlm_response_truncated: .*completion_tokens=4000; reasoning_tokens=3997",
+        ):
+            self.infer(client)
+        self.assertEqual(body, client.get_last_provider_response())
+
+    def test_chat_completions_empty_content_without_length_is_parse_error(self):
+        body = {
+            "choices": [
+                {
+                    "finish_reason": "stop",
+                    "message": {
+                        "content": "",
+                        "reasoning_content": '{"must_not": "be parsed"}',
+                    },
+                }
+            ]
+        }
+        client, _ = self.client(body=body)
+        with self.assertRaisesRegex(
+            VLMResponseParseError,
+            "Chat Completions response contains no final message content",
+        ):
+            self.infer(client)
 
     def test_t14_earlier_non_message_output_is_ignored(self):
         client, _ = self.client(

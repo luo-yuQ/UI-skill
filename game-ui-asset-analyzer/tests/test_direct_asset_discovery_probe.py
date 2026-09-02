@@ -8,6 +8,7 @@ import tempfile
 import unittest
 from pathlib import Path
 from typing import Any
+from unittest.mock import patch
 
 from PIL import Image
 
@@ -20,6 +21,7 @@ for directory in (SCRIPTS, EXPERIMENTS):
         sys.path.insert(0, str(directory))
 
 import direct_asset_discovery_probe as probe  # noqa: E402
+from vlm_client import VLMClientConfig, VLMResponseTruncatedError  # noqa: E402
 
 
 def asset_response(
@@ -44,13 +46,26 @@ def asset_response(
 
 
 class FakeVLMClient:
-    def __init__(self, response: dict[str, Any]) -> None:
+    def __init__(
+        self,
+        response: dict[str, Any],
+        *,
+        provider_response: dict[str, Any] | None = None,
+        error: Exception | None = None,
+    ) -> None:
         self.response = response
+        self.provider_response = provider_response
+        self.error = error
         self.calls: list[dict[str, Any]] = []
 
     def infer_json(self, **kwargs: Any) -> dict[str, Any]:
         self.calls.append(kwargs)
+        if self.error is not None:
+            raise self.error
         return json.loads(json.dumps(self.response))
+
+    def get_last_provider_response(self) -> dict[str, Any] | None:
+        return self.provider_response
 
 
 class DirectAssetDiscoveryProbeTests(unittest.TestCase):
@@ -168,6 +183,40 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("--runs must be at least 1", stderr.getvalue())
 
+    def test_main_uses_thinking_false_and_12000_max_tokens_only_for_this_probe(self):
+        config = VLMClientConfig(
+            base_url="https://provider.example",
+            api_key="secret",
+            model="test-model",
+        )
+        summary = {
+            "runs": 1,
+            "results": [{"run": 1, "asset_count": 0}],
+        }
+        with patch.object(
+            probe.VLMClientConfig,
+            "from_env",
+            return_value=config,
+        ), patch.object(
+            probe,
+            "create_configured_vlm_client",
+            return_value=object(),
+        ) as create_client, patch.object(
+            probe,
+            "run_experiment",
+            return_value=summary,
+        ):
+            code = probe.main(
+                ["--image", "unused.png", "--output-dir", "unused"]
+            )
+        self.assertEqual(0, code)
+        create_client.assert_called_once_with(
+            config,
+            max_tokens=probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
+            thinking=False,
+        )
+        self.assertEqual(12000, probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS)
+
     def test_multiple_runs_make_independent_calls_and_write_summary(self):
         with tempfile.TemporaryDirectory() as raw_directory:
             directory = Path(raw_directory)
@@ -202,6 +251,72 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
                 (output / "summary.json").read_text(encoding="utf-8")
             )
             self.assertEqual(3, written_summary["runs"])
+
+    def test_provider_envelope_is_written_as_raw_response(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            source = directory / "clean.png"
+            output = directory / "output"
+            Image.new("RGB", (32, 48), "white").save(source)
+            envelope = {
+                "object": "chat.completion",
+                "choices": [
+                    {
+                        "finish_reason": "stop",
+                        "message": {"content": json.dumps(asset_response())},
+                    }
+                ],
+            }
+            client = FakeVLMClient(
+                asset_response(analysis_size=(1024, 1536)),
+                provider_response=envelope,
+            )
+            probe.run_experiment(
+                source,
+                output,
+                client=client,
+                model="test-model",
+            )
+            self.assertEqual(
+                envelope,
+                json.loads((output / "raw-response.json").read_text(encoding="utf-8")),
+            )
+
+    def test_truncated_provider_envelope_is_written_before_error_propagates(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            source = directory / "clean.png"
+            output = directory / "output"
+            Image.new("RGB", (32, 48), "white").save(source)
+            envelope = {
+                "choices": [
+                    {
+                        "finish_reason": "length",
+                        "message": {
+                            "content": "",
+                            "reasoning_content": "long reasoning",
+                        },
+                    }
+                ]
+            }
+            client = FakeVLMClient(
+                {},
+                provider_response=envelope,
+                error=VLMResponseTruncatedError(
+                    "model response reached token limit before producing final content"
+                ),
+            )
+            with self.assertRaises(VLMResponseTruncatedError):
+                probe.run_experiment(
+                    source,
+                    output,
+                    client=client,
+                    model="test-model",
+                )
+            self.assertEqual(
+                envelope,
+                json.loads((output / "raw-response.json").read_text(encoding="utf-8")),
+            )
 
 
 if __name__ == "__main__":

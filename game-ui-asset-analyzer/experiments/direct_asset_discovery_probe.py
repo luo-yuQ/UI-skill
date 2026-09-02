@@ -35,6 +35,7 @@ from vlm_client import (  # noqa: E402
 
 
 SCHEMA_VERSION = "0.1"
+DIRECT_ASSET_DISCOVERY_MAX_TOKENS = 12000
 TAXONOMY_REFERENCE_PATH = ROOT / "references" / "asset-taxonomy.md"
 SYSTEM_PROMPT = """You are performing a direct visual asset census of a game UI.
 Analyze only the attached Analysis Image and return exactly one JSON object.
@@ -363,6 +364,11 @@ def validate_runs(runs: int) -> None:
         raise ValueError("--runs must be at least 1")
 
 
+def _raw_provider_response(client: VLMClient) -> Any | None:
+    getter = getattr(client, "get_last_provider_response", None)
+    return getter() if callable(getter) else None
+
+
 def run_experiment(
     image: Path,
     output_dir: Path,
@@ -397,13 +403,23 @@ def run_experiment(
     for run_number in range(1, runs + 1):
         run_dir = output_dir if runs == 1 else output_dir / f"run-{run_number:03d}"
         run_dir.mkdir(parents=True, exist_ok=True)
-        raw_result = client.infer_json(
-            image_path=analysis_output,
-            system_prompt=SYSTEM_PROMPT,
-            user_prompt=user_prompt,
-            response_schema=response_schema,
+        try:
+            raw_result = client.infer_json(
+                image_path=analysis_output,
+                system_prompt=SYSTEM_PROMPT,
+                user_prompt=user_prompt,
+                response_schema=response_schema,
+            )
+        except VLMError:
+            provider_response = _raw_provider_response(client)
+            if provider_response is not None:
+                write_json(run_dir / "raw-response.json", provider_response)
+            raise
+        provider_response = _raw_provider_response(client)
+        write_json(
+            run_dir / "raw-response.json",
+            raw_result if provider_response is None else provider_response,
         )
-        write_json(run_dir / "raw-response.json", raw_result)
         direct_assets = build_direct_assets(
             raw_result,
             source_size,
@@ -437,7 +453,7 @@ def run_experiment(
                 "asset_count": asset_count,
                 "timestamp": utc_timestamp(),
                 "raw_response_representation": (
-                    "parsed JSON object returned by the existing VLM client"
+                    "decoded provider response envelope when exposed by the VLM client"
                 ),
             },
         )
@@ -477,7 +493,11 @@ def main(argv: list[str] | None = None) -> int:
     try:
         validate_runs(args.runs)
         config = VLMClientConfig.from_env(model_override=args.model)
-        client = create_configured_vlm_client(config)
+        client = create_configured_vlm_client(
+            config,
+            max_tokens=DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
+            thinking=False,
+        )
         summary = run_experiment(
             args.image,
             args.output_dir,

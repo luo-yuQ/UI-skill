@@ -66,6 +66,10 @@ class VLMResponseParseError(VLMError):
     code = "vlm_response_parse_error"
 
 
+class VLMResponseTruncatedError(VLMResponseParseError):
+    code = "vlm_response_truncated"
+
+
 class VLMConfigurationError(ValueError):
     """Safe production configuration error; messages never include secrets."""
 
@@ -174,7 +178,7 @@ def encode_image_as_data_url(image_path: Path) -> str:
 
 
 def extract_output_text(response: Any) -> str:
-    """Find the first assistant message output_text without positional assumptions."""
+    """Extract final text from Responses API or relayed Chat Completions JSON."""
 
     output = response.get("output") if isinstance(response, dict) else None
     if isinstance(output, list):
@@ -191,6 +195,39 @@ def extract_output_text(response: Any) -> str:
                     and isinstance(content.get("text"), str)
                 ):
                     return content["text"]
+
+    choices = response.get("choices") if isinstance(response, dict) else None
+    if isinstance(choices, list) and choices:
+        choice = choices[0]
+        if isinstance(choice, dict):
+            if choice.get("finish_reason") == "length":
+                usage = response.get("usage")
+                completion_tokens = None
+                reasoning_tokens = None
+                if isinstance(usage, dict):
+                    completion_tokens = usage.get("completion_tokens")
+                    details = usage.get("completion_tokens_details")
+                    if isinstance(details, dict):
+                        reasoning_tokens = details.get("reasoning_tokens")
+                diagnostics = []
+                if type(completion_tokens) is int:
+                    diagnostics.append(f"completion_tokens={completion_tokens}")
+                if type(reasoning_tokens) is int:
+                    diagnostics.append(f"reasoning_tokens={reasoning_tokens}")
+                message = (
+                    "model response reached token limit before producing final content"
+                )
+                if diagnostics:
+                    message += "; " + "; ".join(diagnostics)
+                raise VLMResponseTruncatedError(message)
+            message = choice.get("message")
+            if isinstance(message, dict) and isinstance(message.get("content"), str):
+                content = message["content"]
+                if content.strip():
+                    return content
+            raise VLMResponseParseError(
+                "Chat Completions response contains no final message content"
+            )
     raise VLMResponseParseError("Responses API response contains no output_text")
 
 
@@ -249,9 +286,17 @@ class ResponsesAPIVLMClient:
         *,
         session: Any | None = None,
         max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+        max_tokens: int | None = None,
+        thinking: bool | None = None,
     ) -> None:
         if type(max_output_tokens) is not int or max_output_tokens <= 0:
             raise VLMConfigurationError("max_output_tokens must be a positive integer")
+        if max_tokens is not None and (
+            type(max_tokens) is not int or max_tokens <= 0
+        ):
+            raise VLMConfigurationError("max_tokens must be a positive integer")
+        if thinking is not None and type(thinking) is not bool:
+            raise VLMConfigurationError("thinking must be a boolean")
         if session is None:
             if requests is None:
                 raise VLMConfigurationError(
@@ -266,6 +311,14 @@ class ResponsesAPIVLMClient:
         self.endpoint = build_responses_endpoint(config.base_url)
         self.session = session
         self.max_output_tokens = max_output_tokens
+        self.max_tokens = max_tokens
+        self.thinking = thinking
+        self._response_local = local()
+
+    def get_last_provider_response(self) -> Any | None:
+        """Return the raw decoded provider envelope for the current thread."""
+
+        return getattr(self._response_local, "provider_response", None)
 
     def _get_session(self) -> Any:
         """Return the injected session or one production session per worker thread."""
@@ -343,9 +396,10 @@ class ResponsesAPIVLMClient:
         user_prompt: str,
         response_schema: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
-        # The verified Provider contract does not include structured-output fields.
+        # The relay's response_format_schema payload shape has not been verified.
         del response_schema
-        payload = {
+        self._response_local.provider_response = None
+        payload: dict[str, Any] = {
             "model": self.config.model,
             "temperature": 0,
             "top_p": 1,
@@ -363,8 +417,13 @@ class ResponsesAPIVLMClient:
                     ],
                 }
             ],
-            "max_output_tokens": self.max_output_tokens,
         }
+        if self.max_tokens is None:
+            payload["max_output_tokens"] = self.max_output_tokens
+        else:
+            payload["max_tokens"] = self.max_tokens
+        if self.thinking is not None:
+            payload["thinking"] = self.thinking
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -393,11 +452,23 @@ class ResponsesAPIVLMClient:
             raise VLMResponseParseError(
                 "Responses API response body is not valid JSON"
             ) from exc
+        self._response_local.provider_response = provider_response
         output_text = extract_output_text(provider_response).strip()
         return parse_json_object(output_text)
 
 
-def create_configured_vlm_client(config: VLMClientConfig) -> VLMClient:
+def create_configured_vlm_client(
+    config: VLMClientConfig,
+    *,
+    max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
+    max_tokens: int | None = None,
+    thinking: bool | None = None,
+) -> VLMClient:
     """Build the concrete verified Responses API client without fallback."""
 
-    return ResponsesAPIVLMClient(config)
+    return ResponsesAPIVLMClient(
+        config,
+        max_output_tokens=max_output_tokens,
+        max_tokens=max_tokens,
+        thinking=thinking,
+    )
