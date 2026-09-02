@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Collection
@@ -30,7 +31,7 @@ from vlm_client import (  # noqa: E402
     VLMClient,
     VLMClientConfig,
     VLMError,
-    create_chat_completions_vlm_client,
+    create_configured_vlm_client,
 )
 
 
@@ -492,11 +493,14 @@ def main(argv: list[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
         validate_runs(args.runs)
-        config = VLMClientConfig.from_env(model_override=args.model)
-        client = create_chat_completions_vlm_client(
+        config = replace(
+            VLMClientConfig.from_env(model_override=args.model),
+            api_mode="chat_completions",
+            thinking_policy="omit",
+        )
+        client = create_configured_vlm_client(
             config,
             max_tokens=DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
-            thinking={"type": "disabled"},
         )
         summary = run_experiment(
             args.image,

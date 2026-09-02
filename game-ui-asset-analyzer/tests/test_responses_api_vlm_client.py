@@ -9,6 +9,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -240,13 +241,17 @@ class ResponsesAPIVLMClientTests(unittest.TestCase):
         self.assertEqual(DEFAULT_MAX_OUTPUT_TOKENS, session.calls[0]["json"]["max_output_tokens"])
         self.assertEqual(4000, DEFAULT_MAX_OUTPUT_TOKENS)
 
-    def test_probe_overrides_use_relay_max_tokens_and_disable_thinking(self):
+    def test_default_omit_thinking_policy_omits_thinking_key(self):
+        client, session = self.client()
+        self.infer(client)
+        self.assertNotIn("thinking", session.calls[0]["json"])
+
+    def test_relay_max_tokens_override_and_disabled_thinking_policy(self):
         session = FakeSession(FakeResponse(200, responses_body('{"ok": true}')))
         client = ResponsesAPIVLMClient(
-            self.config,
+            replace(self.config, thinking_policy="disabled"),
             session=session,
             max_tokens=12000,
-            thinking=False,
         )
         self.infer(client)
         payload = session.calls[0]["json"]

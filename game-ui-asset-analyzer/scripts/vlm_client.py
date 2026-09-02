@@ -11,7 +11,7 @@ from base64 import b64encode
 from dataclasses import dataclass, field
 from pathlib import Path
 from threading import local
-from typing import Any, Protocol
+from typing import Any, Literal, Protocol
 from urllib.parse import urlparse
 
 try:
@@ -95,6 +95,18 @@ class VLMClientConfig:
     api_key: str = field(repr=False)
     model: str
     timeout: float = 60.0
+    api_mode: Literal["responses", "chat_completions"] = "responses"
+    thinking_policy: Literal["omit", "disabled"] = "omit"
+
+    def __post_init__(self) -> None:
+        if self.api_mode not in ("responses", "chat_completions"):
+            raise VLMConfigurationError(
+                "api_mode must be 'responses' or 'chat_completions'"
+            )
+        if self.thinking_policy not in ("omit", "disabled"):
+            raise VLMConfigurationError(
+                "thinking_policy must be 'omit' or 'disabled'"
+            )
 
     @classmethod
     def from_env(cls, model_override: str | None = None) -> "VLMClientConfig":
@@ -138,7 +150,7 @@ class VLMClientConfig:
 
     def safe_metadata(self) -> dict[str, str]:
         return {
-            "client_type": "responses_api",
+            "client_type": self.api_mode,
             "model": self.model,
         }
 
@@ -305,14 +317,9 @@ class ChatCompletionsVLMClient:
         *,
         session: Any | None = None,
         max_tokens: int,
-        thinking: dict[str, Any],
     ) -> None:
         if type(max_tokens) is not int or max_tokens <= 0:
             raise VLMConfigurationError("max_tokens must be a positive integer")
-        if thinking != {"type": "disabled"}:
-            raise VLMConfigurationError(
-                "thinking must use the Chat Completions disabled object"
-            )
         if session is None:
             if requests is None:
                 raise VLMConfigurationError(
@@ -327,7 +334,6 @@ class ChatCompletionsVLMClient:
         self.endpoint = build_chat_completions_endpoint(config.base_url)
         self.session = session
         self.max_tokens = max_tokens
-        self.thinking = dict(thinking)
         self._response_local = local()
 
     def get_last_provider_response(self) -> Any | None:
@@ -421,7 +427,6 @@ class ChatCompletionsVLMClient:
             "temperature": 0,
             "top_p": 1,
             "max_tokens": self.max_tokens,
-            "thinking": dict(self.thinking),
             "messages": [
                 {"role": "system", "content": system_prompt},
                 {
@@ -446,6 +451,8 @@ class ChatCompletionsVLMClient:
                 },
             },
         }
+        if self.config.thinking_policy == "disabled":
+            payload["thinking"] = {"type": "disabled"}
         headers = {
             "Authorization": f"Bearer {self.config.api_key}",
             "Content-Type": "application/json",
@@ -505,7 +512,6 @@ class ResponsesAPIVLMClient:
         session: Any | None = None,
         max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
         max_tokens: int | None = None,
-        thinking: bool | None = None,
     ) -> None:
         if type(max_output_tokens) is not int or max_output_tokens <= 0:
             raise VLMConfigurationError("max_output_tokens must be a positive integer")
@@ -513,8 +519,6 @@ class ResponsesAPIVLMClient:
             type(max_tokens) is not int or max_tokens <= 0
         ):
             raise VLMConfigurationError("max_tokens must be a positive integer")
-        if thinking is not None and type(thinking) is not bool:
-            raise VLMConfigurationError("thinking must be a boolean")
         if session is None:
             if requests is None:
                 raise VLMConfigurationError(
@@ -530,7 +534,7 @@ class ResponsesAPIVLMClient:
         self.session = session
         self.max_output_tokens = max_output_tokens
         self.max_tokens = max_tokens
-        self.thinking = thinking
+        self.thinking = False if config.thinking_policy == "disabled" else None
         self._response_local = local()
 
     def get_last_provider_response(self) -> Any | None:
@@ -680,28 +684,15 @@ def create_configured_vlm_client(
     *,
     max_output_tokens: int = DEFAULT_MAX_OUTPUT_TOKENS,
     max_tokens: int | None = None,
-    thinking: bool | None = None,
 ) -> VLMClient:
-    """Build the concrete verified Responses API client without fallback."""
+    """Build the configured client for the selected API mode without fallback."""
 
-    return ResponsesAPIVLMClient(
-        config,
-        max_output_tokens=max_output_tokens,
-        max_tokens=max_tokens,
-        thinking=thinking,
-    )
-
-
-def create_chat_completions_vlm_client(
-    config: VLMClientConfig,
-    *,
-    max_tokens: int,
-    thinking: dict[str, Any],
-) -> VLMClient:
-    """Build the isolated Chat Completions client for explicit callers."""
-
-    return ChatCompletionsVLMClient(
-        config,
-        max_tokens=max_tokens,
-        thinking=thinking,
-    )
+    if config.api_mode == "responses":
+        return ResponsesAPIVLMClient(
+            config,
+            max_output_tokens=max_output_tokens,
+            max_tokens=max_tokens,
+        )
+    if config.api_mode == "chat_completions":
+        return ChatCompletionsVLMClient(config, max_tokens=max_tokens)
+    raise VLMConfigurationError(f"unsupported api_mode: {config.api_mode!r}")

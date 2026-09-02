@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -78,14 +79,21 @@ class ChatCompletionsVLMClientTests(unittest.TestCase):
         }
 
     def client(
-        self, body: dict[str, Any]
+        self,
+        body: dict[str, Any],
+        *,
+        thinking_policy: str = "disabled",
     ) -> tuple[ChatCompletionsVLMClient, FakeSession]:
         session = FakeSession(FakeResponse(body))
-        client = ChatCompletionsVLMClient(
+        config = replace(
             self.config,
+            api_mode="chat_completions",
+            thinking_policy=thinking_policy,
+        )
+        client = ChatCompletionsVLMClient(
+            config,
             session=session,
             max_tokens=12000,
-            thinking={"type": "disabled"},
         )
         return client, session
 
@@ -144,6 +152,32 @@ class ChatCompletionsVLMClientTests(unittest.TestCase):
             )
         )
         self.assertNotIn("input_image", json.dumps(payload))
+        self.assertEqual(
+            {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "direct_asset_discovery",
+                    "schema": self.schema,
+                    "strict": True,
+                },
+            },
+            payload["response_format"],
+        )
+
+    def test_omit_thinking_policy_never_writes_thinking_key(self) -> None:
+        """Regression contract: thinking_policy=omit keeps the key off the wire."""
+        client, session = self.client(
+            chat_body('{"analysis_image_size": {}, "assets": []}'),
+            thinking_policy="omit",
+        )
+        self.infer(client)
+        payload = session.calls[0]["json"]
+        self.assertNotIn("thinking", payload)
+        self.assertNotIn("stream", payload)
+        self.assertEqual("glm-5.3-flash", payload["model"])
+        self.assertEqual(0, payload["temperature"])
+        self.assertEqual(1, payload["top_p"])
+        self.assertEqual(12000, payload["max_tokens"])
         self.assertEqual(
             {
                 "type": "json_schema",

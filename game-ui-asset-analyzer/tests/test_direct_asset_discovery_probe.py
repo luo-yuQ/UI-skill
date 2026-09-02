@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 import contextlib
+import copy
 import io
 import json
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 from unittest.mock import patch
@@ -21,7 +23,11 @@ for directory in (SCRIPTS, EXPERIMENTS):
         sys.path.insert(0, str(directory))
 
 import direct_asset_discovery_probe as probe  # noqa: E402
-from vlm_client import VLMClientConfig, VLMResponseTruncatedError  # noqa: E402
+from vlm_client import (  # noqa: E402
+    ChatCompletionsVLMClient,
+    VLMClientConfig,
+    VLMResponseTruncatedError,
+)
 
 
 def asset_response(
@@ -66,6 +72,34 @@ class FakeVLMClient:
 
     def get_last_provider_response(self) -> dict[str, Any] | None:
         return self.provider_response
+
+
+class FakeResponse:
+    def __init__(self, body: Any, status_code: int = 200) -> None:
+        self.status_code = status_code
+        self.text = body if isinstance(body, str) else json.dumps(body)
+
+
+class FakeSession:
+    def __init__(self, response: FakeResponse) -> None:
+        self.response = response
+        self.calls: list[dict[str, Any]] = []
+
+    def post(self, url: str, **kwargs: Any) -> FakeResponse:
+        self.calls.append({"url": url, **copy.deepcopy(kwargs)})
+        return self.response
+
+
+def chat_completion_body(content: str) -> dict[str, Any]:
+    return {
+        "object": "chat.completion",
+        "choices": [
+            {
+                "finish_reason": "stop",
+                "message": {"content": content},
+            }
+        ],
+    }
 
 
 class DirectAssetDiscoveryProbeTests(unittest.TestCase):
@@ -183,7 +217,7 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
         self.assertEqual(1, code)
         self.assertIn("--runs must be at least 1", stderr.getvalue())
 
-    def test_main_explicitly_uses_chat_completions_with_probe_parameters(self):
+    def test_main_builds_production_client_with_probe_parameters(self):
         config = VLMClientConfig(
             base_url="https://provider.example",
             api_key="secret",
@@ -193,13 +227,18 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
             "runs": 1,
             "results": [{"run": 1, "asset_count": 0}],
         }
+        expected_config = replace(
+            config,
+            api_mode="chat_completions",
+            thinking_policy="omit",
+        )
         with patch.object(
             probe.VLMClientConfig,
             "from_env",
             return_value=config,
         ), patch.object(
             probe,
-            "create_chat_completions_vlm_client",
+            "create_configured_vlm_client",
             return_value=object(),
         ) as create_client, patch.object(
             probe,
@@ -211,11 +250,74 @@ class DirectAssetDiscoveryProbeTests(unittest.TestCase):
             )
         self.assertEqual(0, code)
         create_client.assert_called_once_with(
-            config,
+            expected_config,
             max_tokens=probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
-            thinking={"type": "disabled"},
         )
         self.assertEqual(12000, probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS)
+
+    def test_wire_body_omits_thinking_and_keeps_other_fields(self):
+        with tempfile.TemporaryDirectory() as raw_directory:
+            directory = Path(raw_directory)
+            image = directory / "analysis.png"
+            Image.new("RGB", (16, 8), "navy").save(image)
+            session = FakeSession(
+                FakeResponse(chat_completion_body(json.dumps(asset_response())))
+            )
+            client = ChatCompletionsVLMClient(
+                VLMClientConfig(
+                    base_url="https://provider.example",
+                    api_key="unit-test-secret",
+                    model="glm-5.3-flash",
+                    api_mode="chat_completions",
+                    thinking_policy="omit",
+                ),
+                session=session,
+                max_tokens=probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS,
+            )
+            client.infer_json(
+                image_path=image,
+                system_prompt="system prompt",
+                user_prompt="user prompt",
+                response_schema={"type": "object"},
+            )
+        self.assertEqual(1, len(session.calls))
+        self.assertEqual(
+            "https://provider.example/v1/chat/completions",
+            session.calls[0]["url"],
+        )
+        payload = session.calls[0]["json"]
+        self.assertNotIn("thinking", payload)
+        self.assertNotIn("stream", payload)
+        self.assertEqual("glm-5.3-flash", payload["model"])
+        self.assertEqual(0, payload["temperature"])
+        self.assertEqual(1, payload["top_p"])
+        self.assertEqual(
+            probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS, payload["max_tokens"]
+        )
+        self.assertEqual(12000, probe.DIRECT_ASSET_DISCOVERY_MAX_TOKENS)
+        self.assertEqual(
+            {"role": "system", "content": "system prompt"},
+            payload["messages"][0],
+        )
+        user_content = payload["messages"][1]["content"]
+        self.assertEqual({"type": "text", "text": "user prompt"}, user_content[0])
+        self.assertEqual("image_url", user_content[1]["type"])
+        self.assertTrue(
+            user_content[1]["image_url"]["url"].startswith(
+                "data:image/png;base64,"
+            )
+        )
+        self.assertEqual(
+            {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "direct_asset_discovery",
+                    "schema": {"type": "object"},
+                    "strict": True,
+                },
+            },
+            payload["response_format"],
+        )
 
     def test_multiple_runs_make_independent_calls_and_write_summary(self):
         with tempfile.TemporaryDirectory() as raw_directory:

@@ -6,6 +6,7 @@ import os
 import sys
 import tempfile
 import unittest
+from dataclasses import replace
 from pathlib import Path
 from unittest.mock import patch
 
@@ -17,6 +18,7 @@ if str(SCRIPTS) not in sys.path:
 
 import run_recursive_runtime  # noqa: E402
 from vlm_client import (  # noqa: E402
+    ChatCompletionsVLMClient,
     ResponsesAPIVLMClient,
     VLMClientConfig,
     VLMConfigurationError,
@@ -99,6 +101,67 @@ class VLMClientConfigTests(unittest.TestCase):
         client = create_configured_vlm_client(config)
         self.assertIsInstance(client, ResponsesAPIVLMClient)
         self.assertNotIn(secret, repr(client))
+
+    def test_default_config_uses_responses_mode_with_omit_thinking(self):
+        config = VLMClientConfig(
+            base_url="https://vlm.example.invalid",
+            api_key="secret",
+            model="vision-model",
+        )
+        self.assertEqual("responses", config.api_mode)
+        self.assertEqual("omit", config.thinking_policy)
+
+    def test_invalid_api_mode_fails_closed(self):
+        with self.assertRaisesRegex(VLMConfigurationError, "api_mode"):
+            VLMClientConfig(
+                base_url="https://vlm.example.invalid",
+                api_key="secret",
+                model="vision-model",
+                api_mode="foo",
+            )
+
+    def test_invalid_thinking_policy_fails_closed(self):
+        with self.assertRaisesRegex(VLMConfigurationError, "thinking_policy"):
+            VLMClientConfig(
+                base_url="https://vlm.example.invalid",
+                api_key="secret",
+                model="vision-model",
+                thinking_policy="foo",
+            )
+
+    def test_configured_client_follows_api_mode_not_model_name(self):
+        base = VLMClientConfig(
+            base_url="https://vlm.example.invalid",
+            api_key="secret",
+            model="glm-5.3-flash",
+        )
+        responses_client = create_configured_vlm_client(
+            replace(base, api_mode="responses")
+        )
+        chat_client = create_configured_vlm_client(
+            replace(base, api_mode="chat_completions"),
+            max_tokens=12000,
+        )
+        self.assertIsInstance(responses_client, ResponsesAPIVLMClient)
+        self.assertIsInstance(chat_client, ChatCompletionsVLMClient)
+
+    def test_safe_metadata_reflects_api_mode_without_secrets(self):
+        secret = "do-not-disclose"
+        responses_config = VLMClientConfig(
+            base_url="https://vlm.example.invalid",
+            api_key=secret,
+            model="vision-model",
+        )
+        chat_config = replace(responses_config, api_mode="chat_completions")
+        self.assertEqual(
+            {"client_type": "responses", "model": "vision-model"},
+            responses_config.safe_metadata(),
+        )
+        self.assertEqual(
+            {"client_type": "chat_completions", "model": "vision-model"},
+            chat_config.safe_metadata(),
+        )
+        self.assertNotIn(secret, str(chat_config.safe_metadata()))
 
     def test_cli_production_failure_never_falls_back_to_interactive_or_fake(self):
         with tempfile.TemporaryDirectory() as directory:
