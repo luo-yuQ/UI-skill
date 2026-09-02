@@ -113,8 +113,9 @@ VLM 会：
 python game-ui-asset-extractor/scripts/ui_image_clean_repair_poc.py `
   --image "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\shezhi_wzry.jpg" `
   --mask-overlay "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-002\regions\region-mask.png" `
-  --model "gpt-image-2" `
-  --output-dir "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-002\image2_01"
+  --provider-size "1024x1536" `
+  --model "gpt-image-2-official" `
+  --output-dir "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-002\image2_02"
 ```
 
 这一步会向 Image-2 提交：

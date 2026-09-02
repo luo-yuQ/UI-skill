@@ -1,0 +1,308 @@
+{
+  "schema_version": "asset-admission-gold-v0.1",
+  "gold_case_id": "spin-wheel-clean-001",
+  "description": "Human-confirmed gold for Stage2-A2 asset admission gate (KEEP=31, DROP=5, TOTAL=36). source_run_candidate_id records which candidate in the source run the target was created from; it is a convenience provenance pointer, NOT a stable cross-run key (A1 ids are per-run). The stable cross-run key is semantic_key.",
+  "source": {
+    "source_run": "20260902_direct-asset-discovery-005-production-client",
+    "analysis_image": "analysis-image.png",
+    "analysis_image_size": {
+      "width": 1024,
+      "height": 1536
+    },
+    "source_image_size": {
+      "width": 832,
+      "height": 1248
+    },
+    "candidate_count": 36
+  },
+  "targets": [
+    {
+      "semantic_key": "sky-airplane-background",
+      "label_hint": "sky and airplane scene background",
+      "bbox_hint": {"x": 0, "y": 0, "width": 1024, "height": 1536},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_001"
+    },
+    {
+      "semantic_key": "circular-info-button",
+      "label_hint": "circular info button",
+      "bbox_hint": {"x": 241, "y": 91, "width": 57, "height": 57},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_002"
+    },
+    {
+      "semantic_key": "gift-box-ribbon-icon",
+      "label_hint": "gift box icon with ribbon",
+      "bbox_hint": {"x": 20, "y": 164, "width": 108, "height": 110},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_003"
+    },
+    {
+      "semantic_key": "circular-document-button",
+      "label_hint": "circular document button",
+      "bbox_hint": {"x": 880, "y": 184, "width": 104, "height": 106},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_004"
+    },
+    {
+      "semantic_key": "faded-circular-profile-button",
+      "label_hint": "faded circular profile button",
+      "bbox_hint": {"x": 886, "y": 334, "width": 98, "height": 100},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_005"
+    },
+    {
+      "semantic_key": "spin-wheel-base",
+      "label_hint": "spin wheel base with segments",
+      "bbox_hint": {"x": 86, "y": 283, "width": 852, "height": 840},
+      "expected_decision": "DROP",
+      "expected_reason_code": "DROP_REDUNDANT_COMPOSITE",
+      "source_run_candidate_id": "asset_006"
+    },
+    {
+      "semantic_key": "green-plus-energy-tile",
+      "label_hint": "green plus energy tile",
+      "bbox_hint": {"x": 431, "y": 371, "width": 138, "height": 142},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_007"
+    },
+    {
+      "semantic_key": "small-tick-marks-ornament",
+      "label_hint": "small tick marks ornament",
+      "bbox_hint": {"x": 466, "y": 511, "width": 68, "height": 48},
+      "expected_decision": "DROP",
+      "expected_reason_code": "DROP_INCIDENTAL_DECORATION",
+      "source_run_candidate_id": "asset_008"
+    },
+    {
+      "semantic_key": "potion-flask-tile",
+      "label_hint": "potion flask tile",
+      "bbox_hint": {"x": 251, "y": 431, "width": 141, "height": 147},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_009"
+    },
+    {
+      "semantic_key": "purple-crystal-tile",
+      "label_hint": "purple crystal tile",
+      "bbox_hint": {"x": 611, "y": 440, "width": 142, "height": 141},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_010"
+    },
+    {
+      "semantic_key": "dinosaur-egg-tile",
+      "label_hint": "dinosaur egg tile",
+      "bbox_hint": {"x": 170, "y": 615, "width": 143, "height": 143},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_011"
+    },
+    {
+      "semantic_key": "wood-log-tile",
+      "label_hint": "wood log tile",
+      "bbox_hint": {"x": 680, "y": 620, "width": 143, "height": 143},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_012"
+    },
+    {
+      "semantic_key": "blue-crystal-tile",
+      "label_hint": "blue crystal tile",
+      "bbox_hint": {"x": 246, "y": 790, "width": 143, "height": 143},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_013"
+    },
+    {
+      "semantic_key": "orange-fruit-bag-tile",
+      "label_hint": "orange fruit bag tile",
+      "bbox_hint": {"x": 415, "y": 875, "width": 143, "height": 143},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_014"
+    },
+    {
+      "semantic_key": "blueprint-scroll-tile",
+      "label_hint": "blueprint scroll tile",
+      "bbox_hint": {"x": 598, "y": 810, "width": 142, "height": 142},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_015"
+    },
+    {
+      "semantic_key": "golden-wheel-hub-pointer",
+      "label_hint": "golden wheel hub and pointer",
+      "bbox_hint": {"x": 409, "y": 597, "width": 298, "height": 191},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_016"
+    },
+    {
+      "semantic_key": "selected-segment-glow-frame",
+      "label_hint": "selected segment glow frame",
+      "bbox_hint": {"x": 630, "y": 550, "width": 250, "height": 292},
+      "expected_decision": "DROP",
+      "expected_reason_code": "DROP_STATE_EFFECT",
+      "source_run_candidate_id": "asset_017"
+    },
+    {
+      "semantic_key": "chest-progress-strip-panel",
+      "label_hint": "chest progress strip panel",
+      "bbox_hint": {"x": 33, "y": 1126, "width": 959, "height": 168},
+      "expected_decision": "DROP",
+      "expected_reason_code": "DROP_STRUCTURAL_CONTAINER",
+      "source_run_candidate_id": "asset_018"
+    },
+    {
+      "semantic_key": "hexagonal-count-badge",
+      "label_hint": "hexagonal count badge",
+      "bbox_hint": {"x": 61, "y": 1164, "width": 103, "height": 110},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_019"
+    },
+    {
+      "semantic_key": "green-chest-progress-bar",
+      "label_hint": "green chest progress bar",
+      "bbox_hint": {"x": 182, "y": 1205, "width": 781, "height": 49},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_020"
+    },
+    {
+      "semantic_key": "open-treasure-chest",
+      "label_hint": "open treasure chest",
+      "bbox_hint": {"x": 219, "y": 1139, "width": 119, "height": 111},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_021"
+    },
+    {
+      "semantic_key": "closed-treasure-chest-1",
+      "label_hint": "closed treasure chest",
+      "bbox_hint": {"x": 385, "y": 1145, "width": 109, "height": 103},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_022"
+    },
+    {
+      "semantic_key": "closed-treasure-chest-2",
+      "label_hint": "closed treasure chest",
+      "bbox_hint": {"x": 550, "y": 1145, "width": 109, "height": 103},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_023"
+    },
+    {
+      "semantic_key": "closed-treasure-chest-3",
+      "label_hint": "closed treasure chest",
+      "bbox_hint": {"x": 706, "y": 1145, "width": 109, "height": 103},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_024"
+    },
+    {
+      "semantic_key": "closed-treasure-chest-4",
+      "label_hint": "closed treasure chest",
+      "bbox_hint": {"x": 865, "y": 1145, "width": 109, "height": 103},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_025"
+    },
+    {
+      "semantic_key": "yellow-pill-action-button",
+      "label_hint": "yellow pill action button",
+      "bbox_hint": {"x": 147, "y": 1295, "width": 311, "height": 104},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_026"
+    },
+    {
+      "semantic_key": "ticket-icon-on-yellow-button",
+      "label_hint": "blue ticket icon on yellow button",
+      "bbox_hint": {"x": 213, "y": 1328, "width": 58, "height": 57},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_027"
+    },
+    {
+      "semantic_key": "red-pill-action-button",
+      "label_hint": "red pill action button",
+      "bbox_hint": {"x": 542, "y": 1295, "width": 327, "height": 104},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_028"
+    },
+    {
+      "semantic_key": "ticket-icon-on-red-button",
+      "label_hint": "blue ticket icon on red button",
+      "bbox_hint": {"x": 610, "y": 1328, "width": 58, "height": 57},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_029"
+    },
+    {
+      "semantic_key": "bottom-navigation-bar",
+      "label_hint": "bottom navigation bar",
+      "bbox_hint": {"x": 0, "y": 1400, "width": 1024, "height": 136},
+      "expected_decision": "DROP",
+      "expected_reason_code": "DROP_STRUCTURAL_CONTAINER",
+      "source_run_candidate_id": "asset_030"
+    },
+    {
+      "semantic_key": "green-back-arrow-icon",
+      "label_hint": "green back arrow icon",
+      "bbox_hint": {"x": 40, "y": 1434, "width": 80, "height": 72},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_031"
+    },
+    {
+      "semantic_key": "selected-gold-wheel-tab",
+      "label_hint": "selected gold wheel tab",
+      "bbox_hint": {"x": 327, "y": 1400, "width": 166, "height": 136},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_032"
+    },
+    {
+      "semantic_key": "wheel-glyph-icon",
+      "label_hint": "wheel glyph icon",
+      "bbox_hint": {"x": 355, "y": 1425, "width": 106, "height": 100},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_033"
+    },
+    {
+      "semantic_key": "gift-box-dice-icon",
+      "label_hint": "gift box with dice icon",
+      "bbox_hint": {"x": 518, "y": 1418, "width": 104, "height": 112},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_034"
+    },
+    {
+      "semantic_key": "star-cards-icon",
+      "label_hint": "star cards icon",
+      "bbox_hint": {"x": 682, "y": 1414, "width": 116, "height": 114},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_035"
+    },
+    {
+      "semantic_key": "shop-stall-icon",
+      "label_hint": "shop stall icon",
+      "bbox_hint": {"x": 854, "y": 1418, "width": 110, "height": 106},
+      "expected_decision": "KEEP",
+      "expected_reason_code": "KEEP_INDEPENDENT_ASSET",
+      "source_run_candidate_id": "asset_036"
+    }
+  ]
+}

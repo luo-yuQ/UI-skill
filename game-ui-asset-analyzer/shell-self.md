@@ -26,3 +26,11 @@ python game-ui-asset-analyzer/experiments/direct_asset_discovery_probe.py `
   --output-dir "runs\20260902_direct-asset-discovery-002" `
   --model "glm-5.3-flash" `
   --runs 1
+
+Stage 2-A2
+  python D:\Third_Test_1\UI-skill\game-ui-asset-analyzer\experiments\asset_admission_probe.py `
+    --image "D:\Third_Test_1\UI-skill\runs\20260902_direct-asset-discovery-005-production-client\analysis-image.png" `
+    --candidates-json "D:\Third_Test_1\UI-skill\runs\20260902_direct-asset-discovery-005-production-client\direct-assets.json" `
+    --output-dir "runs\20260902_asset-admission-001-spin-wheel-clean-001" `
+    --model glm-5.3-flash `
+    --runs 1
