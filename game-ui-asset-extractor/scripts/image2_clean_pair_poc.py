@@ -453,6 +453,7 @@ def poll_task_with_raw_responses(
     base_url: str,
     api_key: str,
     curl_path: str,
+    debug_sink: dict[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
     """Follow task protocol while retaining every poll response."""
 
@@ -475,6 +476,11 @@ def poll_task_with_raw_responses(
         base_url,
         str(status_path),
     )
+
+    if debug_sink is not None:
+        debug_sink["polling_url"] = (
+            status_url
+        )
 
     started = time.monotonic()
 
@@ -1049,6 +1055,8 @@ def run(
             or provider.find_curl()
         )
 
+        create_debug: dict[str, Any] = {}
+
         submit_response = (
             provider.submit_generation(
                 payload,
@@ -1056,6 +1064,7 @@ def run(
                 api_key=api_key,
                 timeout=REQUEST_TIMEOUT,
                 curl_path=active_curl,
+                debug_sink=create_debug,
             )
         )
 
@@ -1063,73 +1072,139 @@ def run(
             submit_response
         )
 
-        task_id = (
-            provider.submit_task_id(
+        # Debug evidence captured before any polling starts:
+        # create URL, HTTP status, redacted response headers,
+        # and the full create response body.
+        result["create_debug"] = (
+            create_debug
+        )
+
+        # ---------------------------------------------------------
+        # STEP 3.5
+        # Centralized protocol routing.
+        #
+        # A create response that already carries the final image
+        # result (openai_images_sync, e.g. data[0].url or
+        # data[0].b64_json) must be consumed directly and must
+        # never be polled. Only the toapis_async task shape
+        # (gpt-image-2: task_id + task_status_url) continues to
+        # status polling. The presence of a task_id alone does
+        # not imply an async protocol.
+        # ---------------------------------------------------------
+
+        result_protocol = (
+            toapis.detect_result_protocol(
                 submit_response
             )
         )
 
-        if (
-            not isinstance(
-                task_id,
-                str,
-            )
-            or not task_id.strip()
-        ):
-            raise PairPocError(
-                "Generation response did not "
-                "contain a usable task id"
-            )
-
-        result["task_id"] = (
-            task_id
+        result["result_protocol"] = (
+            result_protocol
         )
 
-        # ---------------------------------------------------------
-        # STEP 4
-        # Poll asynchronous generation task.
-        # ---------------------------------------------------------
+        image_items: list[Any]
 
-        poll_responses = (
-            poll_task_with_raw_responses(
+        if (
+            result_protocol
+            == toapis.SYNC_RESULT_PROTOCOL
+        ):
+
+            sync_items = (
+                toapis.extract_sync_image_items(
+                    submit_response
+                )
+            )
+
+            if not sync_items:
+
+                raise PairPocError(
+                    "Sync create response did "
+                    "not contain direct image items"
+                )
+
+            image_items = sync_items
+
+            result["image_array_path"] = (
+                "sync_create_response"
+            )
+
+        else:
+
+            task_id = (
+                provider.submit_task_id(
+                    submit_response
+                )
+            )
+
+            if (
+                not isinstance(
+                    task_id,
+                    str,
+                )
+                or not task_id.strip()
+            ):
+                raise PairPocError(
+                    "Generation response did not "
+                    "contain a usable task id"
+                )
+
+            result["task_id"] = (
+                task_id
+            )
+
+            # -----------------------------------------------------
+            # STEP 4
+            # Poll asynchronous generation task. The exact polling
+            # URL is captured before the first poll request.
+            # -----------------------------------------------------
+
+            poll_debug: dict[str, Any] = {}
+
+            result["poll_debug"] = (
+                poll_debug
+            )
+
+            poll_responses = (
+                poll_task_with_raw_responses(
+                    task_id,
+                    submit_response,
+                    base_url=base_url,
+                    api_key=api_key,
+                    curl_path=active_curl,
+                    debug_sink=poll_debug,
+                )
+            )
+
+            result["poll_responses"] = (
+                poll_responses
+            )
+
+            # -----------------------------------------------------
+            # STEP 5
+            # Fetch raw generation result.
+            # -----------------------------------------------------
+
+            raw_result = fetch_raw_result(
                 task_id,
-                submit_response,
                 base_url=base_url,
                 api_key=api_key,
                 curl_path=active_curl,
             )
-        )
 
-        result["poll_responses"] = (
-            poll_responses
-        )
+            result["result_response"] = (
+                raw_result
+            )
 
-        # ---------------------------------------------------------
-        # STEP 5
-        # Fetch raw generation result.
-        # ---------------------------------------------------------
+            (
+                result_path_label,
+                image_items,
+            ) = extract_ordered_image_items(
+                raw_result
+            )
 
-        raw_result = fetch_raw_result(
-            task_id,
-            base_url=base_url,
-            api_key=api_key,
-            curl_path=active_curl,
-        )
-
-        result["result_response"] = (
-            raw_result
-        )
-
-        (
-            result_path_label,
-            image_items,
-        ) = extract_ordered_image_items(
-            raw_result
-        )
-
-        result["image_array_path"] = (
-            result_path_label
-        )
+            result["image_array_path"] = (
+                result_path_label
+            )
 
         result["provider_output_count"] = (
             len(image_items)

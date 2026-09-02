@@ -131,6 +131,56 @@ def sanitized_text(value: str, api_key: str | None, *, limit: int = 500) -> str:
     return text[:limit]
 
 
+def redact_text(value: str, api_key: str | None) -> str:
+    """Redact the API key without collapsing whitespace or truncating."""
+    return value.replace(api_key, "[REDACTED]") if api_key else value
+
+
+def redact_headers(headers: dict[str, str], api_key: str | None) -> dict[str, str]:
+    redacted: dict[str, str] = {}
+    for name, value in headers.items():
+        lowered = name.lower()
+        if lowered in {"authorization", "proxy-authorization", "x-api-key", "api-key", "cookie", "set-cookie"}:
+            redacted[name] = "[REDACTED]"
+        elif api_key and api_key in value:
+            redacted[name] = value.replace(api_key, "[REDACTED]")
+        else:
+            redacted[name] = value
+    return redacted
+
+
+def read_optional_text(path: Path | None) -> str | None:
+    if path is None:
+        return None
+    try:
+        return path.read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+
+
+def fill_debug_sink(
+    sink: dict[str, Any] | None,
+    *,
+    status: int | None,
+    content_type: str | None,
+    body: str,
+    headers_text: str | None = None,
+    api_key: str | None = None,
+) -> None:
+    """Record raw HTTP response details into sink; never alters control flow."""
+    if sink is None:
+        return
+    headers: dict[str, str] = {}
+    for line in (headers_text or "").splitlines():
+        name, separator, value = line.partition(":")
+        if separator and name.strip() and not name.strip().lower().startswith("http/"):
+            headers[name.strip()] = value.strip()
+    sink["http_status"] = status
+    sink["content_type"] = content_type
+    sink["response_headers"] = redact_headers(headers, api_key)
+    sink["body"] = redact_text(body, api_key)
+
+
 def parse_curl_output(stdout: bytes, api_key: str) -> tuple[str, int | None, str | None]:
     text = stdout.decode("utf-8", errors="replace")
     marker = f"\n{HTTP_STATUS_MARKER}"
@@ -159,6 +209,8 @@ def run_curl(
     timeout: float,
     api_key: str,
     runner: Callable[..., Any] = subprocess.run,
+    debug_sink: dict[str, Any] | None = None,
+    headers_path: Path | None = None,
 ) -> tuple[str, int | None, str | None]:
     try:
         completed = runner(
@@ -173,6 +225,15 @@ def run_curl(
     except OSError as exc:
         raise AdapterError("provider_dependency_missing", f"Unable to execute system curl: {exc}", exit_code=EXIT_CONFIG) from exc
     body, status, content_type = parse_curl_output(completed.stdout or b"", api_key)
+    if debug_sink is not None:
+        fill_debug_sink(
+            debug_sink,
+            status=status,
+            content_type=content_type,
+            body=body,
+            headers_text=read_optional_text(headers_path),
+            api_key=api_key,
+        )
     if completed.returncode != 0:
         stderr = (completed.stderr or b"").decode("utf-8", errors="replace")
         diagnostic = sanitized_text(stderr or body, api_key)
@@ -203,8 +264,10 @@ def curl_json_request(
     timeout: float,
     payload: dict[str, Any] | None = None,
     runner: Callable[..., Any] = subprocess.run,
+    debug_sink: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     request_file: Path | None = None
+    headers_file: Path | None = None
     try:
         arguments = [
             curl_path,
@@ -221,6 +284,10 @@ def curl_json_request(
             "--write-out",
             curl_write_out(),
         ]
+        if debug_sink is not None:
+            with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, prefix="game-ui-provider-", suffix=".headers") as file:
+                headers_file = Path(file.name)
+            arguments.extend(["--dump-header", str(headers_file)])
         if payload is not None:
             with tempfile.NamedTemporaryFile(mode="w", encoding="utf-8", delete=False, prefix="game-ui-provider-", suffix=".json") as file:
                 request_file = Path(file.name)
@@ -236,7 +303,14 @@ def curl_json_request(
                 ]
             )
         arguments.append(url)
-        body, status, _ = run_curl(arguments, timeout=timeout, api_key=api_key, runner=runner)
+        body, status, _ = run_curl(
+            arguments,
+            timeout=timeout,
+            api_key=api_key,
+            runner=runner,
+            debug_sink=debug_sink,
+            headers_path=headers_file,
+        )
         try:
             data = json.loads(body)
         except json.JSONDecodeError as exc:
@@ -296,15 +370,20 @@ def submit_generation(
     timeout: float,
     curl_path: str,
     runner: Callable[..., Any] = subprocess.run,
+    debug_sink: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
+    create_url = provider_url(base_url, "/v1/images/generations")
+    if debug_sink is not None:
+        debug_sink["create_url"] = create_url
     data = curl_json_request(
         "POST",
-        provider_url(base_url, "/v1/images/generations"),
+        create_url,
         curl_path=curl_path,
         api_key=api_key,
         timeout=timeout,
         payload=payload,
         runner=runner,
+        debug_sink=debug_sink,
     )
     task_id = submit_task_id(data)
     structure = json.dumps(json_structure(data), ensure_ascii=False, separators=(",", ":"))

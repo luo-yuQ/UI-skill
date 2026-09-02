@@ -88,6 +88,90 @@ def provider_url(base_url: str, value: str) -> str:
     return urljoin(base_url.rstrip("/") + "/", value.lstrip("/"))
 
 
+# ---------------------------------------------------------------------------
+# Image-generation result protocol dispatch.
+#
+# Protocols are selected from the CREATE response shape, never from the model
+# name: a task_id in the response does not by itself imply an async protocol.
+#
+# - "openai_images_sync": the create response already carries the final image
+#   result (for example data[0].url, data[0].b64_json, items[0].url). Polling
+#   is forbidden for this protocol.
+# - "toapis_async": the create response only enqueues a task (gpt-image-2
+#   shape: task_id + task_status_url, data is a task object, not a list).
+# ---------------------------------------------------------------------------
+SYNC_RESULT_PROTOCOL = "openai_images_sync"
+ASYNC_TASK_PROTOCOL = "toapis_async"
+
+_SYNC_RESULT_CANDIDATE_PATHS = (
+    ("items", ("items",)),
+    ("data.result.data", ("data", "result", "data")),
+    ("data.data", ("data", "data")),
+    ("data", ("data",)),
+    ("images", ("images",)),
+)
+
+_SYNC_BASE64_FIELDS = ("b64_json", "base64", "image_base64")
+
+
+def _looks_like_image_item(value: Any) -> bool:
+    if isinstance(value, str):
+        return is_http_url(value) or value.startswith("data:image/") or bool(value.strip())
+    if isinstance(value, dict):
+        if is_http_url(value.get("url")):
+            return True
+        for field in _SYNC_BASE64_FIELDS:
+            if isinstance(value.get(field), str) and value[field].strip():
+                return True
+        nested = value.get("image")
+        if isinstance(nested, dict):
+            return _looks_like_image_item(nested)
+    return False
+
+
+def extract_sync_image_items(response: Any) -> list[Any] | None:
+    """Return the direct image result array from a create response, or None.
+
+    Only unambiguous final-result shapes are accepted; dict-valued data such
+    as the ToAPIs async task object never matches.
+    """
+
+    if not isinstance(response, dict):
+        return None
+
+    if is_http_url(response.get("url")):
+        return [{"url": response["url"]}]
+
+    for field in _SYNC_BASE64_FIELDS:
+        value = response.get(field)
+        if isinstance(value, str) and value.strip():
+            return [{field: value}]
+
+    for _, path in _SYNC_RESULT_CANDIDATE_PATHS:
+        current: Any = response
+        for key in path:
+            if not isinstance(current, dict):
+                current = None
+                break
+            current = current.get(key)
+        if (
+            isinstance(current, list)
+            and current
+            and any(_looks_like_image_item(item) for item in current)
+        ):
+            return current
+
+    return None
+
+
+def detect_result_protocol(create_response: Any) -> str:
+    """Classify a create response into a centralized protocol identifier."""
+
+    if extract_sync_image_items(create_response) is not None:
+        return SYNC_RESULT_PROTOCOL
+    return ASYNC_TASK_PROTOCOL
+
+
 def load_preview_request(path: Path) -> dict[str, Any]:
     if not path.exists() or not path.is_file():
         raise ToApisAdapterError(
@@ -544,11 +628,14 @@ def poll_task_status(
     session: Any,
     sleep_fn: Callable[[float], None] = time.sleep,
     monotonic_fn: Callable[[], float] = time.monotonic,
+    debug_info: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     interval = _positive_number(submit_data.get("poll_interval"), poll_interval)
     wait_limit = _positive_number(submit_data.get("max_wait"), max_wait)
     status_path = submit_data.get("task_status_url") or f"/v1/tasks/{task_id}/status"
     status_url = provider_url(base_url, str(status_path))
+    if debug_info is not None:
+        debug_info["polling_url"] = status_url
     started = monotonic_fn()
     while True:
         try:

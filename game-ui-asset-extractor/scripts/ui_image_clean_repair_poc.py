@@ -8,6 +8,7 @@ The optional overlay is a second ordinary reference image, not an API mask.
 from __future__ import annotations
 
 import argparse
+import base64
 import importlib.util
 import json
 import os
@@ -254,6 +255,83 @@ def _download_clean_image(
                 pass
 
 
+def _save_base64_clean_image(raw_b64: str, output_dir: Path) -> tuple[Path, tuple[int, int]]:
+    """Decode a base64 sync-result payload and save it as the clean image."""
+
+    encoded = raw_b64.strip()
+    if encoded.startswith("data:"):
+        marker = encoded.find(",")
+        if marker < 0:
+            raise CleanRepairError("Invalid image data URL")
+        encoded = encoded[marker + 1 :]
+    try:
+        raw = base64.b64decode("".join(encoded.split()), validate=True)
+    except Exception as exc:
+        raise CleanRepairError("Provider returned invalid base64 image data") from exc
+
+    output_dir.mkdir(parents=True, exist_ok=True)
+    temporary: Path | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="wb", delete=False, dir=output_dir, prefix=".clean.", suffix=".b64part"
+        ) as file:
+            temporary = Path(file.name)
+        temporary.write_bytes(raw)
+        extension = provider_helpers.image_extension(raw[:16], "", "image.png")
+        if extension is None:
+            raise CleanRepairError("Sync provider result is not a supported PNG, JPEG, or WebP image")
+        if extension == ".jpeg":
+            extension = ".jpg"
+        output_size = inspect_image(temporary, "Sync provider image")
+        output_path = output_dir / f"clean{extension}"
+        os.replace(temporary, output_path)
+        temporary = None
+        return output_path, output_size
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
+def _save_sync_clean_image(
+    item: Any,
+    output_dir: Path,
+    *,
+    timeout: float,
+    session: Any,
+) -> tuple[Path, str | None, tuple[int, int]]:
+    """Consume one direct-result item from a synchronous create response.
+
+    Returns (output_path, image_url_or_None, size). Polling is never used here:
+    the create response already carries the final image.
+    """
+
+    if isinstance(item, str):
+        if toapis.is_http_url(item):
+            path, size = _download_clean_image(item, output_dir, timeout=timeout, session=session)
+            return path, item, size
+        path, size = _save_base64_clean_image(item, output_dir)
+        return path, None, size
+
+    if isinstance(item, dict):
+        url = item.get("url")
+        if toapis.is_http_url(url):
+            path, size = _download_clean_image(url, output_dir, timeout=timeout, session=session)
+            return path, url, size
+        for field in ("b64_json", "base64", "image_base64"):
+            value = item.get(field)
+            if isinstance(value, str) and value.strip():
+                path, size = _save_base64_clean_image(value, output_dir)
+                return path, None, size
+        nested = item.get("image")
+        if isinstance(nested, (dict, str)):
+            return _save_sync_clean_image(nested, output_dir, timeout=timeout, session=session)
+
+    raise CleanRepairError("Sync create response item has no usable image URL or base64 data")
+
+
 def _result_base(
     *,
     status: str,
@@ -279,6 +357,7 @@ def submit_generation_for_clean_repair(
     api_key: str,
     timeout: float,
     session: Any,
+    debug_sink: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     del session  # Only upload, poll, fetch, and download use requests.
     try:
@@ -288,13 +367,18 @@ def submit_generation_for_clean_repair(
             api_key=api_key,
             timeout=timeout,
             curl_path=provider_helpers.find_curl(),
+            debug_sink=debug_sink,
         )
     except Exception as exc:
         message = str(exc).replace(api_key, "[REDACTED]")
         raise CleanRepairError(f"Generation submit request failed: {message}") from exc
 
+    # A task_id is mandatory only for the async task protocol. A synchronous
+    # create response may already carry the final image without any task id.
     task_id = provider_helpers.submit_task_id(data)
-    if not isinstance(task_id, str) or not task_id.strip():
+    if toapis.detect_result_protocol(data) == toapis.ASYNC_TASK_PROTOCOL and not (
+        isinstance(task_id, str) and task_id.strip()
+    ):
         raise CleanRepairError(
             "Generation submit response missing a non-empty task_id"
         )
@@ -317,6 +401,9 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
     api_key = os.environ.get("TOAPIS_API_KEY")
     base_url = os.environ.get("TOAPIS_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     task_id: str | None = None
+    debug_sink: dict[str, Any] = {}
+    poll_debug: dict[str, Any] = {}
+    result_protocol: str | None = None
 
     try:
         for name in (
@@ -384,36 +471,57 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             api_key=api_key,
             timeout=args.request_timeout,
             session=active_session,
+            debug_sink=debug_sink,
         )
-        parsed_task_id = provider_helpers.submit_task_id(submit_data)
-        if not isinstance(parsed_task_id, str) or not parsed_task_id.strip():
-            raise CleanRepairError(
-                "Generation submit response missing a non-empty task_id"
+        # Centralized protocol routing (no model-name special cases here):
+        # a create response that already carries the final image
+        # (openai_images_sync) must be consumed directly and never polled.
+        # Only the toapis_async shape (gpt-image-2) continues to polling.
+        result_protocol = toapis.detect_result_protocol(submit_data)
+        image_url: str | None = None
+        if result_protocol == toapis.SYNC_RESULT_PROTOCOL:
+            sync_items = toapis.extract_sync_image_items(submit_data)
+            if not sync_items:
+                raise CleanRepairError(
+                    "Sync create response did not contain direct image items"
+                )
+            output_path, image_url, output_size = _save_sync_clean_image(
+                sync_items[0],
+                output_dir,
+                timeout=args.download_timeout,
+                session=active_session,
             )
-        task_id = parsed_task_id
-        toapis.poll_task_status(
-            task_id,
-            submit_data,
-            base_url=base_url,
-            api_key=api_key,
-            poll_interval=args.poll_interval,
-            max_wait=args.max_wait,
-            timeout=args.request_timeout,
-            session=active_session,
-        )
-        _, image_url = toapis.fetch_task_result(
-            task_id,
-            base_url=base_url,
-            api_key=api_key,
-            timeout=args.request_timeout,
-            session=active_session,
-        )
-        output_path, output_size = _download_clean_image(
-            image_url,
-            output_dir,
-            timeout=args.download_timeout,
-            session=active_session,
-        )
+        else:
+            parsed_task_id = provider_helpers.submit_task_id(submit_data)
+            if not isinstance(parsed_task_id, str) or not parsed_task_id.strip():
+                raise CleanRepairError(
+                    "Generation submit response missing a non-empty task_id"
+                )
+            task_id = parsed_task_id
+            toapis.poll_task_status(
+                task_id,
+                submit_data,
+                base_url=base_url,
+                api_key=api_key,
+                poll_interval=args.poll_interval,
+                max_wait=args.max_wait,
+                timeout=args.request_timeout,
+                session=active_session,
+                debug_info=poll_debug,
+            )
+            _, image_url = toapis.fetch_task_result(
+                task_id,
+                base_url=base_url,
+                api_key=api_key,
+                timeout=args.request_timeout,
+                session=active_session,
+            )
+            output_path, output_size = _download_clean_image(
+                image_url,
+                output_dir,
+                timeout=args.download_timeout,
+                session=active_session,
+            )
         result = {
             **_result_base(
                 status="success",
@@ -430,6 +538,9 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             "task_id": task_id,
             "image_url": image_url,
             "prompt": prompt,
+            "result_protocol": result_protocol,
+            "create_debug": debug_sink,
+            "poll_debug": poll_debug,
         }
         result = _redact(result, api_key)
         toapis.write_result_json(result_path, result)
@@ -446,6 +557,9 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             "task_id": task_id,
             "error_type": getattr(exc, "error_code", type(exc).__name__),
             "error_message": str(exc),
+            "result_protocol": result_protocol,
+            "create_debug": debug_sink,
+            "poll_debug": poll_debug,
         }
         result = _redact(result, api_key)
         try:
