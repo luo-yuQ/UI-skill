@@ -27,79 +27,105 @@ class NodeRouterRoleBoundaryTests(unittest.TestCase):
             HIERARCHY_FIXTURE_PATH.read_text(encoding="utf-8")
         )
 
-    def test_component_instance_boundary_allows_internally_diverse_assets(self):
-        self.assertIn(
-            "multiple internally distinct visual elements with different "
-            "responsibilities and still be a single `component_instance`",
-            self.prompt,
-        )
-        self.assertIn(
-            "one self-contained UI object",
-            self.prompt,
-        )
-        self.assertIn(
-            "artwork, icon, text, status, or controls",
-            self.prompt,
-        )
-        self.assertIn(
-            "Do not classify a node as `structural_group` merely because its "
-            "internal visual assets serve different responsibilities.",
-            self.prompt,
-        )
-
-    def test_structural_group_boundary_requires_structural_direct_children(self):
-        self.assertIn(
-            "meaningful structural regions, sections, containers, or collections",
-            self.prompt,
-        )
-        self.assertIn(
-            "another `structural_split` would materially reduce visual complexity",
-            self.prompt,
-        )
-
-    def test_natural_next_step_check_distinguishes_the_two_roles(self):
-        self.assertIn(
-            "what kind of Direct Children would naturally be produced",
-            self.prompt,
-        )
-        self.assertIn(
-            "icon, illustration, text, button, status, or decoration",
-            self.prompt,
-        )
-        self.assertIn(
-            "header region, content region, sidebar, section, collection, panel "
-            "group, or functional area",
-            self.prompt,
-        )
-
-    def test_flattening_guard_blocks_skipping_owned_intermediate_nodes(self):
+    def test_routing_goal_is_useful_next_operation_not_category_purity(self):
         for required_text in (
-            "### Flattening Guard",
-            "Being self-contained is not sufficient",
-            "immediate owned Direct Children",
-            "must not skip an independently meaningful intermediate ownership boundary",
-            "container, collection, repeated collection, slot, card, row, cell, "
-            "item instance, or subcomponent",
+            "not to assign the most philosophically precise UI category",
+            "most useful next Stage2-A operation",
+            "reduce visual-analysis complexity",
+            "preserving independently meaningful, plausibly reusable visual assets",
         ):
             with self.subTest(required_text=required_text):
                 self.assertIn(required_text, self.prompt)
 
+    def test_router_uses_only_current_image_not_provenance_or_names(self):
+        for forbidden_signal in (
+            "`produced_by`",
+            "parent role or parent name",
+            "historical routes",
+            "file names",
+            "test-fixture names",
+            "external UI taxonomy",
+        ):
+            with self.subTest(forbidden_signal=forbidden_signal):
+                self.assertIn(forbidden_signal, self.prompt)
         self.assertIn(
-            "If multiple peer instances each own their own visual assets",
-            self.prompt,
-        )
-        self.assertIn(
-            "preserve the collection as one Direct Child",
+            "Provenance shortcuts for `semantic_decompose` and `expand_instances` "
+            "belong to engineering code",
             self.prompt,
         )
 
-    def test_anti_over_splitting_guard_rejects_synthetic_ownership_wrappers(self):
+    def test_asset_does_not_require_absolute_visual_atomicity(self):
+        for required_text in (
+            "An asset does not need to be absolutely visually atomic",
+            "independently meaningful and plausibly reusable visual assets, rather than visual fragments",
+            "highlight, shadow, border, outline, internal texture, painted detail",
+            "Those details alone are not a reason to continue recursion",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+
+    def test_repeated_group_allows_instance_state_and_data_variation(self):
+        for required_text in (
+            "primary visual identity is a collection of multiple peer instances",
+            "do not need to be pixel-identical",
+            "Selected and unselected, open and closed, different reward contents",
+            "Do not reject `repeated_group` merely because instance state or data differs",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+        self.assertIn(
+            "only one sibling inside a mixed module",
+            self.prompt,
+        )
+
+    def test_structural_group_does_not_require_visible_container_boundary(self):
+        for required_text in (
+            "multiple semantically distinct major regions",
+            "substantially reduce the scope and complexity",
+            "small number of substantially simpler Direct Child regions",
+            "Do not require a visible panel border, container frame, physical separator",
+            "Visually adjacent but semantically independent major regions",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+
+    def test_component_instance_is_default_for_useful_semantic_decomposition(self):
+        for required_text in (
+            "This is the natural default when the next useful operation is semantic decomposition",
+            "Do not require every immediate child to already be a terminal asset",
+            "Do not force `structural_group` merely because lightweight internal grouping",
+            "without first creating substantially simpler major regions",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+
+    def test_asset_component_uncertainty_fallback_prefers_recoverable_decomposition(self):
+        for required_text in (
+            "### Uncertainty fallback",
+            "When uncertain between `asset` and `component_instance`, prefer `component_instance`",
+            "Premature stopping can permanently lose those assets",
+            "Do not continue decomposition merely because an object contains internal visual detail",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+
+    def test_meaningful_boundary_guard_replaces_strict_flattening_guard(self):
+        for required_text in (
+            "### Meaningful-boundary guard",
+            "visually and semantically meaningful enough",
+            "reduce the next analysis scope",
+            "Do not invent intermediate hierarchy solely because a conceptual UI structure could exist",
+        ):
+            with self.subTest(required_text=required_text):
+                self.assertIn(required_text, self.prompt)
+        self.assertNotIn("### Flattening Guard", self.prompt)
+
+    def test_anti_over_splitting_guard_is_preserved(self):
         for required_text in (
             "### Anti-over-splitting Guard",
-            "Do not invent an intermediate node merely to satisfy the ownership concept",
-            "stable, independently meaningful component-tree unit",
-            "Do not create a wrapper that only renames or regroups the same direct visual assets",
-            "Visual complexity, asset count, or different asset responsibilities alone",
+            "visual complexity, asset count, different asset responsibilities",
+            "highlights, borders, textures, decoration",
+            "Do not create a wrapper that only renames or regroups the same visual assets",
         ):
             with self.subTest(required_text=required_text):
                 self.assertIn(required_text, self.prompt)
@@ -131,25 +157,25 @@ class NodeRouterRoleBoundaryTests(unittest.TestCase):
             "peer slot instances", cases["slot_collection"]["semantic_basis"]
         )
 
-    def test_asset_and_repeated_group_definitions_remain_unchanged(self):
+    def test_reason_explains_operation_without_taxonomy_essay(self):
         self.assertIn(
-            "`asset`: the Current Node is already one coherent visual asset and "
-            "further recursion has no clear engineering value.",
+            "why the chosen next operation is useful",
             self.prompt,
         )
         self.assertIn(
-            "`repeated_group`: the Current Node's primary identity is a collection "
-            "of enumerable peer instances with the same component/business semantics",
+            "rather than why the object philosophically belongs to a taxonomy",
             self.prompt,
         )
 
     def test_router_output_scope_and_generic_boundary_are_preserved(self):
-        self.assertIn("Stage2-A Node Router v0.1.2", self.prompt)
+        self.assertIn("Stage2-A Node Router v0.2 experiment", self.prompt)
         self.assertIn(
-            "Return no Markdown, children, bboxes, `next_action`, taxonomy, tree, "
-            "repeated instances, structural regions, or extraction strategy.",
+            "Return no Markdown, children, bboxes, `next_action`, taxonomy, assets, "
+            "parent, analysis, tree, repeated instances, structural regions, or "
+            "extraction strategy.",
             self.prompt,
         )
+        self.assertIn("taxonomy, assets, parent, analysis, tree", self.prompt)
         self.assertNotIn("region_004", self.prompt)
         self.assertNotIn("item detail panel", self.prompt.lower())
         self.assertNotIn("prize wheel", self.prompt.lower())
