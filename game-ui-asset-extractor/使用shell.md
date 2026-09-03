@@ -150,3 +150,11 @@ python game-ui-asset-extractor/scripts/ui_image_clean_repair_poc.py `
 注意：`--mask-overlay` 虽然叫 mask，但实际上是作为 Image-2 的第二张普通参考图上传，并不是 Image Edit API 的 mask 字段。
 
 完整基线命令也记录在 [EXP-001.md](E:/game-ui-skill/docs/experiments/stage0-text-cleaning/EXP-001.md)，流程说明在 [README.md](E:/game-ui-skill/docs/experiments/stage0-text-cleaning/README.md)。
+
+
+# 透明图的CLI
+python game-ui-asset-extractor/scripts/ui_text_alpha_hole.py `
+  --image D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\analysis-image.png `
+  --regions-json D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\regions\vlm-region-plan.json `
+  --output-dir D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\alpha-hole `
+  --padding 8

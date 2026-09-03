@@ -43,6 +43,36 @@ Preserve all non-target visual content from IMAGE 1 as faithfully as possible.
 Do not reproduce IMAGE 2 in the output.
 """
 
+ALPHA_HOLE_ONLY_PROMPT = """
+IMAGE 1 is a partially transparent game UI image.
+
+Transparent regions in IMAGE 1 (alpha = 0) are missing areas that must be reconstructed.
+
+Non-transparent regions are authoritative existing UI content and must be preserved as faithfully as possible.
+
+Fill every transparent region naturally by reconstructing the underlying UI surface from the surrounding visual context.
+
+The transparent regions originally contained removable text or text-overlaid UI content. The transparent regions are intentionally erased areas.
+
+Reconstruct background and UI surface only.
+
+Do not reconstruct any original text that may have existed in these regions.
+
+The repaired regions must contain no letters, numbers, words, glyphs, labels, captions, counters, or other textual symbols.
+
+Use the surrounding non-transparent pixels only to infer the underlying non-text visual surface.
+
+Preserve all non-transparent visual content, including layout, colors, icons, shapes, decorations, and UI elements.
+
+Do not redesign the interface.
+Do not add new text.
+Do not add new UI elements.
+Do not leave transparent holes.
+Do not fill the holes with black, white, checkerboard patterns, or flat placeholder colors.
+
+Return a complete clean game UI image with all transparent regions naturally repaired.
+"""
+
 
 class CleanRepairError(RuntimeError):
     """Expected PoC input, configuration, provider, or output failure."""
@@ -95,6 +125,103 @@ def inspect_image(path: Path, label: str) -> tuple[int, int]:
     return width, height
 
 
+def inspect_alpha_hole(path: Path) -> tuple[int, int]:
+    """Validate a real alpha-hole PNG and return its size.
+
+    Requirements:
+    - the image must carry a real alpha channel (no local flattening)
+    - at least one alpha=0 pixel must exist
+    - the image must not be fully transparent
+    """
+
+    size = inspect_image(path, "Alpha hole image")
+    try:
+        with Image.open(path) as image:
+            if "A" not in image.getbands():
+                raise CleanRepairError(
+                    "alpha_hole_only requires an image with an alpha channel"
+                )
+            alpha = image.getchannel("A")
+            alpha_min, alpha_max = alpha.getextrema()
+    except (OSError, UnidentifiedImageError) as exc:
+        raise CleanRepairError(f"Alpha hole image is not a readable image: {path}") from exc
+    if alpha_min > 0:
+        raise CleanRepairError(
+            f"alpha_hole_only input contains no fully transparent pixels: {path}"
+        )
+    if alpha_max == 0:
+        raise CleanRepairError(f"alpha_hole_only input is fully transparent: {path}")
+    return size
+
+
+def _alpha_extrema(path: Path) -> tuple[str, tuple[int, int] | None]:
+    """Return (image_mode, alpha_extrema_or_None) without flattening anything."""
+
+    with Image.open(path) as image:
+        image.load()
+        mode = image.mode
+        if "A" in image.getbands():
+            extrema = image.getchannel("A").getextrema()
+            return mode, (int(extrema[0]), int(extrema[1]))
+        return mode, None
+
+
+def probe_uploaded_alpha_hole(
+    source_image: Path,
+    source_url: str,
+    output_dir: Path,
+    *,
+    timeout: float,
+    session: Any,
+) -> dict[str, Any]:
+    """Experimental diagnostic only: check whether alpha survives /api/upload.
+
+    Downloads the uploaded source_url back and compares alpha facts with the
+    local file. Never modifies the image or the provider request flow.
+    """
+
+    probe: dict[str, Any] = {}
+    temporary: Path | None = None
+    try:
+        local_mode, local_extrema = _alpha_extrema(source_image)
+        probe["local_alpha_mode"] = local_mode
+        probe["local_alpha_extrema"] = (
+            list(local_extrema) if local_extrema is not None else None
+        )
+
+        output_dir.mkdir(parents=True, exist_ok=True)
+        with tempfile.NamedTemporaryFile(
+            mode="wb",
+            delete=False,
+            dir=output_dir,
+            prefix=".alpha-probe.",
+            suffix=".png",
+        ) as file:
+            temporary = Path(file.name)
+        toapis.download_image(source_url, temporary, timeout=timeout, session=session)
+        uploaded_mode, uploaded_extrema = _alpha_extrema(temporary)
+        probe["uploaded_alpha_mode"] = uploaded_mode
+        probe["uploaded_alpha_extrema"] = (
+            list(uploaded_extrema) if uploaded_extrema is not None else None
+        )
+        probe["uploaded_alpha_preserved"] = bool(
+            local_extrema is not None
+            and local_extrema[0] == 0
+            and uploaded_extrema is not None
+            and uploaded_extrema[0] == 0
+        )
+        return probe
+    except Exception as exc:
+        probe["error"] = str(exc)
+        return probe
+    finally:
+        if temporary is not None:
+            try:
+                temporary.unlink(missing_ok=True)
+            except OSError:
+                pass
+
+
 def select_provider_size(source_size: tuple[int, int]) -> str:
     """Use the existing provider's square/portrait/landscape size mapping."""
 
@@ -106,9 +233,20 @@ def select_provider_size(source_size: tuple[int, int]) -> str:
     return "1024x1024"
 
 
-def read_prompt(path: Path | None, *, has_overlay: bool) -> str:
+def read_prompt(path: Path | None, *, mode: str) -> str:
     if path is None:
-        return SOURCE_PLUS_OVERLAY_PROMPT if has_overlay else SOURCE_ONLY_PROMPT
+        if mode == "source_plus_overlay":
+            return SOURCE_PLUS_OVERLAY_PROMPT
+        if mode == "alpha_hole_only":
+            return ALPHA_HOLE_ONLY_PROMPT
+        # NOTE: SOURCE_ONLY_PROMPT is referenced but was never defined in this
+        # PoC, so the previous source_only behavior without a prompt file was
+        # a NameError failure. Keep failing fast with an explicit message
+        # instead of inventing a prompt.
+        raise CleanRepairError(
+            "source_only has no built-in SOURCE_ONLY_PROMPT in this PoC; "
+            "provide --prompt-file"
+        )
     if not path.exists() or not path.is_file():
         raise CleanRepairError(f"Prompt file does not exist or is not a file: {path}")
     try:
@@ -397,10 +535,14 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
     prompt_file = Path(args.prompt_file) if args.prompt_file else None
     output_dir = Path(args.output_dir)
     result_path = output_dir / "result.json"
-    mode = "source_plus_overlay" if mask_overlay is not None else "source_only"
+    if args.input_mode is not None:
+        mode = args.input_mode
+    else:
+        mode = "source_plus_overlay" if mask_overlay is not None else "source_only"
     api_key = os.environ.get("TOAPIS_API_KEY")
     base_url = os.environ.get("TOAPIS_BASE_URL", DEFAULT_BASE_URL).rstrip("/")
     task_id: str | None = None
+    alpha_probe: dict[str, Any] | None = None
     debug_sink: dict[str, Any] = {}
     poll_debug: dict[str, Any] = {}
     result_protocol: str | None = None
@@ -424,7 +566,17 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
         if session is None and toapis.requests is None:
             raise CleanRepairError("The requests package is required for real provider calls")
 
-        source_size = inspect_image(source_image, "Source image")
+        if mode == "alpha_hole_only" and mask_overlay is not None:
+            raise CleanRepairError("alpha_hole_only must not be combined with --mask-overlay")
+        if mode == "source_only" and mask_overlay is not None:
+            raise CleanRepairError("source_only must not be combined with --mask-overlay")
+        if mode == "source_plus_overlay" and mask_overlay is None:
+            raise CleanRepairError("source_plus_overlay requires --mask-overlay")
+
+        if mode == "alpha_hole_only":
+            source_size = inspect_alpha_hole(source_image)
+        else:
+            source_size = inspect_image(source_image, "Source image")
         if mask_overlay is not None:
             overlay_size = inspect_image(mask_overlay, "Mask overlay")
             if overlay_size != source_size:
@@ -432,7 +584,7 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
                     "Mask overlay dimensions must match the source image: "
                     f"{overlay_size[0]}x{overlay_size[1]} != {source_size[0]}x{source_size[1]}"
                 )
-        prompt = read_prompt(prompt_file, has_overlay=mask_overlay is not None)
+        prompt = read_prompt(prompt_file, mode=mode)
         # provider_size = select_provider_size(source_size)
         provider_size = (
             args.provider_size
@@ -458,6 +610,15 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
                 session=active_session,
             )
             image_urls.append(overlay_url)
+
+        if mode == "alpha_hole_only":
+            alpha_probe = probe_uploaded_alpha_hole(
+                source_image,
+                source_url,
+                output_dir,
+                timeout=args.download_timeout,
+                session=active_session,
+            )
 
         payload = build_generation_payload(
             model=args.model,
@@ -542,6 +703,8 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             "create_debug": debug_sink,
             "poll_debug": poll_debug,
         }
+        if alpha_probe is not None:
+            result["alpha_probe"] = alpha_probe
         result = _redact(result, api_key)
         toapis.write_result_json(result_path, result)
         return 0, result
@@ -561,6 +724,8 @@ def run(args: argparse.Namespace, *, session: Any = None) -> tuple[int, dict[str
             "create_debug": debug_sink,
             "poll_debug": poll_debug,
         }
+        if alpha_probe is not None:
+            result["alpha_probe"] = alpha_probe
         result = _redact(result, api_key)
         try:
             toapis.write_result_json(result_path, result)
@@ -583,6 +748,19 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--mask-overlay",
         help="Optional repair-mask-overlay.png used only as a visual guide",
+    )
+    parser.add_argument(
+        "--input-mode",
+        choices=(
+            "source_only",
+            "source_plus_overlay",
+            "alpha_hole_only",
+        ),
+        default=None,
+        help=(
+            "Input experiment mode. Default: source_plus_overlay "
+            "when --mask-overlay is provided, otherwise source_only."
+        ),
     )
     parser.add_argument("--model", default=DEFAULT_MODEL)
 

@@ -176,21 +176,134 @@ class AssetAdmissionContractTests(unittest.TestCase):
             schema["properties"]["schema_version"]["const"],
         )
 
-    def test_prompt_is_frozen_admission_contract(self):
+    def test_prompt_defines_a2_task_as_survival_decision(self):
         prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
-        self.assertIn("You are an asset admission gate", prompt)
-        self.assertIn("Your task is NOT to discover assets", prompt)
-        self.assertIn("You MUST NOT", prompt)
-        self.assertIn("Large size alone is NOT a reason to DROP", prompt)
-        self.assertIn("would that PNG be a useful production asset", prompt)
-        for reason_code in probe.REASON_CODES:
-            self.assertIn(reason_code, prompt)
-        self.assertIn("asset_001", prompt)
-        self.assertIn("asset_002", prompt)
+        normalized = " ".join(prompt.split())
+        self.assertIn(
+            "Decide whether each already-discovered candidate should remain in the "
+            "final production asset set for reconstructing this UI.",
+            normalized,
+        )
+        self.assertIn("A1 = high-recall candidate discovery.", normalized)
+        self.assertIn(
+            "A2 = remove candidates that should NOT survive into the final "
+            "production asset set.",
+            normalized,
+        )
+        self.assertIn("Keep the candidate when the visual region represents a "
+                      "production asset", prompt)
+        self.assertNotIn(
+            "would that PNG be a useful production asset", prompt
+        )
+
+    def test_prompt_sends_full_candidate_manifest_not_only_ids(self):
+        candidate = {
+            "id": "asset_026",
+            "label": "yellow pill action button",
+            "taxonomy": "button",
+            "bbox_analysis": {"x": 147, "y": 1295, "width": 311, "height": 104},
+            "bbox_source": {"x": 140, "y": 1290, "width": 320, "height": 110},
+            "partial": False,
+            "confidence": 0.82,
+        }
+        prompt = probe.build_user_prompt([candidate])
+        for expected in (
+            "asset_026",
+            "yellow pill action button",
+            "button",
+            "147",
+            "1295",
+            "311",
+            "104",
+        ):
+            self.assertIn(expected, prompt)
+        self.assertIn('"candidate_ref": "asset_026"', prompt)
+        self.assertIn('"label_hint": "yellow pill action button"', prompt)
+        self.assertIn('"taxonomy_hint": "button"', prompt)
+        self.assertIn(
+            '"bbox_analysis": {"x": 147, "y": 1295, "width": 311, "height": 104}',
+            prompt,
+        )
+        self.assertNotIn('"bbox_source"', prompt)
+
+    def test_prompt_forbids_candidate_ref_numbering_inference(self):
+        prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
+        self.assertIn(
+            "Do not infer candidate identity from candidate_ref numbering.",
+            prompt,
+        )
+
+    def test_prompt_repeated_instances_are_not_duplicates(self):
+        prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
+        self.assertIn(
+            "Repeated instances at different positions are NOT duplicates.",
+            prompt,
+        )
+
+    def test_prompt_declares_bbox_analysis_pixels_of_analysis_image(self):
+        prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
+        self.assertIn(
+            "bbox_analysis is expressed in pixels in the attached Analysis Image",
+            prompt,
+        )
+
+    def test_prompt_contains_candidate_grounding_steps(self):
+        prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
+        normalized = " ".join(prompt.split())
+        for phrase in (
+            "1. Read candidate_ref.",
+            "2. Locate bbox_analysis in the attached Analysis Image.",
+            "3. Inspect the visual object inside that bbox.",
+            "4. Use label_hint and taxonomy_hint only as supporting hints.",
+            "6. Emit exactly one KEEP or DROP decision for that candidate_ref.",
+        ):
+            self.assertIn(phrase, normalized)
+
+    def test_prompt_describes_frozen_drop_reason_semantics(self):
+        prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
+        normalized = " ".join(prompt.split())
+        self.assertIn(
+            "the candidate primarily acts as a layout/container region whose "
+            "meaningful visual contents are represented by other candidates",
+            normalized,
+        )
+        self.assertIn(
+            "Do NOT use this reason merely because the candidate is large.",
+            normalized,
+        )
+        self.assertIn(
+            "Visual nesting alone is NOT sufficient.", normalized
+        )
+        self.assertIn(
+            "use DROP_DUPLICATE only when two A1 candidates refer to the SAME "
+            "physical visual object / same image region due to duplicate discovery.",
+            normalized,
+        )
+        self.assertIn(
+            "Do NOT treat repeated instances at different locations as duplicates.",
+            normalized,
+        )
+
+    def test_system_prompt_is_stage2_a2_admission_gate(self):
+        self.assertIn("Stage2-A2 Asset Admission Gate", probe.SYSTEM_PROMPT)
+        self.assertIn("Do not discover new assets.", probe.SYSTEM_PROMPT)
+        self.assertIn(
+            "Do not infer candidate meaning from candidate_ref numbering.",
+            probe.SYSTEM_PROMPT,
+        )
+        self.assertIn("bbox_analysis", probe.SYSTEM_PROMPT)
 
     def test_prompt_reveals_no_output_bbox_taxonomy_or_label_instruction(self):
         prompt = probe.build_user_prompt(make_candidates_document(2)["assets"])
         self.assertIn("Do not output bbox, taxonomy, label", prompt)
+
+    def test_response_schema_decisions_exclude_grounding_fields(self):
+        schema = probe.build_admission_response_schema(["asset_001"])
+        item_properties = schema["properties"]["decisions"]["items"]["properties"]
+        self.assertEqual(
+            {"candidate_ref", "decision", "reason_code", "confidence", "reason"},
+            set(item_properties),
+        )
 
 
 class AssetAdmissionValidatorTests(unittest.TestCase):

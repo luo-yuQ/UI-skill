@@ -22,8 +22,8 @@ python game-ui-asset-analyzer/experiments/direct_asset_discovery_probe.py `
 
 # 关闭thinking
 python game-ui-asset-analyzer/experiments/direct_asset_discovery_probe.py `
-  --image "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\size-ab\square_03\clean.png" `
-  --output-dir "runs\20260902_direct-asset-discovery-002" `
+  --image "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\alpha-sanitized-image2-01\clean.png" `
+  --output-dir "runs\20260902_direct-asset-discovery-007-production-client" `
   --model "glm-5.3-flash" `
   --runs 1
 
@@ -34,3 +34,14 @@ Stage 2-A2
     --output-dir "runs\20260902_asset-admission-001-spin-wheel-clean-001" `
     --model glm-5.3-flash `
     --runs 1
+# 九月三号的最新的clean图
+D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\alpha-sanitized-image2-01\clean.png
+
+# 双图测试 原图+clean
+  python game-ui-asset-analyzer/experiments/direct_asset_discovery_dual_image_probe.py `
+    --original-image "D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\analysis-image.png" `
+    --clean-image "D:\Third_Test_1\UI-skill\runs\20260902_direct-asset-discovery-007-production-client\source.png" `
+    --output-dir "runs\20260903_direct-asset-discovery-dual-image-002" `
+    --model glm-5.3-flash
+# 压缩原图
+  python -c "from PIL import Image; img=Image.open(r'D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\analysis-image.png').convert('RGB'); img.resize((1024,1536), Image.Resampling.LANCZOS).save(r'D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\sheiji.png', quality=95)"

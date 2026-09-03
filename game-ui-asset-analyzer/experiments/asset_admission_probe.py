@@ -54,10 +54,20 @@ REQUIRED_CANDIDATE_FIELDS = (
     "partial",
     "confidence",
 )
-SYSTEM_PROMPT = """You are an asset admission gate for Stage2-A direct asset discovery.
-Review the already-discovered candidate set against one Analysis Image and emit exactly one
-KEEP or DROP decision per candidate. You never discover, merge, split, re-crop, or re-score
-candidates."""
+SYSTEM_PROMPT = """You are the Stage2-A2 Asset Admission Gate.
+
+Stage2-A1 has already discovered a high-recall set of visual asset candidates
+from one Analysis Image.
+
+Your job is to review those existing candidates and decide which candidates
+should survive into the final production asset set.
+
+Every candidate is identified by candidate_ref and bbox_analysis.
+Always ground your judgment in the visual region specified by bbox_analysis.
+
+Do not discover new assets.
+Do not change, merge, split, move, or re-crop candidates.
+Do not infer candidate meaning from candidate_ref numbering."""
 
 
 def write_json(path: Path, value: Any) -> None:
@@ -113,14 +123,31 @@ def build_admission_response_schema(ids: Collection[str]) -> dict[str, Any]:
 
 
 def build_user_prompt(candidates: Collection[dict[str, Any]]) -> str:
-    """Build the frozen A2 admission prompt v0.1 for one complete candidate set."""
+    """Build the A2 grounding admission prompt v0.2 for one complete candidate set."""
 
-    candidate_ids = "\n".join(f"- {asset['id']}" for asset in candidates)
-    return f"""You are an asset admission gate.
+    # Grounding manifest: A1 fields are passed through verbatim. bbox_analysis is
+    # never modified, converted, or re-keyed, and bbox_source is not exposed.
+    manifest_entries = [
+        {
+            "candidate_ref": asset["id"],
+            "label_hint": asset["label"],
+            "taxonomy_hint": asset["taxonomy"],
+            "bbox_analysis": asset["bbox_analysis"],
+        }
+        for asset in candidates
+    ]
+    manifest = "\n".join(
+        json.dumps(entry, ensure_ascii=False) for entry in manifest_entries
+    )
+    return f"""You are the Stage2-A2 Asset Admission Gate.
 
-Your task is NOT to discover assets. You receive the complete candidate set produced by
-Stage2-A1 Direct Asset Discovery for the attached Analysis Image, and you must emit exactly
-one KEEP or DROP decision for every candidate in the list below.
+Stage2-A1 Direct Asset Discovery has already produced a high-recall candidate set
+for the attached Analysis Image. Decide whether each already-discovered candidate
+should remain in the final production asset set for reconstructing this UI.
+
+A1 = high-recall candidate discovery.
+A2 = remove candidates that should NOT survive into the final production asset set.
+A2 does not discover new assets and never proposes a candidate_ref outside the list.
 
 You MUST NOT:
 - discover new assets or emit any candidate_ref that is not in the list
@@ -129,34 +156,91 @@ You MUST NOT:
 - assign taxonomy values or labels
 - invent new reason codes
 
-Decision definitions:
-- KEEP: the candidate is an independent, self-contained visual asset whose pixels would form
-  one useful standalone production asset.
-- DROP: the candidate is a structural container, a redundant composite of separately admitted
-  assets, a state or effect layer, an incidental decoration, a dependent substructure of
-  another candidate, or a duplicate of another candidate.
+Do not infer candidate identity from candidate_ref numbering.
 
-Extraction value test. Judge each candidate by its extraction value: ask yourself
-"would that PNG be a useful production asset" if the candidate were extracted as one
-standalone PNG with a transparent background. Large size alone is NOT a reason to DROP: a
-large but self-contained surface can still be a legitimate production asset. Do not DROP a
-candidate merely because other candidates overlap it; only DROP when the candidate itself
-fails the extraction value test for one of the frozen reason codes below.
+Candidate manifest ({len(manifest_entries)} entries). Each entry describes one A1
+candidate; candidate_ref comes from the A1 id, and bbox_analysis is passed through
+from A1 without any modification or coordinate conversion:
+
+{manifest}
+
+Grounding contract. bbox_analysis is expressed in pixels in the attached Analysis Image.
+The candidate bbox is authoritative for identifying which visual object the candidate
+refers to. label_hint and taxonomy_hint are only hints produced by A1.
+Do not reject a candidate merely because the hint appears imperfect. Judge the visual
+region identified by candidate_ref + bbox_analysis.
+
+For every candidate:
+
+1. Read candidate_ref.
+2. Locate bbox_analysis in the attached Analysis Image.
+3. Inspect the visual object inside that bbox.
+4. Use label_hint and taxonomy_hint only as supporting hints.
+5. Compare the candidate with the other provided candidates when deciding
+   structural container, redundant composite, or true duplicate.
+6. Emit exactly one KEEP or DROP decision for that candidate_ref.
+
+Never infer candidate identity from candidate_ref numbering.
+
+asset_001, asset_002, ... have no semantic ordering.
+
+Do not guess what an ID represents.
+Use bbox_analysis to ground every decision.
+
+KEEP definition:
+
+Keep the candidate when the visual region represents a production asset
+that should survive as an independent entry in the final asset set.
+
+A candidate may still be KEEP when:
+
+- it is visually nested inside another candidate
+- it overlaps another candidate
+- it is one repeated instance among several similar instances
+- it is a large foundational surface such as a background
+- its label_hint or taxonomy_hint is imperfect
+- another candidate has similar appearance but represents a different
+  physical instance at a different location
+
+The question is whether this candidate itself should exist as an
+independent production asset in the final reconstruction set.
+
+Repeated instances at different positions are NOT duplicates.
+
+Example:
+
+four visually identical treasure chests at four different UI positions
+are four candidate instances and may all be KEEP.
 
 Frozen reason codes (use exactly one per decision):
-- KEEP_INDEPENDENT_ASSET
-- DROP_STRUCTURAL_CONTAINER
-- DROP_REDUNDANT_COMPOSITE
-- DROP_STATE_EFFECT
-- DROP_INCIDENTAL_DECORATION
-- DROP_DEPENDENT_SUBSTRUCTURE
-- DROP_DUPLICATE
 
-Candidates ({len(list(candidates))}):
-{candidate_ids}
+- KEEP_INDEPENDENT_ASSET: keep the candidate as an independent entry in the
+  final production asset set.
+- DROP_STRUCTURAL_CONTAINER: the candidate primarily acts as a layout/container
+  region whose meaningful visual contents are represented by other candidates,
+  and the container itself should not survive as an independent production asset.
+- DROP_REDUNDANT_COMPOSITE: the candidate is a composite visual candidate that
+  redundantly contains multiple other independently admitted candidates, and
+  retaining both the composite and its parts would duplicate the same production
+  content. Do NOT use this reason merely because the candidate is large.
+- DROP_STATE_EFFECT: the candidate is a transient visual state/effect layer such
+  as glow, selection highlight, temporary emphasis, flash, or similar
+  state-dependent visual treatment.
+- DROP_INCIDENTAL_DECORATION: the candidate is minor decorative residue with no
+  meaningful standalone production role.
+- DROP_DEPENDENT_SUBSTRUCTURE: the candidate is only a fragment of another
+  visual asset and does not have a meaningful independent production identity.
+  Visual nesting alone is NOT sufficient. For example: a reusable currency or
+  ticket icon placed on a button can still be KEEP, and an icon placed inside a
+  navigation item can still be KEEP.
+- DROP_DUPLICATE: use DROP_DUPLICATE only when two A1 candidates refer to the
+  SAME physical visual object / same image region due to duplicate discovery.
+  Do NOT treat repeated instances at different locations as duplicates.
+  Examples: same chest detected twice with almost the same bbox → duplicate;
+  four identical chest instances at four different positions → NOT duplicate.
 
-Return JSON only, with exactly the frozen schema shape. Do not output bbox, taxonomy, label,
-or any field other than the schema fields.
+Return JSON only, with exactly the frozen schema shape.
+Do not output bbox, taxonomy, label, or any field other than the schema fields.
 """
 
 
