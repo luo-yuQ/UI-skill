@@ -10,8 +10,8 @@ Contract rules enforced by this tool:
   is never rewritten by this tool.
 - All human edits are persisted to a separate ``review-overrides.json``.
 - The editor world space is exactly the real source-image pixel size. A
-  display-only viewport transform (zoom + pan on #camera) is applied on top
-  of that world space; bbox data is always kept in source-image pixel
+  display-only zoom transform is applied on top of that world space; bbox
+  data is always kept in source-image pixel
   coordinates (integers) and is never scaled, re-based, or persisted in any
   other coordinate space.
 - Schema adapter: ``direct-assets.json`` ``bbox_source`` (source pixel space)
@@ -319,17 +319,18 @@ PAGE_HTML = r"""<!DOCTYPE html>
   #save-status.error { color: #f28b82; }
   main { flex: 1 1 auto; display: flex; min-height: 0; }
   #left {
-    flex: 1 1 auto; position: relative; overflow: hidden; background: #17181c;
+    flex: 1 1 auto; position: relative; overflow: auto; background: #17181c;
     cursor: default;
   }
-  #left.panning { cursor: grabbing; }
   /* Coordinate contract: #stage is always the real source/world pixel size.
-     Only #camera receives a display transform. */
+     #camera supplies scrollable layout space; zoom is display-only. */
   #camera {
-    position: absolute; left: 0; top: 0;
-    transform-origin: 0 0; will-change: transform;
+    position: relative; min-width: 100%; min-height: 100%;
   }
-  #stage { position: relative; margin: 0; box-shadow: 0 0 0 1px #3c4048; }
+  #stage {
+    position: absolute; margin: 0; transform-origin: 0 0;
+    box-shadow: 0 0 0 1px #3c4048; will-change: transform;
+  }
   #stage > img, #stage > svg { position: absolute; left: 0; top: 0; display: block; }
   body.add-mode #stage { cursor: crosshair; }
   #stage > img { user-select: none; -webkit-user-drag: none; }
@@ -339,7 +340,6 @@ PAGE_HTML = r"""<!DOCTYPE html>
     fill: rgba(0, 229, 255, 0.08); stroke: #00e5ff; stroke-width: 2; cursor: move;
   }
   .bbox.st-modified { stroke: #ffb300; fill: rgba(255, 179, 0, 0.10); }
-  .bbox.st-dropped  { stroke: #f28b82; fill: rgba(242, 139, 130, 0.08); stroke-dasharray: 7 4; }
   .bbox.st-manual   { stroke: #81c995; fill: rgba(129, 201, 149, 0.10); }
   .bbox.selected    { stroke: #ffffff; stroke-width: 3; fill: rgba(255, 255, 255, 0.12); }
   .blabel {
@@ -425,10 +425,9 @@ PAGE_HTML = r"""<!DOCTYPE html>
 const S = {
   imgW: 0, imgH: 0, assets: [], manual: [], selected: null,
   mode: "select", dirty: false,
-  viewport: { zoom: 1.0, panX: 16, panY: 16 },
+  viewport: { zoom: 1.0 },
 };
 let drag = null;
-let spaceDown = false;
 
 const ZOOM_LEVELS = [0.25, 0.50, 0.75, 1.00, 1.25, 1.50, 2.00, 3.00, 4.00];
 const MIN_ZOOM = ZOOM_LEVELS[0];
@@ -437,7 +436,9 @@ const MAX_ZOOM = ZOOM_LEVELS[ZOOM_LEVELS.length - 1];
 const $ = (sel) => document.querySelector(sel);
 const byId = (id) => S.assets.find((a) => a.id === id) || S.manual.find((a) => a.id === id);
 const allAssets = () => S.assets.concat(S.manual);
-const visibleAssets = () => allAssets().filter((a) => a.decision !== "DROP");
+function getVisibleAssets() {
+  return allAssets().filter((a) => a.decision !== "DROP");
+}
 const bboxChanged = (a) =>
   !a.manual && ["x", "y", "width", "height"].some((k) => a.bbox[k] !== a.original[k]);
 const STATUS_COLORS = {
@@ -492,25 +493,27 @@ function setMode(mode) {
 // ----------------------------------------------------------- viewport ---
 
 function screenToWorld(clientX, clientY) {
-  const r = $("#left").getBoundingClientRect();
+  const r = $("#stage").getBoundingClientRect();
   return {
-    x: (clientX - r.left - S.viewport.panX) / S.viewport.zoom,
-    y: (clientY - r.top - S.viewport.panY) / S.viewport.zoom,
-  };
-}
-
-function worldToScreen(x, y) {
-  const r = $("#left").getBoundingClientRect();
-  return {
-    x: r.left + S.viewport.panX + x * S.viewport.zoom,
-    y: r.top + S.viewport.panY + y * S.viewport.zoom,
+    x: (clientX - r.left) / S.viewport.zoom,
+    y: (clientY - r.top) / S.viewport.zoom,
   };
 }
 
 function applyViewport() {
-  $("#camera").style.transform =
-    "translate(" + S.viewport.panX + "px," + S.viewport.panY + "px) " +
-    "scale(" + S.viewport.zoom + ")";
+  const workspace = $("#left");
+  const camera = $("#camera");
+  const stage = $("#stage");
+  const z = S.viewport.zoom;
+  const scaledW = S.imgW * z;
+  const scaledH = S.imgH * z;
+  const contentW = Math.max(workspace.clientWidth, scaledW + 32);
+  const contentH = Math.max(workspace.clientHeight, scaledH + 32);
+  camera.style.width = contentW + "px";
+  camera.style.height = contentH + "px";
+  stage.style.left = Math.max(16, (contentW - scaledW) / 2) + "px";
+  stage.style.top = Math.max(16, (contentH - scaledH) / 2) + "px";
+  stage.style.transform = "scale(" + z + ")";
   $("#zoom-value").textContent = Math.round(S.viewport.zoom * 100) + "%";
 }
 
@@ -523,18 +526,20 @@ function setZoom(newZoom, clientX, clientY) {
   const world = screenToWorld(clientX, clientY);
   const z = clamp(newZoom, MIN_ZOOM, MAX_ZOOM);
   S.viewport.zoom = z;
-  S.viewport.panX = clientX - r.left - world.x * z;
-  S.viewport.panY = clientY - r.top - world.y * z;
   applyViewport();
+  const stageRect = $("#stage").getBoundingClientRect();
+  workspace.scrollLeft += stageRect.left + world.x * z - clientX;
+  workspace.scrollTop += stageRect.top + world.y * z - clientY;
 }
 
 function centerAtZoom(zoom) {
   const workspace = $("#left");
   const z = clamp(zoom, MIN_ZOOM, MAX_ZOOM);
   S.viewport.zoom = z;
-  S.viewport.panX = (workspace.clientWidth - S.imgW * z) / 2;
-  S.viewport.panY = (workspace.clientHeight - S.imgH * z) / 2;
   applyViewport();
+  const camera = $("#camera");
+  workspace.scrollLeft = Math.max(0, (camera.offsetWidth - workspace.clientWidth) / 2);
+  workspace.scrollTop = Math.max(0, (camera.offsetHeight - workspace.clientHeight) / 2);
 }
 
 function fitView() {
@@ -576,7 +581,8 @@ function render() {
   // DROP stays in editor state/output but never enters SVG rendering.
   // The id guard makes the one-bbox-per-id render contract explicit.
   const renderedIds = new Set();
-  for (const a of visibleAssets()) {
+  const visible = getVisibleAssets();
+  for (const a of visible) {
     if (renderedIds.has(a.id)) {
       console.warn("duplicate asset id skipped in render:", a.id);
       continue;
@@ -591,7 +597,7 @@ function render() {
       '<text class="blabel" x="' + (a.bbox.x + 4) +
       '" y="' + Math.max(15, a.bbox.y - 6) + '">' + a.id + "</text></g>";
   }
-  const a = visibleAssets().find((x) => x.id === S.selected) || null;
+  const a = visible.find((x) => x.id === S.selected) || null;
   if (a && (!drag || drag.type !== "new")) {
     for (const c of ["tl", "tr", "bl", "br"]) {
       const [hx, hy] = cornerPoint(a.bbox, c);
@@ -622,7 +628,7 @@ function renderHeader() {
     " | modified " + counts.modified +
     " | dropped " + counts.dropped +
     " | manual " + counts.manual +
-    " | visible " + visibleAssets().length;
+    " | visible " + getVisibleAssets().length;
 }
 
 const NUM_FIELDS = [["i-x", "x"], ["i-y", "y"], ["i-w", "width"], ["i-h", "height"]];
@@ -697,31 +703,8 @@ $("#stage").addEventListener("mousedown", (e) => {
   e.preventDefault();
 });
 
-
-// Space + left drag, or middle-mouse drag, changes only viewport pan.
-// Capture phase prevents a bbox drag from starting underneath a pan gesture.
-$("#left").addEventListener("mousedown", (e) => {
-  const wantsPan = e.button === 1 || (e.button === 0 && spaceDown);
-  if (!wantsPan) return;
-  drag = {
-    type: "pan",
-    startClientX: e.clientX, startClientY: e.clientY,
-    startPanX: S.viewport.panX, startPanY: S.viewport.panY,
-  };
-  $("#left").classList.add("panning");
-  e.preventDefault();
-  e.stopPropagation();
-}, true);
-
 document.addEventListener("mousemove", (e) => {
   if (!drag) return;
-  if (drag.type === "pan") {
-    S.viewport.panX = drag.startPanX + (e.clientX - drag.startClientX);
-    S.viewport.panY = drag.startPanY + (e.clientY - drag.startClientY);
-    applyViewport();
-    return;
-  }
-
   const p = screenToWorld(e.clientX, e.clientY);
   const dx = p.x - drag.startWorldX, dy = p.y - drag.startWorldY;
   if (drag.type === "new") {
@@ -749,10 +732,6 @@ document.addEventListener("mouseup", () => {
   if (!drag) return;
   const d = drag;
   drag = null;
-  if (d.type === "pan") {
-    $("#left").classList.remove("panning");
-    return;
-  }
   if (d.type === "new") {
     const b = clampBox(d.cur);
     if (b.width >= 2 && b.height >= 2) {
@@ -770,15 +749,9 @@ document.addEventListener("mouseup", () => {
 });
 
 document.addEventListener("keydown", (e) => {
-  const typing = e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName);
-  if (e.code === "Space" && !typing) {
-    spaceDown = true;
-    e.preventDefault();
-  }
   if (e.key === "Escape") {
     if (drag) { // cancel in-flight drag: restore original bbox
-      if (drag.type !== "new" && drag.type !== "pan" && drag.a) drag.a.bbox = { ...drag.orig };
-      if (drag.type === "pan") $("#left").classList.remove("panning");
+      if (drag.type !== "new" && drag.a) drag.a.bbox = { ...drag.orig };
       drag = null;
       render();
     } else if (S.mode === "add") {
@@ -787,21 +760,10 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
-document.addEventListener("keyup", (e) => {
-  if (e.code === "Space") spaceDown = false;
-});
-
-window.addEventListener("blur", () => {
-  spaceDown = false;
-  if (drag && drag.type === "pan") {
-    drag = null;
-    $("#left").classList.remove("panning");
-  }
-});
-
 // Work-area zoom only. preventDefault also blocks browser Ctrl+wheel page zoom
 // while the pointer is inside the workspace. The pointer is the zoom anchor.
 $("#left").addEventListener("wheel", (e) => {
+  if (!e.ctrlKey) return;
   e.preventDefault();
   const factor = Math.exp(-e.deltaY * 0.0015);
   setZoom(S.viewport.zoom * factor, e.clientX, e.clientY);
@@ -959,6 +921,8 @@ async function init() {
   applyViewport();
   render();
 }
+
+window.addEventListener("resize", applyViewport);
 
 init();
 </script>
