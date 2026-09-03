@@ -45,3 +45,9 @@ D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\alpha
     --model glm-5.3-flash
 # 压缩原图
   python -c "from PIL import Image; img=Image.open(r'D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\analysis-image.png').convert('RGB'); img.resize((1024,1536), Image.Resampling.LANCZOS).save(r'D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\inputs\sheiji.png', quality=95)"
+
+# 前端的人工手动模式
+  python game-ui-asset-analyzer/experiments/direct_asset_review_ui.py `
+    --image "runs\20260902_direct-asset-discovery-007-production-client\overlay-source.png" `
+    --assets-json "runs\20260902_direct-asset-discovery-007-production-client\direct-assets.json" `
+    --overrides-json "runs\20260902_direct-asset-discovery-007-production-client\review-overrides.json"
