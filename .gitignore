@@ -7,4 +7,4 @@ runs/**
 !runs/stage-a-layout-reference/.gitkeep
 # Python cache
 __pycache__/
-*.pyc
+*.pycEXPERIMENT_LOG.md
