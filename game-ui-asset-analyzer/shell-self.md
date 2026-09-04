@@ -51,3 +51,15 @@ D:\Third_Test_1\UI-skill\runs\stage0-text-cleaning-20260831-114721\exp-001\alpha
     --image "runs\20260902_direct-asset-discovery-007-production-client\overlay-source.png" `
     --assets-json "runs\20260902_direct-asset-discovery-007-production-client\direct-assets.json" `
     --overrides-json "runs\20260902_direct-asset-discovery-007-production-client\review-overrides.json"
+
+# 人工定位后的json文件合并
+python game-ui-asset-analyzer/experiments/apply_direct_asset_review.py `
+  --assets-json "runs\20260902_direct-asset-discovery-007-production-client\direct-assets.json" `
+  --overrides-json "runs\20260902_direct-asset-discovery-007-production-client\review-overrides.json" `
+  --output-json "runs\20260902_direct-asset-discovery-007-production-client\reviewed-direct-assets.json"
+
+# 合并后的json文件去直接切分source.png
+python game-ui-asset-analyzer/experiments/extract_reviewed_direct_assets.py `
+  --image "runs\20260902_direct-asset-discovery-007-production-client\source.png" `
+  --assets-json "runs\20260902_direct-asset-discovery-007-production-client\reviewed-direct-assets.json" `
+  --output-dir "runs\20260902_direct-asset-discovery-007-production-client\reviewed-raw-assets"
