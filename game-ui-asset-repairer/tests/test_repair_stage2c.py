@@ -281,7 +281,7 @@ class TestC15Preparation:
         assert (working[~target_mask_full, 3] == 0).all()
 
         repair_input = json.loads((repair_dir / "asset_025" / "repair-input.json").read_text())
-        assert repair_input["schema_version"] == "repair-input-v0.1"
+        assert repair_input["schema_version"] == "repair-input-v0.2"
         assert repair_input["repair_pixel_count"] == 200
         assert repair_input["repair_ratio_of_target_mask"] == pytest.approx(200 / (40 * 60))
         assert repair_input["occluder_masks"][0]["asset_id"] == "asset_026"
@@ -304,8 +304,10 @@ class TestC15Preparation:
         expected[20:30, 30:40] = 255     # occluder B
         assert np.array_equal(repair_mask, expected)
 
-    def test_repair_mask_constrained_to_target_mask(self, tmp_path):
-        # target mask zero where the occluder lands -> repair must not activate
+    def test_repair_mask_not_limited_by_target_mask(self, tmp_path):
+        # v0.2: the target's own mask is no longer a repair ownership
+        # boundary. An occluder over a transparent hole in the target mask
+        # still owns its full projected area inside the target frame.
         target_bbox = bbox(100, 200, 60, 40)
         target_mask = np.ones((40, 60), dtype=bool)
         target_mask[10:20, 10:30] = False  # transparent hole exactly under occluder
@@ -314,11 +316,16 @@ class TestC15Preparation:
         doc, repair_dir = self.run_prepare(tmp_path, reviewed_path, result_path)
 
         entry = doc["targets"][0]
-        assert entry["status"] == "skipped"
-        assert entry["reason_code"] == "empty_repair_mask"
+        assert entry["status"] == "success"
+        repair_mask = np.asarray(Image.open(repair_dir / "asset_025" / "repair-mask.png").convert("L"))
+        expected = np.zeros((40, 60), dtype=np.uint8)
+        expected[10:20, 10:30] = 255  # full projected area, hole or not
+        assert np.array_equal(repair_mask, expected)
+        assert entry["reason_code"] == "ok"
 
-    def test_transparent_target_region_never_repair(self, tmp_path):
-        # partial overlap: half the occluder over opaque target, half over hole
+    def test_transparent_target_region_also_repair(self, tmp_path):
+        # v0.2: partial overlap with a target-mask hole — the hole part is
+        # also repair area now (occluder owns its whole projection).
         target_bbox = bbox(100, 200, 60, 40)
         target_mask = np.ones((40, 60), dtype=bool)
         target_mask[10:20, 20:30] = False  # hole at target-local x 20..30
@@ -330,9 +337,8 @@ class TestC15Preparation:
         assert entry["status"] == "success"
         repair_mask = np.asarray(Image.open(repair_dir / "asset_025" / "repair-mask.png").convert("L"))
         expected = np.zeros((40, 60), dtype=np.uint8)
-        expected[10:20, 10:20] = 255  # only the opaque half
+        expected[10:20, 10:30] = 255  # opaque half AND the hole half
         assert np.array_equal(repair_mask, expected)
-        assert (repair_mask[10:20, 20:30] == 0).all()
 
     def test_white_black_semantics(self, tmp_path):
         target_bbox = bbox(0, 0, 30, 30)

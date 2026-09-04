@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""C1.5 — Repair Input Preparation (deterministic, v0.1).
+"""C1.5 — Repair Input Preparation (deterministic, v0.2).
 
 For each relation in ``repair-relations.json``:
 
@@ -11,10 +11,13 @@ For each relation in ``repair-relations.json``:
    frame via source-pixel arithmetic:
        source_x = occluder_frame.x + occluder_local_x
        target_local_x = source_x - target_frame.x      (Y symmetric)
-4. repair_mask = union(projected occluder masks) AND target's own asset mask
-   (the target's transparent outside can never become repair area);
+4. repair_mask = union(projected occluder masks), clipped only by the
+   target frame boundary. Since v0.2 the target's own segmentation mask is
+   NOT a repair ownership boundary: an occluder known (via the reviewed
+   bbox containment relation) to cover the target owns its full projected
+   area inside the target frame;
 5. write binary PNG masks: WHITE = must repair, BLACK = preserve;
-   no soft alpha, no blur, dilation = 0 (v0.1);
+   no soft alpha, no blur, dilation = 0;
 6. write a working image copied from the target RGBA with RGB set to pure
    black (0,0,0) inside the repair mask — a missing-content placeholder
    only — leaving every other pixel byte-identical to the Stage2-B output.
@@ -46,7 +49,7 @@ ROOT = Path(__file__).resolve().parent
 INPUT_SCHEMA_PATH = ROOT / "schemas" / "repair-input.schema.json"
 RESULT_SCHEMA_PATH = ROOT / "schemas" / "repair-preparation-result.schema.json"
 
-INPUT_SCHEMA_VERSION = "repair-input-v0.1"
+INPUT_SCHEMA_VERSION = "repair-input-v0.2"
 RESULT_SCHEMA_VERSION = "repair-preparation-result-v0.1"
 
 REPAIR_MASK_DILATION = 0  # v0.1 contract: no dilation
@@ -237,6 +240,7 @@ def prepare_target(
             )
 
         repair_mask = np.zeros(target_frame_shape, dtype=bool)
+        projected_before_clip = 0
         occluder_entries: list[dict[str, Any]] = []
         for occluder_id in occluder_ids:
             occluder_record = extraction_records.get(occluder_id)
@@ -275,6 +279,7 @@ def prepare_target(
                               f"{occluder_id} does not overlap {target_id} after mapping")
 
             repair_mask |= projected
+            projected_before_clip += int(occluder_mask.sum())
             occluder_entries.append(
                 {
                     "asset_id": occluder_id,
@@ -285,13 +290,18 @@ def prepare_target(
 
         base["occluder_masks"] = occluder_entries
 
-        # Step 4: constrain to the target's own asset region.
-        repair_mask &= target_mask
+        # Step 4 (v0.2 semantics): the repair mask is the union of all
+        # projected occluder masks, clipped only by the target frame
+        # boundary. The target's own segmentation mask is NOT a repair
+        # ownership boundary anymore — an occluder known to cover the
+        # target owns its full projected area inside the target frame.
+        # The target mask is still loaded and size-checked above because
+        # it remains recorded in the repair input metadata.
 
-        # Step 5: binary mask, no dilation / blur (v0.1).
+        # Step 5: binary mask, no dilation / blur.
         if not repair_mask.any():
             return finish("skipped", "empty_repair_mask",
-                          "projected occluder masks do not intersect the target asset mask")
+                          "projected occluder masks are empty after frame clipping")
 
         target_asset_dir = repair_dir / target_id
         target_asset_dir.mkdir(parents=True, exist_ok=True)
@@ -322,6 +332,8 @@ def prepare_target(
                 "repair_ratio_of_target_mask": (
                     float(repair_mask.sum()) / target_mask_pixels if target_mask_pixels else 0.0
                 ),
+                "projected_pixels_before_frame_clip": int(projected_before_clip),
+                "projected_pixels_after_frame_clip": int(repair_mask.sum()),
             }
         )
         return base

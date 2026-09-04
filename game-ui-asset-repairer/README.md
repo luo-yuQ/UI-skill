@@ -53,14 +53,24 @@ Per relation, for `target <- occluders`:
 
    The local frame of any extraction record is `extraction_roi` when present,
    otherwise `final_bbox` (see `repair_geometry.target_frame_from_extraction_record`).
-4. `repair_mask = union(projected occluder masks) AND target_asset_mask` —
-   the target's transparent outside can never become repair area.
+4. `repair_mask = union(projected occluder masks)`, clipped only by the
+   target frame boundary. **Since repair-input v0.2** the target's own
+   segmentation mask is NOT a repair ownership boundary: an occluder known
+   (via the reviewed bbox containment relation) to cover the target owns
+   its full projected area inside the target frame. Rationale: Stage2-B
+   target masks can legitimately exclude occluded regions (e.g. asset_027
+   excludes the potion bottle area), so intersecting with the target mask
+   would drop exactly the pixels that need repair (observed: 1142 → 622 px
+   on asset_027 <- asset_028). The target mask is still loaded, recorded in
+   `target_mask_path`, and size-checked; it is only used for the
+   `repair_ratio_of_target_mask` diagnostic.
 5. `repair-mask.png`: single-channel binary, WHITE = must repair,
-   BLACK = preserve. No soft alpha, no blur, dilation = 0 (v0.1).
+   BLACK = preserve. No soft alpha, no blur, dilation = 0.
 6. `repair-working-image.png`: byte-identical copy of the target RGBA with
    RGB set to pure black (0,0,0) inside the repair mask. The black is a
    missing-content placeholder, not asset content. Stage2-B originals are
-   never overwritten.
+   never overwritten. Alpha behavior is unchanged (the alpha channel is
+   preserved byte-identically, including inside the repair mask).
 
 ## Status / diagnostics
 
@@ -69,6 +79,12 @@ plus an explicit `reason_code` (`target_extraction_result_missing`,
 `occluder_mask_file_missing`, `mask_size_mismatch`,
 `asset_image_size_mismatch`, `invalid_bbox`, `no_coordinate_overlap`,
 `empty_repair_mask`, …). Nothing is silently ignored.
+
+Repair-input diagnostics (v0.2): `repair_pixel_count`,
+`repair_ratio_of_target_mask`, `projected_pixels_before_frame_clip`,
+`projected_pixels_after_frame_clip`. There are no
+`pixels_after_target_intersection` / `pixels_removed_by_target_intersection`
+fields — the target-mask intersection no longer exists.
 
 ## Production vs experiment boundary
 

@@ -1,12 +1,12 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.com/schemas/repair-input.schema.json",
-  "title": "Game UI Asset Repair Input v0.1",
+  "title": "Game UI Asset Repair Input v0.2",
   "type": "object",
   "additionalProperties": false,
   "required": ["schema_version", "status", "reason_code", "target_asset_id", "occluder_asset_ids", "target_bbox_source", "target_frame", "occluder_masks", "repair_mask_path", "repair_working_image_path", "repair_pixel_count", "repair_ratio_of_target_mask"],
   "properties": {
-    "schema_version": {"const": "repair-input-v0.1"},
+    "schema_version": {"const": "repair-input-v0.2"},
     "status": {"enum": ["success", "skipped", "failed"]},
     "reason_code": {
       "anyOf": [
@@ -68,7 +68,9 @@
     "repair_mask_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
     "repair_working_image_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
     "repair_pixel_count": {"type": "integer", "minimum": 0},
-    "repair_ratio_of_target_mask": {"type": "number", "minimum": 0}
+    "repair_ratio_of_target_mask": {"type": "number", "minimum": 0},
+    "projected_pixels_before_frame_clip": {"type": "integer", "minimum": 0},
+    "projected_pixels_after_frame_clip": {"type": "integer", "minimum": 0}
   },
   "$defs": {
     "bbox_or_null": {
