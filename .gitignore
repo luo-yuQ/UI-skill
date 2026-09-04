@@ -8,3 +8,6 @@ runs/**
 # Python cache
 __pycache__/
 /EXPERIMENT_LOG.md
+
+# SAM checkpoints and local model weights
+/models/

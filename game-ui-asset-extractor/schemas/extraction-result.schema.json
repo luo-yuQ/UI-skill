@@ -15,7 +15,7 @@
         {"type": "null"}
       ]
     },
-    "backend": {"const": "pillow"},
+    "backend": {"enum": ["pillow", "sam1_vit_b"]},
     "config": {"$ref": "#/$defs/config"},
     "assets": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/result"}}
   },
@@ -54,13 +54,16 @@
       "additionalProperties": false,
       "required": ["backend", "roi_padding", "background_min_pixels", "mask_threshold", "morphology_radius", "alpha_dilation_radius", "alpha_blur_radius"],
       "properties": {
-        "backend": {"const": "pillow"},
+        "backend": {"enum": ["pillow", "sam1_vit_b"]},
         "roi_padding": {"type": "integer", "minimum": 0},
         "background_min_pixels": {"type": "integer", "minimum": 1},
         "mask_threshold": {"type": "number", "minimum": 0},
         "morphology_radius": {"type": "integer", "minimum": 0},
         "alpha_dilation_radius": {"type": "integer", "minimum": 0},
-        "alpha_blur_radius": {"type": "number", "minimum": 0}
+        "alpha_blur_radius": {"type": "number", "minimum": 0},
+        "sam_model_type": {"const": "vit_b"},
+        "sam_checkpoint": {"type": "string", "minLength": 1},
+        "device": {"enum": ["auto", "cuda", "cpu"]}
       }
     },
     "result": {
@@ -80,7 +83,7 @@
         "background_method": {"anyOf": [{"enum": ["context_ring_median", "roi_border_median_fallback", "global_border_median_fallback"]}, {"type": "null"}]},
         "background_rgb": {"anyOf": [{"type": "array", "prefixItems": [{"type": "integer", "minimum": 0, "maximum": 255}, {"type": "integer", "minimum": 0, "maximum": 255}, {"type": "integer", "minimum": 0, "maximum": 255}], "items": false}, {"type": "null"}]},
         "background_parameters": {"type": "object"},
-        "mask_method": {"anyOf": [{"const": "color_distance_v0"}, {"type": "null"}]},
+        "mask_method": {"anyOf": [{"enum": ["color_distance_v0", "sam1_box_v0"]}, {"type": "null"}]},
         "mask_threshold": {"anyOf": [{"type": "number", "minimum": 0}, {"type": "null"}]},
         "mask_parameters": {"type": "object"},
         "alpha_parameters": {"type": "object"},

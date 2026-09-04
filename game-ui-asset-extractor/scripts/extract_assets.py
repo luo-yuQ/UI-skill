@@ -1,5 +1,13 @@
 #!/usr/bin/env python3
-"""Deterministic Stage2-B direct crop and foreground extraction."""
+"""Deterministic Stage2-B direct crop and foreground extraction.
+
+Backends:
+- ``pillow`` (legacy, unchanged): context-ring background + color-distance
+  foreground mask with close/open morphology and soft alpha.
+- ``sam1_vit_b`` (frozen v0.1): SAM1 ViT-B box-only segmentation with
+  max-SAM-score winner selection and deterministic mask postprocess. See
+  ``sam_backend.py`` and README "SAM v0.1 baseline".
+"""
 
 from __future__ import annotations
 
@@ -13,6 +21,8 @@ from typing import Any
 import numpy as np
 from jsonschema import Draft202012Validator
 from PIL import Image, ImageFilter, UnidentifiedImageError
+
+import sam_backend
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -29,6 +39,14 @@ DEFAULT_CONFIG: dict[str, Any] = {
     "morphology_radius": 1,
     "alpha_dilation_radius": 1,
     "alpha_blur_radius": 1.0,
+}
+
+# Only merged into the effective config when backend == "sam1_vit_b", so
+# legacy pillow results keep their exact previous config shape.
+SAM_DEFAULT_CONFIG: dict[str, Any] = {
+    "sam_model_type": sam_backend.SAM_MODEL_TYPE,
+    "sam_checkpoint": None,
+    "device": "auto",
 }
 
 
@@ -71,6 +89,9 @@ def validate_result(result: Any) -> list[str]:
 def effective_config(request: dict[str, Any]) -> dict[str, Any]:
     config = dict(DEFAULT_CONFIG)
     config.update(request.get("config", {}))
+    if config["backend"] == sam_backend.SAM_BACKEND_ID:
+        for key, value in SAM_DEFAULT_CONFIG.items():
+            config.setdefault(key, value)
     return config
 
 
@@ -285,6 +306,20 @@ def _base_record(
     config: dict[str, Any],
 ) -> dict[str, Any]:
     foreground = asset["extraction_mode"] == "foreground_extract"
+    sam = foreground and config["backend"] == sam_backend.SAM_BACKEND_ID
+    if not foreground:
+        mask_method: Any = None
+        mask_parameters: dict[str, Any] = {}
+    elif sam:
+        mask_method = sam_backend.SAM_MASK_METHOD
+        mask_parameters = {}
+    else:
+        mask_method = "color_distance_v0"
+        mask_parameters = {
+            "close_radius": config["morphology_radius"],
+            "open_radius": config["morphology_radius"],
+            "foreground_constraint": "final_bbox_core",
+        }
     return {
         "asset_id": asset["asset_id"],
         "asset_type": asset["asset_type"],
@@ -298,31 +333,32 @@ def _base_record(
         "background_method": None,
         "background_rgb": None,
         "background_parameters": {},
-        "mask_method": "color_distance_v0" if foreground else None,
-        "mask_threshold": config["mask_threshold"] if foreground else None,
-        "mask_parameters": (
-            {
-                "close_radius": config["morphology_radius"],
-                "open_radius": config["morphology_radius"],
-                "foreground_constraint": "final_bbox_core",
-            }
-            if foreground
-            else {}
-        ),
+        "mask_method": mask_method,
+        "mask_threshold": None if (sam or not foreground) else config["mask_threshold"],
+        "mask_parameters": mask_parameters,
         "alpha_parameters": (
             {
-                "dilation_radius": config["alpha_dilation_radius"],
-                "gaussian_blur_radius": config["alpha_blur_radius"],
+                "dilation_radius": 0,
+                "gaussian_blur_radius": 0.0,
                 "source_alpha_rule": "multiply",
                 "alpha_representation": "straight",
             }
-            if foreground
-            else {
-                "dilation_radius": 0,
-                "gaussian_blur_radius": 0.0,
-                "source_alpha_rule": "preserve",
-                "alpha_representation": "straight",
-            }
+            if sam
+            else (
+                {
+                    "dilation_radius": config["alpha_dilation_radius"],
+                    "gaussian_blur_radius": config["alpha_blur_radius"],
+                    "source_alpha_rule": "multiply",
+                    "alpha_representation": "straight",
+                }
+                if foreground
+                else {
+                    "dilation_radius": 0,
+                    "gaussian_blur_radius": 0.0,
+                    "source_alpha_rule": "preserve",
+                    "alpha_representation": "straight",
+                }
+            )
         ),
         "output_path": None,
         "mask_path": None,
@@ -340,16 +376,116 @@ def _failure_record(
     return record
 
 
+def _extract_one_sam(
+    source_rgba: np.ndarray,
+    source_image: str,
+    asset: dict[str, Any],
+    config: dict[str, Any],
+    output_dir: Path,
+    context: dict[str, Any],
+) -> dict[str, Any]:
+    """Frozen v0.1 SAM path: box-only prompt over the encoded full source.
+
+    ``context`` carries the shared predictor (encoded once per request) plus
+    its load metadata. The bbox is the reviewed ``final_bbox`` in
+    source-image pixel coordinates.
+    """
+
+    image_height, image_width = source_rgba.shape[:2]
+    image_size = (image_width, image_height)
+    final_bbox = deepcopy(asset["final_bbox"])
+    if final_bbox["width"] <= 0 or final_bbox["height"] <= 0:
+        raise ExtractionError("final_bbox width/height must be > 0")
+    if not bbox_is_in_bounds(final_bbox, image_size):
+        raise ExtractionError("final_bbox is outside source-image bounds")
+
+    record = _base_record(asset, source_image, config)
+    output_relative = Path("assets") / f"{asset['asset_id']}.png"
+    output_path = output_dir / output_relative
+
+    predictor = context["predictor"]
+    box_xyxy = bbox_edges(final_bbox)
+    masks, scores = sam_backend.predict_box(predictor, box_xyxy)
+    candidate_count = int(masks.shape[0])
+    if candidate_count == 0:
+        raise ExtractionError("SAM returned no candidates for the bbox prompt", record)
+
+    winner_index = sam_backend.select_winner(scores)
+    winner_mask = masks[winner_index]
+    filtered_mask, post_stats = sam_backend.postprocess_sam_mask(winner_mask)
+    if not filtered_mask.any():
+        raise ExtractionError("SAM winner mask is empty after postprocess", record)
+
+    roi, offset = build_extraction_roi(final_bbox, image_size, config["roi_padding"])
+    roi_x1, roi_y1, roi_x2, roi_y2 = bbox_edges(roi)
+    roi_rgba = source_rgba[roi_y1:roi_y2, roi_x1:roi_x2].copy()
+    mask_roi = filtered_mask[roi_y1:roi_y2, roi_x1:roi_x2]
+    if roi_rgba.size == 0 or mask_roi.size == 0:
+        raise ExtractionError("extraction ROI is empty", record)
+
+    rgba = compose_rgba(roi_rgba, mask_roi.astype(np.uint8) * 255)
+    if not rgba[:, :, 3].any():
+        raise ExtractionError("composed alpha is empty", record)
+
+    sam_info = context["info"]
+    record.update(
+        {
+            "extraction_roi": roi,
+            "final_bbox_offset": offset,
+            "mask_parameters": {
+                "model": sam_info["model"],
+                "model_type": sam_info["model_type"],
+                "prompt": sam_backend.PROMPT,
+                "device_requested": sam_info["requested_device"],
+                "device": sam_info["device"],
+                "device_fallback": sam_info["device_fallback"],
+                "candidate_count": candidate_count,
+                "candidates": sam_backend.build_candidates_metadata(masks, scores),
+                "winner_index": winner_index,
+                "winner_sam_score": float(scores[winner_index]),
+                "winner_selection": "max_sam_score",
+                "postprocess": {
+                    "close_kernel": sam_backend.CLOSE_KERNEL,
+                    "close_iterations": sam_backend.CLOSE_ITERATIONS,
+                    "connectivity": sam_backend.CONNECTIVITY,
+                    "relative_component_threshold": sam_backend.RELATIVE_COMPONENT_THRESHOLD,
+                },
+                "mask_area": post_stats["pixels"]["after_filter"],
+                "component_count": post_stats["connected_components"]["component_count"],
+                "kept_component_count": post_stats["connected_components"]["kept_component_count"],
+                "removed_component_count": post_stats["connected_components"]["removed_component_count"],
+                "removed_components": post_stats["connected_components"]["removed_components"],
+            },
+        }
+    )
+
+    mask_relative = Path("masks") / f"{asset['asset_id']}_mask.png"
+    mask_path = output_dir / mask_relative
+    _save_png(mask_roi.astype(np.uint8) * 255, mask_path, "L")
+    _save_png(rgba, output_path, "RGBA")
+    record.update(
+        {
+            "status": "success",
+            "output_path": output_relative.as_posix(),
+            "mask_path": mask_relative.as_posix(),
+        }
+    )
+    return record
+
+
 def extract_one(
     source_rgba: np.ndarray,
     source_image: str,
     asset: dict[str, Any],
     config: dict[str, Any],
     output_dir: Path,
+    sam_context: dict[str, Any] | None = None,
 ) -> dict[str, Any]:
     image_height, image_width = source_rgba.shape[:2]
     image_size = (image_width, image_height)
     final_bbox = deepcopy(asset["final_bbox"])
+    if final_bbox["width"] <= 0 or final_bbox["height"] <= 0:
+        raise ExtractionError("final_bbox width/height must be > 0")
     if not bbox_is_in_bounds(final_bbox, image_size):
         raise ExtractionError("final_bbox is outside source-image bounds")
 
@@ -372,6 +508,21 @@ def extract_one(
             }
         )
         return record
+
+    if config["backend"] == sam_backend.SAM_BACKEND_ID:
+        if sam_context is None:
+            raise RuntimeError(
+                "sam1_vit_b backend requires an encoded SAM context; call "
+                "execute_request or prepare it via sam_backend.load_sam_predictor"
+            )
+        return _extract_one_sam(
+            source_rgba,
+            source_image,
+            asset,
+            config,
+            output_dir,
+            sam_context,
+        )
 
     roi, offset = build_extraction_roi(
         final_bbox,
@@ -472,6 +623,18 @@ def execute_request(
     except (FileNotFoundError, OSError, UnidentifiedImageError) as exc:
         load_failure = str(exc)
 
+    sam_context: dict[str, Any] | None = None
+    if load_failure is None and config["backend"] == sam_backend.SAM_BACKEND_ID:
+        # Load the predictor and encode the full source image exactly once.
+        # Per-asset failures never fall back to another segmentation method.
+        predictor, sam_info = sam_backend.load_sam_predictor(
+            config["sam_model_type"],
+            config["sam_checkpoint"],
+            config["device"],
+        )
+        sam_backend.encode_source(predictor, source_rgba)
+        sam_context = {"predictor": predictor, "info": sam_info}
+
     results: list[dict[str, Any]] = []
     for asset in request["assets"]:
         if load_failure is not None or source_rgba is None:
@@ -485,6 +648,7 @@ def execute_request(
                     asset,
                     config,
                     output_dir,
+                    sam_context=sam_context,
                 )
             )
         except ExtractionError as exc:
@@ -505,7 +669,7 @@ def execute_request(
         "status": "success" if all(result["status"] == "success" for result in results) else "failed",
         "source_image": source_text,
         "source_size": source_size,
-        "backend": BACKEND,
+        "backend": config["backend"],
         "config": config,
         "assets": results,
     }
@@ -527,7 +691,46 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument("--request", required=True, help="Path to extraction request JSON")
     parser.add_argument("--output-dir", required=True, help="Output directory")
+    parser.add_argument(
+        "--backend",
+        choices=[BACKEND, sam_backend.SAM_BACKEND_ID],
+        default=None,
+        help="Extraction backend; overrides config.backend",
+    )
+    parser.add_argument(
+        "--sam-checkpoint",
+        default=None,
+        help="Path to the SAM ViT-B checkpoint (required for the sam1_vit_b backend; never auto-downloaded)",
+    )
+    parser.add_argument(
+        "--sam-model-type",
+        choices=[sam_backend.SAM_MODEL_TYPE],
+        default=None,
+        help="SAM model type; frozen v0.1 supports vit_b only",
+    )
+    parser.add_argument(
+        "--device",
+        choices=["auto", "cuda", "cpu"],
+        default=None,
+        help="Torch device for SAM (auto falls back to CPU when CUDA is unavailable)",
+    )
     return parser.parse_args(argv)
+
+
+def apply_cli_overrides(request: dict[str, Any], args: argparse.Namespace) -> dict[str, Any]:
+    """Apply CLI backend options on top of the request config (CLI wins)."""
+
+    overrides = {
+        "backend": args.backend,
+        "sam_checkpoint": args.sam_checkpoint,
+        "sam_model_type": args.sam_model_type,
+        "device": args.device,
+    }
+    config = request.setdefault("config", {})
+    for key, value in overrides.items():
+        if value is not None:
+            config[key] = value
+    return request
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -535,6 +738,7 @@ def main(argv: list[str] | None = None) -> int:
     request_path = Path(args.request)
     try:
         request = load_json(request_path)
+        apply_cli_overrides(request, args)
         result = execute_request(
             request,
             Path(args.output_dir),
