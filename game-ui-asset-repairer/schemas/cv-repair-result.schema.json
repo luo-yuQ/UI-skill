@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/cv-repair-result.schema.json",
+  "title": "Stage2-C Traditional CV Repair Result v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "status",
+    "reason_code",
+    "target_asset_id",
+    "occluder_asset_ids",
+    "target_size",
+    "repair_mask_original_pixels",
+    "repair_mask_effective_pixels",
+    "dilation_mode",
+    "repair_method",
+    "surface_fit_method",
+    "alpha_repair_method",
+    "mask_inside_rgb_changed",
+    "mask_outside_rgb_changed",
+    "mask_inside_alpha_changed",
+    "mask_outside_alpha_changed"
+  ],
+  "properties": {
+    "schema_version": {"const": "cv-repair-result-v0.1"},
+    "status": {"enum": ["success", "failed", "skipped"]},
+    "reason_code": {"type": ["string", "null"]},
+    "message": {"type": ["string", "null"]},
+    "target_asset_id": {"type": "string"},
+    "occluder_asset_ids": {"type": "array", "items": {"type": "string"}},
+    "input_target_path": {"type": ["string", "null"]},
+    "input_repair_mask_path": {"type": ["string", "null"]},
+    "output_path": {"type": ["string", "null"]},
+    "target_size": {
+      "type": "object",
+      "properties": {
+        "width": {"type": "integer"},
+        "height": {"type": "integer"}
+      }
+    },
+    "repair_mask_original_pixels": {"type": "integer", "minimum": 0},
+    "repair_mask_effective_pixels": {"type": "integer", "minimum": 0},
+    "dilation_mode": {"enum": ["ratio", "fixed_override", "disabled", null]},
+    "repair_mask_dilation_ratio": {"type": ["number", "null"]},
+    "repair_mask_dilation_min_px": {"type": ["integer", "null"]},
+    "repair_mask_dilation_max_px": {"type": ["integer", "null"]},
+    "per_occluder_dilation": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": ["asset_id", "bbox_size", "min_dimension", "computed_radius_px", "effective_radius_px"],
+        "properties": {
+          "asset_id": {"type": "string"},
+          "bbox_size": {
+            "type": "object",
+            "properties": {
+              "width": {"type": "integer"},
+              "height": {"type": "integer"}
+            }
+          },
+          "min_dimension": {"type": "integer"},
+          "computed_radius_px": {"type": "integer"},
+          "effective_radius_px": {"type": "integer"}
+        }
+      }
+    },
+    "repair_method": {"type": ["string", "null"]},
+    "surface_fit_method": {"type": ["string", "null"]},
+    "sampling_parameters": {"type": ["object", "null"]},
+    "alpha_repair_method": {"type": ["string", "null"]},
+    "sampling_alpha_zero_count": {"type": "integer"},
+    "sampling_alpha_partial_count": {"type": "integer"},
+    "sampling_alpha_opaque_count": {"type": "integer"},
+    "mask_inside_rgb_changed": {"type": "integer", "minimum": 0},
+    "mask_outside_rgb_changed": {"const": 0},
+    "mask_inside_alpha_changed": {"type": "integer", "minimum": 0},
+    "mask_outside_alpha_changed": {"const": 0},
+    "diagnostic_outputs": {"type": "array"}
+  }
+}

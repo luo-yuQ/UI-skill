@@ -120,3 +120,40 @@ python -m pytest tests/ -q
 ```
 
 22 deterministic tests; no SAM checkpoint, no torch, no network.
+
+## Traditional CV Repair v0.1 (FROZEN, 2026-09-07)
+
+`repair_asset_cv.py` — Stage2-C production CV repair for smooth /
+low-complexity UI surfaces. Deterministic end to end: no cv2.inpaint
+(TELEA/NS banned — they smear border colors into the hole), no Image2,
+no VLM, no SAM rerun.
+
+```
+python repair_asset_cv.py \
+  --repair-input <repair-input.json> \
+  --output-dir <output-dir>
+# optional: --dilation-ratio 0.05 | --dilation-px N (fixed override)
+#           --disable-dilation (test mode) | --debug (diagnostic previews)
+```
+
+- Input: existing `repair-input.json` only (never re-infers bboxes/masks,
+  never re-runs upstream stages).
+- Safety dilation (Stage2-C only, Stage2-B masks untouched):
+  `radius = clamp(round(min(occ_w, occ_h) * 0.05), 1, 6)` per occluder,
+  dilate each projected occluder mask separately, then union.
+- RGB: per-channel linear surface fit (`a + b*x + c*y`) with robust
+  IRLS-Huber on a guard-filtered opaque sampling ring (ring 8px, guard
+  45 RGB distance).
+- Alpha: deterministic ring consensus (>=98% opaque -> 255; >=98% zero
+  -> 0; else nearest reliable pixel).
+- Write rule: only pixels inside the effective mask change; everything
+  outside is byte-identical (hard-asserted, `mask_outside_*_changed == 0`).
+- Output: `repaired.png`, `repair-mask-effective.png`, `result.json`
+  (schema `cv-repair-result-v0.1`, see `schemas/cv-repair-result.schema.json`);
+  `--debug` adds `sampling-preview.png` (diagnostic only).
+
+Suitability for CV vs other backends is the future Repair Router's
+decision, not this module's.
+
+Tests: `python -m pytest tests/ -q` (39 total, incl. 17 CV-repair
+property tests).
