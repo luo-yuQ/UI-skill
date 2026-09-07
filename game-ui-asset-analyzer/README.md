@@ -191,3 +191,96 @@ runs/<run-id>/
 ```powershell
 python -m pytest -q
 ```
+
+## Direct Asset Discovery production chain (Phase 4, frozen v0.1)
+
+The Stage0 experiments that already carried production responsibility were
+promoted into `scripts/` in Phase 4 (branch
+`feature/direct-asset-discovery-production`). The chain produces
+`reviewed-direct-assets.json`, the formal upstream input of Stage2-B
+(extraction) and Stage2-C (repair):
+
+```text
+Clean UI (Stage0 text-cleaner output)
+  |
+  v
+direct_asset_discovery.py          (A1: VLM census, Chat Completions)
+  |
+  |-- direct-assets.json           (immutable VLM output, never edited)
+  |-- overlay-analysis.png / overlay-source.png
+  |-- raw-response.json            (provider envelope evidence)
+  v
+asset_admission.py                 (A2: VLM KEEP/DROP gate)
+  |
+  |-- admission-decisions.json / accepted-assets.json
+  v
+Human Review (review UI)
+  |
+  |-- review-overrides.json        (human corrections; separate file)
+  v
+apply_direct_asset_review.py       (deterministic, no VLM)
+  |
+  |-- reviewed-direct-assets.json  (direct-assets-reviewed-v0.1)
+  v
+Stage2-B game-ui-asset-extractor   (extraction-request.json, final_bbox)
+Stage2-C game-ui-asset-repairer    (build_repair_relations.py,
+                                    prepare_repair_inputs.py; bbox_source
+                                    authoritative)
+Stage2-E recomposition             (ui_recompose_poc.py; bbox_source
+                                    authoritative)
+```
+
+### Contracts
+
+- **direct-assets.json** (`0.1`, immutable): VLM census output. Assets carry
+  `bbox_analysis` (analysis-image pixels) plus a deterministic `bbox_source`
+  mapping to source pixels. Human review never edits this file.
+- **review-overrides.json** (`direct-asset-review-overrides-v0.1`): all human
+  corrections live here — per-asset `bbox` / `decision` overrides plus
+  `manual_assets` additions. Validated fail-fast; bbox scaling is forbidden
+  (`image_size` must match `source_image_size` exactly).
+- **reviewed-direct-assets.json** (`direct-assets-reviewed-v0.1`): produced
+  only by the deterministic `apply_direct_asset_review.py` from the two files
+  above. Records provenance (`source_assets_json`, `review_overrides_json`)
+  and a `review_summary`. `bbox_source` is authoritative for all downstream
+  consumers (Stage2-C `build_repair_relations.py`, `prepare_repair_inputs.py`,
+  Stage2-E recomposition).
+
+JSON Schemas: `schemas/direct-assets.schema.json`,
+`schemas/direct-asset-review-overrides.schema.json`,
+`schemas/reviewed-direct-assets.schema.json` (all validated against the
+frozen golden run `runs/20260902_direct-asset-discovery-007-production-client/`).
+
+### VLM client
+
+Discovery and admission use the Chat Completions production contract via
+`scripts/chat_completions_client.py` (`thinking` omitted, API-level strict
+JSON Schema, `max_tokens=12000`, Transport Retry v0.1). The frozen Responses
+API client `scripts/vlm_client.py` is unchanged and remains the client of the
+recursive runtime.
+
+### Promoted in Phase 4 (from `experiments/`, Stage0 branch)
+
+- `direct_asset_discovery_probe.py` -> `scripts/direct_asset_discovery.py`
+- `asset_admission_probe.py` -> `scripts/asset_admission.py`
+- `apply_direct_asset_review.py` -> `scripts/apply_direct_asset_review.py`
+- `tests/test_direct_asset_discovery_probe.py` ->
+  `tests/test_direct_asset_discovery.py`
+- `tests/test_asset_admission_probe.py` -> `tests/test_asset_admission.py`
+- New: `tests/test_apply_direct_asset_review.py`
+
+### Deliberately not promoted (ARCHIVE_ONLY)
+
+- `direct_asset_discovery_dual_image_probe.py` — dual-image experiment,
+  superseded by the single clean-image contract.
+- `direct_asset_probe.py` — early probe, superseded by
+  `direct_asset_discovery.py`.
+- `glm_*_probe.py` — response-format probes; knowledge already frozen into
+  the Chat Completions client.
+- `direct_asset_review_ui.py` — legacy review UI; its `review-overrides.json`
+  contract is frozen and reused, but the UI itself stays in archive (the
+  Stage2-F `layout_editor.py` serves a different, later stage).
+- `extract_reviewed_direct_assets.py` — legacy raw crop; Stage2-B
+  `extract_assets.py` fully covers the extraction contract (`final_bbox` in
+  `extraction-request.json`), and the golden-run `reviewed-raw-assets/`
+  directory has no downstream consumer.

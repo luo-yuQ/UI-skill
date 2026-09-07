@@ -1,0 +1,73 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "direct-asset-review-overrides.schema.json",
+  "title": "Direct Asset Human Review Overrides (direct-asset-review-overrides-v0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_assets_json",
+    "image_size",
+    "overrides",
+    "manual_assets"
+  ],
+  "properties": {
+    "schema_version": {"const": "direct-asset-review-overrides-v0.1"},
+    "source_assets_json": {
+      "type": "string",
+      "description": "Basename of the immutable direct-assets.json this file reviews."
+    },
+    "image_size": {"$ref": "#/$defs/image_size"},
+    "overrides": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/override"},
+      "propertyNames": {"type": "string", "minLength": 1}
+    },
+    "manual_assets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/manual_asset"}
+    },
+    "saved_at": {"type": "string"}
+  },
+  "$defs": {
+    "image_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "override": {
+      "type": "object",
+      "additionalProperties": false,
+      "minProperties": 1,
+      "properties": {
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "decision": {"enum": ["KEEP", "DROP"]}
+      }
+    },
+    "manual_asset": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["asset_ref", "bbox"],
+      "properties": {
+        "asset_ref": {"type": "string", "minLength": 1},
+        "bbox": {"$ref": "#/$defs/bbox"},
+        "decision": {"enum": ["KEEP", "DROP"]}
+      }
+    }
+  }
+}

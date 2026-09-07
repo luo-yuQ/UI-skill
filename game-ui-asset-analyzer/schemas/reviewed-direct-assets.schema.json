@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "reviewed-direct-assets.schema.json",
+  "title": "Reviewed Direct Assets (direct-assets-reviewed-v0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_direct_assets_schema_version",
+    "source_assets_json",
+    "review_overrides_json",
+    "source_image",
+    "source_image_size",
+    "analysis_image",
+    "analysis_image_size",
+    "assets",
+    "review_summary"
+  ],
+  "properties": {
+    "schema_version": {"const": "direct-assets-reviewed-v0.1"},
+    "source_direct_assets_schema_version": {"type": "string"},
+    "source_assets_json": {"type": "string"},
+    "review_overrides_json": {"type": "string"},
+    "source_image": {"type": "string"},
+    "source_image_size": {"$ref": "#/$defs/image_size"},
+    "analysis_image": {"type": "string"},
+    "analysis_image_size": {"$ref": "#/$defs/image_size"},
+    "assets": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/asset"}
+    },
+    "review_summary": {"$ref": "#/$defs/review_summary"}
+  },
+  "$defs": {
+    "image_size": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "height"],
+      "properties": {
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "asset": {
+      "type": "object",
+      "required": ["id", "bbox_source"],
+      "properties": {
+        "id": {"type": "string", "minLength": 1},
+        "label": {"type": "string"},
+        "taxonomy": {"type": "string"},
+        "bbox_analysis": {"$ref": "#/$defs/bbox"},
+        "bbox_source": {"$ref": "#/$defs/bbox"},
+        "partial": {"type": "boolean"},
+        "confidence": {"type": "number", "minimum": 0, "maximum": 1},
+        "review": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["status"],
+          "properties": {
+            "status": {
+              "enum": [
+                "bbox_modified",
+                "bbox_modified_and_kept",
+                "explicit_keep"
+              ]
+            },
+            "original_bbox_source": {"$ref": "#/$defs/bbox"}
+          }
+        },
+        "review_origin": {"const": "manual"}
+      }
+    },
+    "review_summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "original_asset_count",
+        "bbox_modified_count",
+        "explicit_keep_count",
+        "dropped_count",
+        "manual_kept_count",
+        "manual_dropped_count",
+        "final_asset_count",
+        "dropped_asset_ids",
+        "manual_dropped_asset_ids"
+      ],
+      "properties": {
+        "original_asset_count": {"type": "integer", "minimum": 0},
+        "bbox_modified_count": {"type": "integer", "minimum": 0},
+        "explicit_keep_count": {"type": "integer", "minimum": 0},
+        "dropped_count": {"type": "integer", "minimum": 0},
+        "manual_kept_count": {"type": "integer", "minimum": 0},
+        "manual_dropped_count": {"type": "integer", "minimum": 0},
+        "final_asset_count": {"type": "integer", "minimum": 0},
+        "dropped_asset_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        },
+        "manual_dropped_asset_ids": {
+          "type": "array",
+          "items": {"type": "string"}
+        }
+      }
+    }
+  }
+}
