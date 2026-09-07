@@ -1,13 +1,11 @@
 # game-ui-text-cleaner
 
-Stage0 确定性文字清理核心（Phase 1 选择性迁移自 `stage0/ui-generation-foundation`）。
-
-本模块只做**确定性、纯本地**的文字提取与清理，不依赖任何 VLM API、图像生成 API 或网络访问。
+Stage0 确定性文字清理核心（Phase 1 选择性迁移自 `stage0/ui-generation-foundation`）+ VLM 文字区域二次定位（Phase 2 选择性迁移）。
 
 ## 职责边界
 
-- **属于本模块**：OCR 文字提取（RapidOCR 本地推理）、raw 文字 mask 生成、Telea 局部 inpaint 清理（确定性 OpenCV 本地算子）、alpha 挖洞图生成。
-- **不属于本模块**：VLM 区域审计（`ui_vlm_text_auditor`）、修复规划（`ui_text_repair_planner`）、Image2 / ToAPIs 生成链、Stage2-A/B/C 提取与修复。这些留在 Stage0 历史分支或由各自模块负责。
+- **属于本模块**：OCR 文字提取（RapidOCR 本地推理）、raw 文字 mask 生成、Telea 局部 inpaint 清理（确定性 OpenCV 本地算子）、VLM 文字区域语义二次定位（region plan + mask + overlay）、alpha 挖洞图生成。
+- **不属于本模块**：VLM 区域审计（`ui_vlm_text_auditor`，ARCHIVE_ONLY）、修复规划（`ui_text_repair_planner`）、Image2 / ToAPIs 生成链（Phase 3）、Stage2-A/B/C 提取与修复。这些留在 Stage0 历史分支或由各自模块负责。
 
 ## 模块结构
 
@@ -17,15 +15,31 @@ game-ui-text-cleaner/
 ├── scripts/
 │   ├── ui_text_models.py        # Pydantic v2 契约（Rect / TextItem / TextExtractionResult）
 │   ├── ui_text_extractor.py     # OCR 提取 + mask + Telea 清理
+│   ├── ui_vlm_region_mask.py    # VLM 文字区域二次定位（转正自 ui_vlm_region_mask_poc.py）
 │   └── ui_text_alpha_hole.py    # 按区域规划图挖 alpha 洞（独立，无内部依赖）
 └── tests/
     ├── test_ui_text_extractor.py
+    ├── test_ui_vlm_region_mask.py
     └── test_ui_text_alpha_hole.py
 ```
 
-依赖闭包：`ui_text_extractor → ui_text_models`（同目录 sibling import）；`ui_text_alpha_hole →`（无）。
+依赖闭包：`ui_text_extractor → ui_text_models`；`ui_vlm_region_mask → ui_text_models + game-ui-asset-analyzer/scripts/{prepare_analysis_input, vlm_client}`（复用 main 现存 VLM 基础设施，`vlm_client.py` 零修改）；`ui_text_alpha_hole →`（无）。
 
 ## 生产链契约
+
+```
+Raw UI
+↓
+ui_text_extractor（OCR）
+↓
+texts.json
+↓
+ui_vlm_region_mask（VLM 区域二次定位）
+↓
+vlm-region-plan.json
+region-mask.png
+region-mask-overlay.png
+```
 
 ### 1. 文字提取与清理 — `ui_text_extractor.py`
 
@@ -57,16 +71,42 @@ game-ui-text-cleaner/
 
 **依赖**：仅 opencv-python、numpy。
 
+### 3. VLM 文字区域二次定位 — `ui_vlm_region_mask.py`（Phase 2）
+
+以 Stage A OCR 结果为**非权威提示**，用一次 canonical VLM 调用产出最终文字区域列表；VLM 矩形是 mask 唯一权威，OCR box 不被直接复用，且全程不调用 `cv2.inpaint`。
+
+**输入**：
+- `--image`：源截图（png/jpg/jpeg/webp）
+- `--texts-json`：Phase 1 产出的 `texts.json`（list 或含 `items` 的 envelope；`image_width/height` 需与源图一致，fail-fast）
+- `--output-dir`：输出目录（必填）
+- `--model`：VLM 模型名（默认 `gpt-5.6-terra`）
+- `--padding-px`：UI-owned 框外扩像素（默认 0）
+- 环境：`OPENAI_BASE_URL` / `OPENAI_API_KEY`（备选 `STAGE2A_VLM_*`），仅真实运行需要；单测全部走 fake client，零网络
+
+**输出**：
+- `vlm-region-plan.json` — 每项含 `text / bbox_analysis / bbox_source / ownership / semantic_role / decision / confidence`，以及 `schema_version`、`source_image_size`、`analysis_image_size`、`padding_px`
+- `region-mask.png` — 灰度 mask，仅 `ui_owned` 框置 255（含 padding），`asset_owned` 不进 mask
+- `region-mask-overlay.png` — 源图上 mask 区域红色半透明叠加（55/45 addWeighted）
+
+**职责分工**：
+- **VLM**：文字区域语义二次定位（确认/纠正/补充/剔除 OCR 候选，判定 ui_owned / asset_owned 与 semantic_role）
+- **工程代码**：分析图生成（复用 `prepare_analysis_input`，max_width=1024 force_width）、source↔analysis 确定性坐标映射（floor/ceil 边界 + clamp）、mask rasterization、overlay rendering、JSON 输出、schema 严格校验（严格重试 1 次）
+
+**坐标契约（冻结，Step 5）**：VLM bbox 属于**声明的 analysis-image 坐标空间**（1024 宽分析图像素），不是 source 像素；`bbox_analysis → bbox_source` 是确定性工程变换（floor/ceil + clamp），不推断 provider 内部 resize 行为。source→analysis 方向的 OCR hint 映射同样确定性。验收锚点：128×64 源图 → 1024×512 分析图，VLM 框 `(320,80,160,40)` 必须映射为 source `(40,10,20,5)`。
+
+**VLM Client 兼容性（Step 1/2 审计结论）**：本文件只 import main 已有的 `VLMClientConfig`、`VLMResponseParseError`、`encode_image_as_data_url`（来自 `game-ui-asset-analyzer/scripts/vlm_client.py`）与 `prepare_analysis_input`；`ChatCompletionsSchemaVLMClient` 为本文件自带实现（Chat Completions + API 级 JSON Schema，诊断输出 + api_key 脱敏），**不需要** `ChatCompletionsVLMClient`，`vlm_client.py` 零修改。
+
 ## 测试
 
 ```bash
 pytest game-ui-text-cleaner/tests -q
 ```
 
-测试通过 `ocr_engine` 注入假 OCR 输出，不下载模型、不访问网络。当前 28 项全部通过。
+测试通过 `ocr_engine` 注入假 OCR 输出、fake VLM client / fake HTTP session 注入假响应，**零真实 HTTP、零真实 VLM API、零 API key 依赖**。当前 Phase 1 28 项 + Phase 2 region-mask 14 项全部通过。
 
 ## 来源与迁移说明
 
-- 源：`stage0/ui-generation-foundation` 分支 `game-ui-asset-extractor/scripts|tests/`，算法逐字节原样迁移（git show 提取，行数一致），未做任何算法改写。
-- 唯一适配：新模块目录布局（tests 的 `parents[1]/scripts` sys.path 模式在新结构下原样成立）。
-- 明确未迁移（按 Phase 1 禁迁清单）：`ui_vlm_region_mask_poc.py`、`ui_image_clean_repair_poc.py`、`ui_vlm_text_auditor.py`、`ui_text_repair_planner.py`、`ui_vlm_planner.py`、`ui_audit_models.py`、`ui_plan_models.py`、`image2_clean_pair_poc.py`、`prepare_image2_working_images.py`、`vlm_client.py`。
+- 源：`stage0/ui-generation-foundation` 分支 `game-ui-asset-extractor/scripts|tests/`，算法逐字节原样迁移（git show 提取），未做任何算法改写。
+- Phase 1 唯一适配：新模块目录布局（tests 的 `parents[1]/scripts` sys.path 模式在新结构下原样成立）。
+- Phase 2 适配：`ui_vlm_region_mask_poc.py` → 转正命名 `ui_vlm_region_mask.py`（类名 `UIVLMRegionMaskPoC` → `UIVLMRegionMask`，模块 docstring 更新，仅名称与说明，VLM 定位算法与 bbox/mask 逻辑零改动）；测试同步转正并仅改 import 与类名。
+- 明确未迁移（按禁迁清单）：`ui_vlm_text_auditor.py`（ARCHIVE_ONLY）、`ui_audit_models.py`、`ui_text_repair_planner.py`、`ui_plan_models.py`、`ui_vlm_planner.py`、`ui_image_clean_repair_poc.py`、`image2_clean_pair_poc.py`、`prepare_image2_working_images.py`、Stage0 `vlm_client.py`（main 版本继续作为唯一 VLM 基础设施）。
