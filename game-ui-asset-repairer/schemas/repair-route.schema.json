@@ -1,0 +1,51 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/repair-route.schema.json",
+  "title": "Stage2-C Repair Route v0.1",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "status",
+    "target_asset_id",
+    "repair_backend",
+    "reason_code"
+  ],
+  "properties": {
+    "schema_version": {"const": "repair-route-v0.1"},
+    "status": {"enum": ["success", "failed"]},
+    "reason_code": {
+      "enum": [
+        "SMOOTH_CONTINUOUS_SURFACE",
+        "SIMPLE_GRADIENT_SURFACE",
+        "BACKGROUND_REQUIRES_GENERATIVE_REPAIR",
+        "STRUCTURE_CROSSES_REPAIR_REGION",
+        "STRUCTURED_UI_RECONSTRUCTION",
+        "ILLUSTRATIVE_TEXTURE_RECONSTRUCTION",
+        "AMBIGUOUS_SURFACE_FALLBACK_IMAGE2",
+        "vlm_invalid_output",
+        "vlm_transport_error",
+        "vlm_response_parse_error",
+        "vlm_error",
+        "repair_input_not_success",
+        "mask_size_mismatch",
+        "invalid_repair_input",
+        "vlm_config_missing"
+      ]
+    },
+    "message": {"type": ["string", "null"]},
+    "target_asset_id": {"type": "string"},
+    "occluder_asset_ids": {"type": "array", "items": {"type": "string"}},
+    "target_role": {"enum": ["normal_asset", "background"]},
+    "surface_type": {"enum": ["smooth_plate", "simple_gradient", "structured_ui", "illustrative_texture", "ambiguous", null]},
+    "structure_crossing": {"type": ["boolean", "null"]},
+    "texture_complexity": {"enum": ["low", "medium", "high", null]},
+    "semantic_content": {"enum": ["none", "ui_structure", "illustration", null]},
+    "repair_backend": {"enum": ["cv", "image2", null]},
+    "reason_summary": {"type": ["string", "null"]},
+    "vlm_metadata": {"type": ["object", "null"]},
+    "input_target_path": {"type": ["string", "null"]},
+    "input_repair_mask_path": {"type": ["string", "null"]},
+    "overlay_path": {"type": ["string", "null"]}
+  }
+}

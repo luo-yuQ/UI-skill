@@ -1,0 +1,54 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/repair-preparation-result.schema.json",
+  "title": "Game UI Repair Preparation Result v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "relations_schema", "relations_file", "repair_dir", "targets"],
+  "properties": {
+    "schema_version": {"const": "repair-preparation-result-v0.1"},
+    "status": {"enum": ["success", "partial", "failed"]},
+    "relations_schema": {"type": "string", "minLength": 1},
+    "relations_file": {"type": "string", "minLength": 1},
+    "repair_dir": {"type": "string", "minLength": 1},
+    "targets": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"$ref": "#/$defs/target_entry"}
+    }
+  },
+  "$defs": {
+    "target_entry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_asset_id", "status", "reason_code", "repair_input_path"],
+      "properties": {
+        "target_asset_id": {"type": "string", "minLength": 1},
+        "status": {"enum": ["success", "skipped", "failed"]},
+        "reason_code": {
+          "anyOf": [
+            {"enum": [
+              "ok",
+              "target_extraction_result_missing",
+              "target_extraction_failed",
+              "target_asset_png_missing",
+              "target_mask_png_missing",
+              "occluder_extraction_result_missing",
+              "occluder_extraction_failed",
+              "occluder_mask_file_missing",
+              "mask_size_mismatch",
+              "asset_image_size_mismatch",
+              "invalid_bbox",
+              "no_coordinate_overlap",
+              "empty_repair_mask",
+              "relation_read_error"
+            ]},
+            {"type": "null"}
+          ]
+        },
+        "message": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+        "repair_input_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]}
+      }
+    }
+  }
+}

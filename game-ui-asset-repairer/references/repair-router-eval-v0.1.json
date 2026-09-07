@@ -1,0 +1,26 @@
+{
+  "schema_version": "repair-router-eval-v0.1",
+  "description": "Human ground truth for Repair Router PoC evaluation only. NEVER put expected_backend into any VLM prompt.",
+  "cases": [
+    {
+      "target_asset_id": "asset_027",
+      "expected_backend": "cv",
+      "note": "smooth red plate; CV v0.1 manually verified on this case"
+    },
+    {
+      "target_asset_id": "asset_029",
+      "expected_backend": "image2",
+      "note": "heavy dark strokes / structured decorations; manually confirmed unsuitable for smooth-surface CV"
+    },
+    {
+      "target_asset_id": "asset_025",
+      "expected_backend": "cv",
+      "note": "smooth yellow plate, same family as asset_027; review result recorded but not a pass/fail requirement this round"
+    },
+    {
+      "target_asset_id": "asset_031",
+      "expected_backend": "image2",
+      "note": "gold disc with highlight-arc decoration crossing the repair region; CV r2+ visually clean but structure present — reviewer judgment: decorative arc = structure crossing"
+    }
+  ]
+}

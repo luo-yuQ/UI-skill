@@ -1,0 +1,72 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/repair-relations.schema.json",
+  "title": "Game UI Asset Repair Relations v0.1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "source_image", "relations"],
+  "properties": {
+    "schema_version": {"const": "repair-relations-v0.1"},
+    "source_image": {"type": "string", "minLength": 1},
+    "relations": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/relation"}
+    }
+  },
+  "$defs": {
+    "bbox": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["x", "y", "width", "height"],
+      "properties": {
+        "x": {"type": "integer", "minimum": 0},
+        "y": {"type": "integer", "minimum": 0},
+        "width": {"type": "integer", "minimum": 1},
+        "height": {"type": "integer", "minimum": 1}
+      }
+    },
+    "geometry_stats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_bbox_source", "occluder_bbox_source", "intersection_area", "occluder_bbox_area", "occluder_containment_ratio"],
+      "properties": {
+        "target_bbox_source": {"$ref": "#/$defs/bbox"},
+        "occluder_bbox_source": {"$ref": "#/$defs/bbox"},
+        "intersection_area": {"type": "integer", "minimum": 0},
+        "occluder_bbox_area": {"type": "integer", "minimum": 1},
+        "occluder_containment_ratio": {"type": "number", "minimum": 0, "maximum": 1}
+      }
+    },
+    "geometry": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_bbox_source", "occluder_bbox_source", "intersection_area", "occluder_bbox_area", "occluder_containment_ratio"],
+      "properties": {
+        "target_bbox_source": {"$ref": "#/$defs/bbox"},
+        "occluder_bbox_source": {"$ref": "#/$defs/bbox"},
+        "intersection_area": {"type": "integer", "minimum": 0},
+        "occluder_bbox_area": {"type": "integer", "minimum": 1},
+        "occluder_containment_ratio": {"type": "number", "minimum": 0, "maximum": 1},
+        "per_occluder": {
+          "type": "array",
+          "items": {"$ref": "#/$defs/geometry_stats"}
+        }
+      }
+    },
+    "relation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["target_asset_id", "occluder_asset_ids", "relation", "geometry"],
+      "properties": {
+        "target_asset_id": {"type": "string", "minLength": 1},
+        "occluder_asset_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {"type": "string", "minLength": 1}
+        },
+        "relation": {"const": "reviewed_bbox_containment"},
+        "geometry": {"$ref": "#/$defs/geometry"}
+      }
+    }
+  }
+}

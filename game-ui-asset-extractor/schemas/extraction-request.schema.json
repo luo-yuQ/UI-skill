@@ -31,13 +31,16 @@
       "type": "object",
       "additionalProperties": false,
       "properties": {
-        "backend": {"const": "pillow", "default": "pillow"},
+        "backend": {"enum": ["pillow", "sam1_vit_b"], "default": "pillow"},
         "roi_padding": {"type": "integer", "minimum": 0, "default": 10},
         "background_min_pixels": {"type": "integer", "minimum": 1, "default": 16},
         "mask_threshold": {"type": "number", "minimum": 0, "default": 22.0},
         "morphology_radius": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
         "alpha_dilation_radius": {"type": "integer", "minimum": 0, "maximum": 10, "default": 1},
-        "alpha_blur_radius": {"type": "number", "minimum": 0, "maximum": 20, "default": 1.0}
+        "alpha_blur_radius": {"type": "number", "minimum": 0, "maximum": 20, "default": 1.0},
+        "sam_model_type": {"const": "vit_b", "default": "vit_b"},
+        "sam_checkpoint": {"type": "string", "minLength": 1},
+        "device": {"enum": ["auto", "cuda", "cpu"], "default": "auto"}
       }
     },
     "asset_type": {

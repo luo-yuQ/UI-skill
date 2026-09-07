@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/schemas/repair-input.schema.json",
+  "title": "Game UI Asset Repair Input v0.2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "status", "reason_code", "target_asset_id", "occluder_asset_ids", "target_bbox_source", "target_frame", "occluder_masks", "repair_mask_path", "repair_working_image_path", "repair_pixel_count", "repair_ratio_of_target_mask"],
+  "properties": {
+    "schema_version": {"const": "repair-input-v0.2"},
+    "status": {"enum": ["success", "skipped", "failed"]},
+    "reason_code": {
+      "anyOf": [
+        {"enum": [
+          "ok",
+          "target_extraction_result_missing",
+          "target_extraction_failed",
+          "target_asset_png_missing",
+          "target_mask_png_missing",
+          "occluder_extraction_result_missing",
+          "occluder_extraction_failed",
+          "occluder_mask_file_missing",
+          "mask_size_mismatch",
+          "asset_image_size_mismatch",
+          "invalid_bbox",
+          "no_coordinate_overlap",
+          "empty_repair_mask",
+          "relation_read_error"
+        ]},
+        {"type": "null"}
+      ]
+    },
+    "message": {"type": "string"},
+    "target_asset_id": {"type": "string", "minLength": 1},
+    "occluder_asset_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "target_bbox_source": {"$ref": "#/$defs/bbox_or_null"},
+    "target_frame": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1},
+            "kind": {"enum": ["extraction_roi", "final_bbox"]}
+          }
+        },
+        {"type": "null"}
+      ]
+    },
+    "target_asset_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+    "target_mask_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+    "occluder_masks": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["asset_id", "bbox_source", "mask_path"],
+        "properties": {
+          "asset_id": {"type": "string", "minLength": 1},
+          "bbox_source": {"$ref": "#/$defs/bbox_or_null"},
+          "mask_path": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "repair_mask_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+    "repair_working_image_path": {"anyOf": [{"type": "string", "minLength": 1}, {"type": "null"}]},
+    "repair_pixel_count": {"type": "integer", "minimum": 0},
+    "repair_ratio_of_target_mask": {"type": "number", "minimum": 0},
+    "projected_pixels_before_frame_clip": {"type": "integer", "minimum": 0},
+    "projected_pixels_after_frame_clip": {"type": "integer", "minimum": 0}
+  },
+  "$defs": {
+    "bbox_or_null": {
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["x", "y", "width", "height"],
+          "properties": {
+            "x": {"type": "integer"},
+            "y": {"type": "integer"},
+            "width": {"type": "integer", "minimum": 1},
+            "height": {"type": "integer", "minimum": 1}
+          }
+        },
+        {"type": "null"}
+      ]
+    }
+  }
+}
