@@ -51,6 +51,16 @@ These are frozen implementation contracts, not model-quality guarantees.
 
 ## Request
 
+The formal producer of `extraction-request.json` is
+`scripts/build_extraction_request.py` (Phase 5, frozen v0.1): it maps
+Stage2-A `reviewed-direct-assets.json` (`direct-assets-reviewed-v0.1`)
+deterministically into a request — no VLM, no bbox arithmetic, no image I/O.
+`bbox_source` is copied byte-for-byte into `final_bbox`; `taxonomy` maps to
+`asset_type` when it is an enum member and to `"unknown"` otherwise;
+`extraction_mode` defaults to `direct_crop` globally (`--extraction-mode`
+overrides it for the whole request). Assets dropped during human review never
+reach the request.
+
 ```json
 {
   "schema_version": "0.1",
@@ -84,6 +94,7 @@ For the SAM backend set `"backend": "sam1_vit_b"` and add `sam_model_type` (`"vi
 Legacy pillow backend (unchanged):
 
 ```powershell
+python scripts/build_extraction_request.py --reviewed-json path\to\reviewed-direct-assets.json --output-json path\to\extraction-request.json
 python scripts/extract_assets.py --request path\to\extraction-request.json --output-dir path\to\extraction
 ```
 
