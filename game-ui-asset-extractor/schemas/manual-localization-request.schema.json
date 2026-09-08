@@ -1,0 +1,131 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "manual-localization-request.schema.json",
+  "title": "Manual secondary localization request (human-secondary-localization-v0.1)",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "source_image",
+    "target"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": "0.1"
+    },
+    "localization_version": {
+      "const": "human-secondary-localization-v0.1"
+    },
+    "source_image": {
+      "type": "string",
+      "minLength": 1
+    },
+    "config": {
+      "$ref": "#/$defs/config"
+    },
+    "target": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "bbox_source"
+      ],
+      "properties": {
+        "bbox_source": {
+          "$ref": "#/$defs/bbox_xywh"
+        },
+        "positive_points_source": {
+          "$ref": "#/$defs/points"
+        },
+        "negative_points_source": {
+          "$ref": "#/$defs/points"
+        }
+      }
+    },
+    "occluders": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "occluder_id",
+          "bbox_source"
+        ],
+        "properties": {
+          "occluder_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9_.-]+$"
+          },
+          "bbox_source": {
+            "$ref": "#/$defs/bbox_xywh"
+          },
+          "positive_points_source": {
+            "$ref": "#/$defs/points"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "config": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "backend": {
+          "const": "sam1_vit_b"
+        },
+        "sam_checkpoint": {
+          "type": "string",
+          "minLength": 1
+        },
+        "device": {
+          "enum": [
+            "auto",
+            "cuda",
+            "cpu"
+          ]
+        },
+        "output_dir": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "bbox_xywh": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "x",
+        "y",
+        "width",
+        "height"
+      ],
+      "properties": {
+        "x": {
+          "type": "integer"
+        },
+        "y": {
+          "type": "integer"
+        },
+        "width": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "height": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "points": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        },
+        "minItems": 2,
+        "maxItems": 2
+      }
+    }
+  }
+}

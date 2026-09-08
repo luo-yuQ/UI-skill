@@ -49,6 +49,39 @@ The `sam1_vit_b` backend implements exactly the verified PoC baseline:
 
 These are frozen implementation contracts, not model-quality guarantees.
 
+## Human secondary localization (`human-secondary-localization-v0.1`)
+
+Stage2-B companion entry (this branch) for assets whose reviewed bbox alone
+does not isolate the asset — e.g. an asset partially occluded by another UI
+element. A human supplies the prompts; everything downstream is deterministic.
+
+- **Entry point**: `scripts/manual_localization.py --request request.json`
+  (`schemas/manual-localization-request.schema.json`).
+- **Request**: source image; `target` = coarse `bbox_source` + optional
+  positive/negative points (source pixels); `occluders` = 0..N entries, each
+  an `occluder_id` + `bbox_source` + optional positive points. The SAM
+  checkpoint/device come from `config` and are never auto-resolved.
+- **Pipeline**: encode the full source once; prompt the target with box +
+  optional points (winner = max SAM score, frozen postprocess); segment each
+  occluder independently from its own bbox (box or box + positive points —
+  negative points are deliberately not offered for occluders, see evidence
+  below); then `visible_target_mask = target_mask AND NOT union(occluder_masks)`;
+  RGBA = untouched source RGB + `alpha = visible_mask * 255`.
+- **Outputs** (one run directory): `target-mask.png`, one
+  `occluder-<id>-mask.png` each, `visible-target-mask.png`,
+  `visible-target-rgba.png`, `visible-target-on-checkerboard.png`,
+  `result.json` (prompts, candidate scores, winner scores, areas, timings,
+  diagnostics).
+- **Boundary**: expresses only the *currently visible* asset. Occlusion
+  completion, repair, Image-2, inpainting, matting, feather, and glow/shadow
+  restoration are out of scope (Stage2-C or later versions).
+- **Evidence**: `runs/20260908_sam_point_prompt_poc_002` (point prompting;
+  negatives are a local eraser, not an object-level excluder),
+  `runs/20260908_sam_point_prompt_poc_003` (independent occluder + subtraction,
+  PASS), `runs/20260908_visible_target_rgba_001` (mask -> RGBA, PASS),
+  `runs/20260908_manual_localization_v01_smoke_001` (v0.1 entry point
+  reproduces the experiment statistics exactly).
+
 ## Request
 
 The formal producer of `extraction-request.json` is
